@@ -1,0 +1,13 @@
+Traceback (most recent call last):
+Starting epoch:  1
+  File "main.py", line 185, in <module>
+    app.run(main)
+  File "/opt/conda/envs/sjpark/lib/python3.7/site-packages/absl/app.py", line 299, in run
+    _run_main(main, args)
+  File "/opt/conda/envs/sjpark/lib/python3.7/site-packages/absl/app.py", line 250, in _run_main
+    sys.exit(main(argv))
+  File "main.py", line 174, in main
+    model = train(model, optimizer, device, FLAGS.epochs)
+  File "main.py", line 99, in train
+    for positive_triples in tqdm(train_generator):
+NameError: name 'train_generator' is not defined

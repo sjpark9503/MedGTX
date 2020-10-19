@@ -1,0 +1,28 @@
+wandb_version: 1
+
+_wandb:
+  desc: null
+  value:
+    cli_version: 0.9.3
+    framework: torch
+    is_jupyter_run: false
+    is_kaggle_kernel: false
+    python_version: 3.7.7
+batch_size:
+  desc: null
+  value: 128
+hidden_size:
+  desc: null
+  value: 50
+lr:
+  desc: null
+  value: 0.01
+margin:
+  desc: null
+  value: 1.0
+p:
+  desc: null
+  value: 2
+seed:
+  desc: null
+  value: 1234

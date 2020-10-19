@@ -1,0 +1,25 @@
+Traceback (most recent call last):
+  File "main.py", line 185, in <module>
+    app.run(main)
+  File "/opt/conda/envs/sjpark/lib/python3.7/site-packages/absl/app.py", line 299, in run
+    _run_main(main, args)
+  File "/opt/conda/envs/sjpark/lib/python3.7/site-packages/absl/app.py", line 250, in _run_main
+    sys.exit(main(argv))
+  File "main.py", line 171, in main
+    model = model.to(device)
+  File "/opt/conda/envs/sjpark/lib/python3.7/site-packages/torch/nn/modules/module.py", line 443, in to
+    return self._apply(convert)
+  File "/opt/conda/envs/sjpark/lib/python3.7/site-packages/torch/nn/modules/module.py", line 203, in _apply
+    module._apply(fn)
+  File "/opt/conda/envs/sjpark/lib/python3.7/site-packages/torch/nn/modules/module.py", line 225, in _apply
+    param_applied = fn(param)
+  File "/opt/conda/envs/sjpark/lib/python3.7/site-packages/torch/nn/modules/module.py", line 441, in convert
+    return t.to(device, dtype if t.is_floating_point() else None, non_blocking)
+  File "/opt/conda/envs/sjpark/lib/python3.7/site-packages/torch/cuda/__init__.py", line 149, in _lazy_init
+    _check_driver()
+  File "/opt/conda/envs/sjpark/lib/python3.7/site-packages/torch/cuda/__init__.py", line 54, in _check_driver
+    http://www.nvidia.com/Download/index.aspx""")
+AssertionError: 
+Found no NVIDIA driver on your system. Please check that you
+have an NVIDIA GPU and installed a driver from
+http://www.nvidia.com/Download/index.aspx

@@ -1,0 +1,23 @@
+{
+    "root": "/workspace/KG+text/TransE-PyTorch-master",
+    "program": "main.py",
+    "startedAt": "2020-10-19T07:47:10.916911",
+    "host": "e292e8a2e421",
+    "username": "root",
+    "executable": "/opt/conda/envs/sjpark/bin/python",
+    "os": "Linux-4.19.76-linuxkit-x86_64-with-debian-buster-sid",
+    "python": "3.7.7",
+    "cpu_count": 2,
+    "cuda": "10.1.243",
+    "args": [
+        "--dataset_path=data",
+        "--use_gpu=False",
+        "--batch_size=4"
+    ],
+    "state": "failed",
+    "jobType": null,
+    "mode": "dryrun",
+    "project": "TransE",
+    "heartbeatAt": "2020-10-19T07:47:12.404468",
+    "exitcode": 1
+}
