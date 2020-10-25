@@ -1,0 +1,20 @@
+wandb_version: 1
+
+bs:
+  value: 868
+data_path:
+  value: datas/Prescriptions/
+dim:
+  value: 79
+epochs:
+  value: 22
+lr:
+  value: 0.09224983505470201
+margin:
+  value: 4
+model:
+  value: TransE
+ns:
+  value: 48
+p:
+  value: 2

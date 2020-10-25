@@ -1,18 +1,0 @@
-Starting epoch:  1
-  0%|                                                                                            | 0/24 [00:00<?, ?it/s]tensor([[0, 0, 0],
-        [0, 0, 0],
-        [0, 0, 0],
-        [0, 0, 0]], dtype=torch.int32)
-  0%|                                                                                            | 0/24 [00:00<?, ?it/s]
-Traceback (most recent call last):
-  File "main.py", line 186, in <module>
-    app.run(main)
-  File "/opt/conda/envs/sjpark/lib/python3.7/site-packages/absl/app.py", line 299, in run
-    _run_main(main, args)
-  File "/opt/conda/envs/sjpark/lib/python3.7/site-packages/absl/app.py", line 250, in _run_main
-    sys.exit(main(argv))
-  File "main.py", line 175, in main
-    model = train(model, optimizer, device, FLAGS.epochs,train_generator, voca)
-  File "main.py", line 107, in train
-    broken_heads = torch.where(head_or_tail == 1, random_entities, positive_triples[:,0])
-RuntimeError: expected scalar type long int but found int

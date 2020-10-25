@@ -1,0 +1,37 @@
+wandb_version: 1
+
+_wandb:
+  desc: null
+  value:
+    cli_version: 0.10.8
+    framework: torch
+    is_jupyter_run: false
+    is_kaggle_kernel: false
+    python_version: 3.7.7
+bs:
+  desc: null
+  value: 512
+data_path:
+  desc: null
+  value: datas/Prescriptions/
+dim:
+  desc: null
+  value: 512
+epochs:
+  desc: null
+  value: 20
+lr:
+  desc: null
+  value: 0.01
+margin:
+  desc: null
+  value: 5.0
+model:
+  desc: null
+  value: RotatE
+ns:
+  desc: null
+  value: 25
+p:
+  desc: null
+  value: 1

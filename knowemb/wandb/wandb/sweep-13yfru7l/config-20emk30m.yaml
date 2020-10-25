@@ -1,0 +1,12 @@
+wandb_version: 1
+
+dim:
+  value: 64
+lr:
+  value: 0.243164030602331
+margin:
+  value: 8
+ns:
+  value: 6
+p:
+  value: 2
