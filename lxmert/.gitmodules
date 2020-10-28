@@ -1,3 +1,0 @@
-[submodule "data/nlvr2/nlvr"]
-	path = data/nlvr2/nlvr
-	url = https://github.com/lil-lab/nlvr.git
