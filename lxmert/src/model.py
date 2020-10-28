@@ -92,12 +92,12 @@ class LxmertModelOutput(ModelOutput):
     """
 
     language_output: Optional[torch.FloatTensor] = None
-    vision_output: Optional[torch.FloatTensor] = None
+    kg_output: Optional[torch.FloatTensor] = None
     pooled_output: Optional[torch.FloatTensor] = None
     language_hidden_states: Optional[Tuple[torch.FloatTensor]] = None
-    vision_hidden_states: Optional[Tuple[torch.FloatTensor]] = None
+    kg_hidden_states: Optional[Tuple[torch.FloatTensor]] = None
     language_attentions: Optional[Tuple[torch.FloatTensor]] = None
-    vision_attentions: Optional[Tuple[torch.FloatTensor]] = None
+    kg_attentions: Optional[Tuple[torch.FloatTensor]] = None
     cross_encoder_attentions: Optional[Tuple[torch.FloatTensor]] = None
 
 
@@ -271,12 +271,14 @@ def load_tf_weights_in_lxmert(model, config, tf_checkpoint_path):
 class LxmertEmbeddings(nn.Module):
     """Construct the embeddings from word, position and token_type embeddings."""
 
-    def __init__(self, config):
+    def __init__(self, config, input_class=None):
         super().__init__()
-        self.word_embeddings = nn.Embedding(config.vocab_size, config.hidden_size, padding_idx=0)
-        self.position_embeddings = nn.Embedding(config.max_position_embeddings, config.hidden_size, padding_idx=0)
-        self.token_type_embeddings = nn.Embedding(config.type_vocab_size, config.hidden_size, padding_idx=0)
-
+        self.word_embeddings = nn.Embedding(config.vocab_size[input_class], config.hidden_size, padding_idx=0)
+        self.position_embeddings = nn.Embedding(config.max_position_embeddings[input_class], config.hidden_size, padding_idx=0)
+        if config.type_vocab_size[input_class]:
+            self.token_type_embeddings = nn.Embedding(config.type_vocab_size, config.hidden_size, padding_idx=0)
+        else:
+            self.token_type_embeddings = None
         # self.LayerNorm is not snake-cased to stick with TensorFlow model variable name and be able to load
         # any TensorFlow checkpoint file
         self.LayerNorm = nn.LayerNorm(config.hidden_size, eps=1e-12)
@@ -301,7 +303,6 @@ class LxmertEmbeddings(nn.Module):
             inputs_embeds = self.word_embeddings(input_ids)
         position_embeddings = self.position_embeddings(position_ids)
         token_type_embeddings = self.token_type_embeddings(token_type_ids)
-
         embeddings = inputs_embeds + position_embeddings + token_type_embeddings
         embeddings = self.LayerNorm(embeddings)
         embeddings = self.dropout(embeddings)
@@ -465,7 +466,7 @@ class LxmertXLayer(nn.Module):
     def __init__(self, config):
         super().__init__()
         # The cross-attention Layer
-        self.visual_attention = LxmertCrossAttentionLayer(config)
+        self.cross_attention = LxmertCrossAttentionLayer(config)
 
         # Self-attention Layers
         self.lang_self_att = LxmertSelfAttentionLayer(config)
@@ -486,13 +487,13 @@ class LxmertXLayer(nn.Module):
         output_x_attentions=False,
     ):
         # Cross Attention
-        lang_att_output = self.visual_attention(
+        lang_att_output = self.cross_attention(
             lang_input,
             visual_input,
             ctx_att_mask=visual_attention_mask,
             output_attentions=output_x_attentions,
         )
-        visual_att_output = self.visual_attention(
+        visual_att_output = self.cross_attention(
             visual_input,
             lang_input,
             ctx_att_mask=lang_attention_mask,
@@ -553,31 +554,14 @@ class LxmertXLayer(nn.Module):
         )
 
 
-class LxmertVisualFeatureEncoder(nn.Module):
+class LxmertKGFeatureEncoder(nn.Module):
     def __init__(self, config):
         super().__init__()
-        feat_dim = config.visual_feat_dim
-        pos_dim = config.visual_pos_dim
-
-        # Object feature encoding
-        self.visn_fc = nn.Linear(feat_dim, config.hidden_size)
-        self.visn_layer_norm = nn.LayerNorm(config.hidden_size, eps=1e-12)
-
-        # Box position encoding
-        self.box_fc = nn.Linear(pos_dim, config.hidden_size)
-        self.box_layer_norm = nn.LayerNorm(config.hidden_size, eps=1e-12)
-
         self.dropout = nn.Dropout(config.hidden_dropout_prob)
 
-    def forward(self, visual_feats, visual_pos):
-        x = self.visn_fc(visual_feats)
-        x = self.visn_layer_norm(x)
-        y = self.box_fc(visual_pos)
-        y = self.box_layer_norm(y)
-        output = (x + y) / 2
+    def forward(self):
 
-        output = self.dropout(output)
-        return output
+        return None
 
 
 class LxmertEncoder(nn.Module):
@@ -585,7 +569,7 @@ class LxmertEncoder(nn.Module):
         super().__init__()
 
         # Obj-level image embedding layer
-        self.visn_fc = LxmertVisualFeatureEncoder(config)
+        self.KG_fc = LxmertKGFeatureEncoder(config)
         self.config = config
 
         # Number of layers
@@ -603,19 +587,21 @@ class LxmertEncoder(nn.Module):
         self,
         lang_feats,
         lang_attention_mask,
-        visual_feats,
-        visual_pos,
-        visual_attention_mask=None,
+        kg_raw_feats,
+        kg_attention_mask,
         output_attentions=None,
     ):
 
-        vision_hidden_states = ()
+        kg_hidden_states = ()
         language_hidden_states = ()
-        vision_attentions = () if output_attentions or self.config.output_attentions else None
+        kg_attentions = () if output_attentions or self.config.output_attentions else None
         language_attentions = () if output_attentions or self.config.output_attentions else None
         cross_encoder_attentions = () if output_attentions or self.config.output_attentions else None
 
-        visual_feats = self.visn_fc(visual_feats, visual_pos)
+        if self.config.gcn:
+            kg_feats = self.kg_fc(kg_raw_feats)
+        else:
+            kg_feats = kg_raw_feats
 
         # Run language layers
         for layer_module in self.layer:
@@ -627,36 +613,36 @@ class LxmertEncoder(nn.Module):
 
         # Run relational layers
         for layer_module in self.r_layers:
-            v_outputs = layer_module(visual_feats, visual_attention_mask, output_attentions=output_attentions)
-            visual_feats = v_outputs[0]
-            vision_hidden_states = vision_hidden_states + (visual_feats,)
-            if vision_attentions is not None:
-                vision_attentions = vision_attentions + (v_outputs[1],)
+            kg_outputs = layer_module(kg_feats, kg_attention_mask, output_attentions=output_attentions)
+            kg_feats = kg_outputs[0]
+            kg_hidden_states = kg_hidden_states + (kg_feats,)
+            if kg_attentions is not None:
+                kg_attentions = kg_attentions + (kg_outputs[1],)
 
         # Run cross-modality layers
         for layer_module in self.x_layers:
             x_outputs = layer_module(
                 lang_feats,
                 lang_attention_mask,
-                visual_feats,
-                visual_attention_mask,
+                kg_feats,
+                kg_attention_mask,
                 output_attentions=output_attentions,
             )
-            lang_feats, visual_feats = x_outputs[:2]
-            vision_hidden_states = vision_hidden_states + (visual_feats,)
+            lang_feats, kg_feats = x_outputs[:2]
+            kg_hidden_states = kg_hidden_states + (kg_feats,)
             language_hidden_states = language_hidden_states + (lang_feats,)
             if cross_encoder_attentions is not None:
                 cross_encoder_attentions = cross_encoder_attentions + (x_outputs[2],)
-        visual_encoder_outputs = (
-            vision_hidden_states,
-            vision_attentions if output_attentions else None,
+        kg_encoder_outputs = (
+            kg_hidden_states,
+            kg_attentions if output_attentions else None,
         )
         lang_encoder_outputs = (
             language_hidden_states,
             language_attentions if output_attentions else None,
         )
         return (
-            visual_encoder_outputs,
+            kg_encoder_outputs,
             lang_encoder_outputs,
             cross_encoder_attentions if output_attentions else None,
         )
@@ -882,7 +868,8 @@ LXMERT_INPUTS_DOCSTRING = r"""
 class LxmertModel(LxmertPreTrainedModel):
     def __init__(self, config):
         super().__init__(config)
-        self.embeddings = LxmertEmbeddings(config)
+        self.lang_embeddings = LxmertEmbeddings(config.langemb)
+        self.kg_embeddings = LxmertEmbeddings(config.kgemb)
         self.encoder = LxmertEncoder(config)
         self.pooler = LxmertPooler(config)
         self.init_weights()
@@ -902,13 +889,13 @@ class LxmertModel(LxmertPreTrainedModel):
     )
     def forward(
         self,
-        input_ids=None,
-        visual_feats=None,
-        visual_pos=None,
-        attention_mask=None,
-        visual_attention_mask=None,
+        input_langs=None,
+        input_subgraphs=None,
+        lang_inputs_embeds=None,
+        kg_inputs_embeds=None,
+        lang_attention_mask=None,
+        kg_attention_mask=None,
         token_type_ids=None,
-        inputs_embeds=None,
         output_attentions=None,
         output_hidden_states=None,
         return_dict=None,
@@ -920,96 +907,93 @@ class LxmertModel(LxmertPreTrainedModel):
         )
         return_dict = return_dict if return_dict is not None else self.config.use_return_dict
 
-        if input_ids is not None and inputs_embeds is not None:
+        if input_langs is not None and lang_inputs_embeds is not None:
             raise ValueError("You cannot specify both input_ids and inputs_embeds at the same time")
-        elif input_ids is not None:
-            input_shape = input_ids.size()
-        elif inputs_embeds is not None:
-            input_shape = inputs_embeds.size()[:-1]
-        else:
-            raise ValueError("You have to specify either input_ids or inputs_embeds")
-
-        assert visual_feats is not None, "`visual_feats` cannot be `None`"
-        assert visual_pos is not None, "`visual_pos` cannot be `None`"
-
-        device = input_ids.device if input_ids is not None else inputs_embeds.device
-
-        if attention_mask is None:
-            attention_mask = torch.ones(input_shape, device=device)
-        if token_type_ids is None:
-            token_type_ids = torch.zeros(input_shape, dtype=torch.long, device=device)
+        elif input_subgraphs is not None and kg_inputs_embeds is not None:
+            raise ValueError("You cannot specify both input_ids and inputs_embeds at the same time")
+        # elif input_langs is not None:
+        #     input_shape = input_langs.size()
+        # elif inputs_embeds is not None:
+        #     input_shape = inputs_embeds.size()[:-1]
+        # else:
+        #     raise ValueError("You have to specify either input_ids or inputs_embeds")
+        #device = input_.device if input_ids is not None else inputs_embeds.device
+        #
+        # if attention_mask is None:
+        #     attention_mask = torch.ones(input_shape, device=device)
+        # if token_type_ids is None:
+        #     token_type_ids = torch.zeros(input_shape, dtype=torch.long, device=device)
 
         # We create a 3D attention mask from a 2D tensor mask.
         # Sizes are [batch_size, 1, 1, to_seq_length]
         # So we can broadcast to [batch_size, num_heads, from_seq_length, to_seq_length]
         # this attention mask is more simple than the triangular masking of causal attention
         # used in OpenAI GPT, we just need to prepare the broadcast dimension here.
-        extended_attention_mask = attention_mask.unsqueeze(1).unsqueeze(2)
+        extended_lang_attention_mask = lang_attention_mask.unsqueeze(1).unsqueeze(2)
 
         # Since attention_mask is 1.0 for positions we want to attend and 0.0 for
         # masked positions, this operation will create a tensor which is 0.0 for
         # positions we want to attend and -10000.0 for masked positions.
         # Since we are adding it to the raw scores before the softmax, this is
         # effectively the same as removing these entirely.
-        extended_attention_mask = extended_attention_mask.to(dtype=self.dtype)
-        extended_attention_mask = (1.0 - extended_attention_mask) * -10000.0
+        extended_lang_attention_mask = extended_lang_attention_mask.to(dtype=self.dtype)
+        extended_lang_attention_mask = (1.0 - extended_lang_attention_mask) * -10000.0
 
         # Process the visual attention mask
         if visual_attention_mask is not None:
-            extended_visual_attention_mask = visual_attention_mask.unsqueeze(1).unsqueeze(2)
-            extended_visual_attention_mask = extended_visual_attention_mask.to(dtype=self.dtype)
-            extended_visual_attention_mask = (1.0 - extended_visual_attention_mask) * -10000.0
+            extended_kg_attention_mask = kg_attention_mask.unsqueeze(1).unsqueeze(2)
+            extended_kg_attention_mask = extended_kg_attention_mask.to(dtype=self.dtype)
+            extended_kg_attention_mask = (1.0 - extended_kg_attention_mask) * -10000.0
         else:
-            extended_visual_attention_mask = None
+            extended_kg_attention_mask = None
 
         # Positional Word Embeddings
-        embedding_output = self.embeddings(input_ids, token_type_ids, inputs_embeds)
+        lang_embedding_output = self.embeddings(input_langs, token_type_ids, lang_inputs_embeds)
+        kg_embedding_output = self.embeddings(input_subgraphs, None, kg_inputs_embeds)
 
         # Run Lxmert encoder
         encoder_outputs = self.encoder(
-            embedding_output,
-            extended_attention_mask,
-            visual_feats=visual_feats,
-            visual_pos=visual_pos,
-            visual_attention_mask=extended_visual_attention_mask,
+            lang_feats=lang_embedding_output,
+            lang_attention_mask=extended_lang_attention_mask,
+            kg_raw_feats=kg_embedding_output,
+            kg_attention_mask=extended_kg_attention_mask,
             output_attentions=output_attentions,
         )
 
-        visual_encoder_outputs, lang_encoder_outputs = encoder_outputs[:2]
-        vision_hidden_states = visual_encoder_outputs[0]
+        kg_encoder_outputs, lang_encoder_outputs = encoder_outputs[:2]
+        kg_hidden_states = kg_encoder_outputs[0]
         language_hidden_states = lang_encoder_outputs[0]
 
         all_attentions = ()
         if output_attentions:
             language_attentions = lang_encoder_outputs[1]
-            vision_attentions = visual_encoder_outputs[1]
+            kg_attentions = kg_encoder_outputs[1]
             cross_encoder_attentions = encoder_outputs[2]
             all_attentions = (
                 language_attentions,
-                vision_attentions,
+                kg_attentions,
                 cross_encoder_attentions,
             )
 
-        hidden_states = (language_hidden_states, vision_hidden_states) if output_hidden_states else ()
+        hidden_states = (language_hidden_states, kg_hidden_states) if output_hidden_states else ()
 
-        visual_output = vision_hidden_states[-1]
+        kg_output = kg_hidden_states[-1]
         lang_output = language_hidden_states[-1]
         pooled_output = self.pooler(lang_output)
 
         if not return_dict:
-            return (lang_output, visual_output, pooled_output) + hidden_states + all_attentions
+            return (lang_output, kg_output, pooled_output) + hidden_states + all_attentions
 
         return LxmertModelOutput(
             pooled_output=pooled_output,
             language_output=lang_output,
-            vision_output=visual_output,
+            kg_output=kg_output,
             language_hidden_states=language_hidden_states if output_hidden_states else None,
-            vision_hidden_states=vision_hidden_states if output_hidden_states else None,
+            kg_hidden_states=kg_hidden_states if output_hidden_states else None,
             language_attentions=language_attentions if output_attentions else None,
-            vision_attentions=vision_attentions if output_attentions else None,
+            kg_attentions=kg_attentions if output_attentions else None,
             cross_encoder_attentions=cross_encoder_attentions if output_attentions else None,
         )
-
 
 @add_start_docstrings(
     """Lxmert Model with a specified pre-training head on top. """,
