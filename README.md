@@ -1,9 +1,9 @@
 # Multimodal Learning of Knowledge Graph & Text
 ## Features
-+ Masked LM\
-+ Masked Node prediction\
-+ Save & Load pretrained models\
-+ Training Model from randomly initialized embeddings\
++ Masked LM 
++ Masked Node prediction 
++ Save & Load pretrained models
++ Training Model from randomly initialized embeddings 
 + Configure parameters with config.json
 ## Waiting for implementation
 1 Load pre-trained KG embedding for translation based KG encoder __(In Progress)__\
