@@ -12,15 +12,15 @@ from torch.utils.data import ConcatDataset
 
 # Own implementation
 from utils.parameters import parser
-from data_utils.dataset import get_dataset
-from data_utils.data_collator import translation_data_collator
+from utils.dataset import get_dataset
+from utils.data_collator import translation_data_collator
+from model import LxmertForPreTraining
 
 # From Huggingface transformers package
 from transformers import (
     CONFIG_MAPPING,
     MODEL_WITH_LM_HEAD_MAPPING,
     LxmertConfig,
-    LxmertForPreTraining,
     LxmertTokenizer,
     PreTrainedTokenizer,
     Trainer,
@@ -97,7 +97,7 @@ def main():
         )
 
     if model_args.model_name_or_path:
-        model = AutoModelWithLMHead.from_pretrained(
+        model = LxmertForPreTraining.from_pretrained(
             model_args.model_name_or_path,
             from_tf=bool(".ckpt" in model_args.model_name_or_path),
             config=config,
@@ -105,9 +105,9 @@ def main():
         )
     else:
         logger.info("Training new model from scratch")
-        model = AutoModelWithLMHead.from_config(config)
+        model = LxmertForPreTraining(config)
 
-    model.resize_token_embeddings(len(tokenizer))
+    #model.resize_token_embeddings(len(tokenizer))
 
     if config.model_type in ["bert", "roberta", "distilbert", "camembert"] and not data_args.mlm:
         raise ValueError(
@@ -124,14 +124,14 @@ def main():
     # Get datasets
 
     train_dataset = (
-        get_dataset(data_args, tokenizer=tokenizer, cache_dir=model_args.cache_dir) if training_args.do_train else None
+        get_dataset(data_args, tokenizer=tokenizer, kg_pad=data_args.kg_pad_idx) if training_args.do_train else None
     )
     eval_dataset = (
-        get_dataset(data_args, tokenizer=tokenizer, evaluate=True, cache_dir=model_args.cache_dir)
+        get_dataset(data_args, tokenizer=tokenizer, evaluate=True)
         if training_args.do_eval
         else None
     )
-    data_collator = translation_data_collator(tokenizer=tokenizer, kg_pad=0, kg_mask=1, kg_size = )
+    data_collator = translation_data_collator(tokenizer=tokenizer, kg_pad=data_args.kg_pad_idx, kg_mask=data_args.kg_mask_idx, kg_size = config.vocab_size['kg'])
 
     # Initialize our Trainer
     trainer = Trainer(

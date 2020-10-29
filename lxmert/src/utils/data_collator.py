@@ -12,7 +12,8 @@ import torch
 from torch.nn.utils.rnn import pad_sequence
 from torch.utils.data.dataset import Dataset
 
-from transformers.tokenization_utils_base import BatchEncoding, PaddingStrategy, PreTrainedTokenizer, PreTrainedTokenizerBase
+from transformers.tokenization_utils_base import BatchEncoding, PaddingStrategy, PreTrainedTokenizerBase
+from transformers.tokenization_utils import PreTrainedTokenizer
 from transformers.utils import logging
 
 InputDataClass = NewType("InputDataClass", Any)
@@ -23,6 +24,7 @@ of Tensors.
 """
 DataCollator = NewType("DataCollator", Callable[[List[InputDataClass]], Dict[str, torch.Tensor]])
 
+@dataclass
 class translation_data_collator:
     """
     Data collator used for language modeling.
@@ -40,12 +42,12 @@ class translation_data_collator:
         if not isinstance(features[0], (dict, BatchEncoding)):
             features = [vars(f) for f in features]
         batch = self._tensorize_batch(features)
-        masked_texts, lm_label = self.mask_tokens(batch['input_texts'])
-        masked_subs, kg_label = self.mask_kg(batch['input_subgraphs'])
+        masked_texts, lm_label = self.mask_tokens(batch['lang_input_ids'])
+        masked_subs, kg_label = self.mask_kg(batch['kg_input_ids'])
         # Define batch and return
-        batch['input_text'] = masked_texts
+        batch['lang_input_ids'] = masked_texts
         batch['lm_label'] = lm_label
-        batch['input_subgraphs'] = masked_subs
+        batch['kg_input_ids'] = masked_subs
         batch['kg_label'] = kg_label
 
         return batch
@@ -132,7 +134,7 @@ class translation_data_collator:
         labels = inputs.clone()
         # We sample a few tokens in each sequence for masked-LM training (with probability args.mlm_probability defaults to 0.15 in Bert/RoBERTa)
         probability_matrix = torch.full(labels.shape, self.mlm_probability)
-        if literal_mask is not None:
+        if entity_mask is not None:
             probability_matrix.masked_fill_(torch.tensor(entity_mask, dtype=torch.bool), value=0.0)
         if self.kg_pad is not None:
             padding_mask = labels.eq(self.kg_pad)

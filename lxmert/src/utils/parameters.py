@@ -1,9 +1,16 @@
 # coding=utf-8
 # Copyleft 2019 project LXRT.
+from dataclasses import dataclass, field
+from typing import Optional
 from transformers import (
+    CONFIG_MAPPING,
+    MODEL_WITH_LM_HEAD_MAPPING,
     HfArgumentParser,
     TrainingArguments
 )
+
+MODEL_CONFIG_CLASSES = list(MODEL_WITH_LM_HEAD_MAPPING.keys())
+MODEL_TYPES = tuple(conf.model_type for conf in MODEL_CONFIG_CLASSES)
 
 @dataclass
 class ModelArguments:
@@ -75,6 +82,15 @@ class DataTrainingArguments:
             "Default to the model max input length for single sentence inputs (take into account special tokens)."
         },
     )
+
+    kg_pad_idx: int = field(
+        default=0,
+    )
+
+    kg_mask_idx: int = field(
+        default=1,
+    )
+
     overwrite_cache: bool = field(
         default=False, metadata={"help": "Overwrite the cached training and evaluation sets"}
     )
