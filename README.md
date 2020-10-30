@@ -25,5 +25,5 @@
 + Downstream tasks _TBD
 
 ## Release Notes
-v0.1 : prototype of KG-LXMERT
-v0.2 : support T/V/T data split, masking only for literals (not for entities) 
+__v0.1__ prototype of KG-LXMERT\
+__v0.2__ : support T/V/T data split, masking only for literals (not for entities) 
