@@ -41,9 +41,9 @@ class translation_data_collator:
     def __call__(self,features: List[InputDataClass]) -> Dict[str, torch.Tensor]:
         if not isinstance(features[0], (dict, BatchEncoding)):
             features = [vars(f) for f in features]
-        batch = self._tensorize_batch(features)
+        batch, entity_mask = self._tensorize_batch(features)
         masked_texts, lm_label = self.mask_tokens(batch['lang_input_ids'])
-        masked_subs, kg_label = self.mask_kg(batch['kg_input_ids'])
+        masked_subs, kg_label = self.mask_kg(batch['kg_input_ids'], entity_mask)
         # Define batch and return
         batch['lang_input_ids'] = masked_texts
         batch['lm_label'] = lm_label
@@ -51,7 +51,6 @@ class translation_data_collator:
         batch['kg_label'] = kg_label
 
         return batch
-
 
     def _tensorize_batch(self,features: List[Dict]) -> Dict[str, torch.Tensor]:
         # In this function we'll make the assumption that all `features` in the batch
@@ -78,13 +77,20 @@ class translation_data_collator:
         # Handling of all other possible keys.
         # Again, we will use the first element to figure out which key/values are not None for this model.
         for k, v in first.items():
-            if k not in ("label", "label_ids") and v is not None and not isinstance(v, str):
+            if (k == "kg_entity_mask") and v is not None and not isinstance(v, str):
+                if isinstance(v, torch.Tensor):
+                    entity_mask = torch.stack([f[k] for f in features])
+                else:
+                    entity_mask = torch.tensor([f[k] for f in features])
+            elif k not in ("label", "label_ids") and v is not None and not isinstance(v, str):
                 if isinstance(v, torch.Tensor):
                     batch[k] = torch.stack([f[k] for f in features])
                 else:
                     batch[k] = torch.tensor([f[k] for f in features])
+            # else:
+            #     entity_mask = None
 
-        return batch
+        return batch, entity_mask
 
     def mask_tokens(self, inputs: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
         """
