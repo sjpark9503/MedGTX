@@ -1,5 +1,5 @@
 """
-Ver 0.1 for KG-LXMERT
+Ver 0.3 for KG-LXMERT
 """
 # Base packages
 import logging
@@ -13,8 +13,8 @@ from torch.utils.data import ConcatDataset
 # Own implementation
 from utils.parameters import parser
 from utils.dataset import get_dataset
-from utils.data_collator import translation_data_collator
-from model import LxmertForPreTraining
+from utils.data_collator import NodeMasking_DataCollator, NodeClassification_DataCollator, LiteralRegression_DataCollator
+from model import LxmertForPreTraining, LxmertForKGTokPredAndMaskedLM
 
 # From Huggingface transformers package
 from transformers import (
@@ -131,7 +131,7 @@ def main():
         if training_args.do_eval
         else None
     )
-    data_collator = translation_data_collator(tokenizer=tokenizer, kg_pad=data_args.kg_pad_idx, kg_mask=data_args.kg_mask_idx, kg_size = config.vocab_size['kg'])
+    data_collator = masking_data_collator(tokenizer=tokenizer, kg_special_token_ids=config.kg_special_token_ids, kg_size = config.vocab_size['kg'])
 
     # Initialize our Trainer
     trainer = Trainer(
@@ -155,28 +155,6 @@ def main():
         # so that you can share your model easily on huggingface.co/models =)
         if trainer.is_world_master():
             tokenizer.save_pretrained(training_args.output_dir)
-
-    # Evaluation
-    # results = {}
-    # if training_args.do_eval:
-    #     logger.info("*** Evaluate ***")
-    #
-    #     eval_output = trainer.evaluate()
-    #
-    #     perplexity = math.exp(eval_output["eval_loss"])
-    #     result = {"perplexity": perplexity}
-    #
-    #     output_eval_file = os.path.join(training_args.output_dir, "eval_results_lm.txt")
-    #     if trainer.is_world_master():
-    #         with open(output_eval_file, "w") as writer:
-    #             logger.info("***** Eval results *****")
-    #             for key in sorted(result.keys()):
-    #                 logger.info("  %s = %s", key, str(result[key]))
-    #                 writer.write("%s = %s\n" % (key, str(result[key])))
-    #
-    #     results.update(result)
-    #
-    # return results
 
 
 def _mp_fn(index):

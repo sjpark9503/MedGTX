@@ -16,7 +16,6 @@ import numpy as np
 
 from transformers.tokenization_utils_base import BatchEncoding, PaddingStrategy, PreTrainedTokenizerBase
 from transformers.tokenization_utils import PreTrainedTokenizer
-#from transformers.utils import logging
 
 from .parameters import DataTrainingArguments
 
@@ -45,14 +44,12 @@ class InputFeatures:
     lang_attention_mask: Optional[List[int]] = None
     kg_attention_mask: Optional[List[int]] = None
     kg_entity_mask: Optional[List[int]] = None
+    kg_label: Optional[List[int]] = None
     token_type_ids: Optional[List[int]] = None
 
     def to_json_string(self):
         """Serializes this instance to a JSON string."""
         return json.dumps(dataclasses.asdict(self)) + "\n"
-
-# class kg_vocab:
-#     def __init__(self,path):
 
 class HeadOnlyDataset(Dataset):
     """
@@ -80,12 +77,11 @@ class HeadOnlyDataset(Dataset):
     def batch2feature(self,kg_pad):
         for idx in tqdm(range(len(self.kg_batch_encoding['input']))):
             inputs = dict([('lang_'+k,self.text_batch_encoding[k][idx]) if 'token_type' not in k else (k, self.text_batch_encoding[k][idx]) for k in self.text_batch_encoding])
-            # !!!! ONLY FOR DEBUGGING PURPOSE !!!!
-            # temp = np.array(self.kg_batch_encoding[idx])
-            # temp[temp>50]=0
-            # inputs['kg_input_ids'] = temp.astype(np.int64).tolist()
             inputs['kg_input_ids'] = self.kg_batch_encoding['input'][idx]
-            inputs['kg_entity_mask'] = self.kg_batch_encoding['mask'][idx]
+            if 'mask' in self.kg_batch_encoding:
+                inputs['kg_entity_mask'] = self.kg_batch_encoding['mask'][idx]
+            if 'label' in self.kg_batch_encoding:
+                inputs['kg_label'] = self.kg_batch_encoding['label'][idx]
             inputs['kg_attention_mask'] = (np.array(inputs['kg_input_ids'])!=kg_pad).astype(np.int64).tolist()
             feature = InputFeatures(**inputs)
             self.features.append(feature)
@@ -111,3 +107,4 @@ def get_dataset(
         return ConcatDataset([_dataset(f) for f in glob(args.train_data_files)])
     else:
         return _dataset(args.train_data_file)
+

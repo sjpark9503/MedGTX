@@ -16,13 +16,10 @@
   "r_layers": 5,
   "task_mask_lm": true,
   "task_mask_kg": true,
-  "contrastive_learning": true,
-  "negative_samples": 10,
   "max_position_embeddings": {"lang": 512,"kg": 0},
   "vocab_size": {"lang": 30522, "kg": 2901117},
   "type_vocab_size": {"lang": 2,"kg": 0},
-  "num_kg_labels":0,
-  "kg_special_token_ids":{"PAD":0,"MASK":1},
-  "pretrained_kg_embedding": "../data/pretraining/pretrained_models/TransE",
+  "kg_pad_idx": 0,
+  "kg_mask_idx": 1,
   "x_layers": 5
 }

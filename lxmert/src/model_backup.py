@@ -140,6 +140,7 @@ class LxmertForQuestionAnsweringOutput(ModelOutput):
     vision_attentions: Optional[Tuple[torch.FloatTensor]] = None
     cross_encoder_attentions: Optional[Tuple[torch.FloatTensor]] = None
 
+
 @dataclass
 class LxmertForPreTrainingOutput(ModelOutput):
     """
@@ -181,6 +182,7 @@ class LxmertForPreTrainingOutput(ModelOutput):
     lang_prediction_logits: Optional[torch.FloatTensor] = None
     kg_prediction_logits: Optional[torch.FloatTensor] = None
     cross_relationship_score: Optional[torch.FloatTensor] = None
+    # question_answering_score: Optional[torch.FloatTensor] = None
     language_hidden_states: Optional[Tuple[torch.FloatTensor]] = None
     kg_hidden_states: Optional[Tuple[torch.FloatTensor]] = None
     language_attentions: Optional[Tuple[torch.FloatTensor]] = None
@@ -298,8 +300,9 @@ class LxmertEmbeddings(nn.Module):
         position_ids = torch.arange(seq_length, dtype=torch.long, device=device)
         position_ids = position_ids.unsqueeze(0).expand(input_shape)
 
-        if token_type_ids is None and self.token_type_embeddings is not None:
+        if token_type_ids is None:
             token_type_ids = torch.zeros(input_shape, dtype=torch.long, device=position_ids.device)
+
         if inputs_embeds is None:
             inputs_embeds = self.word_embeddings(input_ids)
         embeddings = inputs_embeds
@@ -566,9 +569,7 @@ class LxmertKGFeatureEncoder(nn.Module):
         self.dropout = nn.Dropout(config.hidden_dropout_prob)
 
     def forward(self):
-        """
-        To-Do : Some GCNs will be integrated in future
-        """
+
         return None
 
 
@@ -719,6 +720,7 @@ class LxmertPreTrainingHeads(nn.Module):
             seq_relationship_score = None
         return prediction_scores, seq_relationship_score
 
+
 class LxmertPreTrainedModel(PreTrainedModel):
     """
     An abstract class to handle weights initialization and a simple interface for downloading and loading pretrained
@@ -833,9 +835,6 @@ class LxmertModel(LxmertPreTrainedModel):
         super().__init__(config)
         self.lang_embeddings = LxmertEmbeddings(config,input_type='lang')
         self.kg_embeddings = LxmertEmbeddings(config,input_type='kg')
-        if not config.gcn and config.pretrained_kg_embedding:
-            logger.info("Load pretrained embedding for translation based KG-LXMERT")
-            self.set_kg_embeddings(torch.load(config.pretrained_kg_embedding))
         self.encoder = LxmertEncoder(config)
         self.pooler = LxmertPooler(config)
         self.init_weights()
@@ -850,10 +849,7 @@ class LxmertModel(LxmertPreTrainedModel):
         return self.kg_embeddings.word_embeddings
 
     def set_kg_embeddings(self, new_embeddings):
-        if len(config.kg_special_token_ids)>0:
-            self.kg_embeddings.word_embeddings.weight.data[len(config.kg_special_token_ids):,:] = new_embeddings.weight.data
-        else:
-            self.kg_embeddings.word_embeddings = new_embeddings
+        self.kg_embeddings.word_embeddings = new_embeddings
 
     @add_start_docstrings_to_callable(LXMERT_INPUTS_DOCSTRING.format("batch_size, sequence_length"))
     @add_code_sample_docstrings(
@@ -970,146 +966,6 @@ class LxmertModel(LxmertPreTrainedModel):
             cross_encoder_attentions=cross_encoder_attentions if output_attentions else None,
         )
 
-class LxmertForKGTokPredAndMaskedLM(LxmertPreTrainedModel):
-    def __init__(self, config):
-        super().__init__(config)
-        # Configuration
-        self.config = config
-        self.num_kg_labels = config.num_kg_labels
-
-        # Use of pre-training tasks
-        self.task_mask_lm = config.task_mask_lm
-
-        # Lxmert backbone
-        self.lxmert = LxmertModel(config)
-        self.dropout = nn.Dropout(config.hidden_dropout_prob)
-        self.classifier = nn.Linear(config.hidden_size, config.num_kg_labels)
-
-        # Pre-training heads
-        self.lm_head = LxmertPreTrainingHeads(config, self.lxmert.lang_embeddings.word_embeddings.weight)
-
-        # Weight initialization
-        self.init_weights()
-
-        # Loss functions
-        self.loss_fcts = {
-            "l2": SmoothL1Loss(reduction="none"),
-            "mse": MSELoss(reduction="none"),
-            "ce": CrossEntropyLoss(),
-        }
-
-    @add_start_docstrings_to_callable(LXMERT_INPUTS_DOCSTRING.format("batch_size, sequence_length"))
-    @replace_return_docstrings(output_type=LxmertForPreTrainingOutput, config_class=_CONFIG_FOR_DOC)
-    def forward(
-        self,
-        lang_input_ids=None,
-        kg_input_ids=None,
-        lang_inputs_embeds=None,
-        kg_inputs_embeds=None,
-        lang_attention_mask=None,
-        kg_attention_mask=None,
-        kg_label_mask=None,
-        lm_label=None,
-        kg_label=None,
-        token_type_ids=None,
-        output_attentions=None,
-        output_hidden_states=None,
-        return_dict=None,
-    ):
-        r"""
-        masked_lm_labels (``torch.LongTensor`` of shape ``(batch_size, sequence_length)``, `optional`):
-            Labels for computing the masked language modeling loss. Indices should be in ``[-100, 0, ...,
-            config.vocab_size]`` (see ``input_ids`` docstring) Tokens with indices set to ``-100`` are ignored
-            (masked), the loss is only computed for the tokens with labels in ``[0, ..., config.vocab_size]``
-        obj_labels: (``Dict[Str: Tuple[Torch.FloatTensor, Torch.FloatTensor]]``, `optional`):
-            each key is named after each one of the visual losses and each element of the tuple is of the shape
-            ``(batch_size, num_features)`` and ``(batch_size, num_features, visual_feature_dim)`` for each the label id
-            and the label score respectively
-        matched_label (``torch.LongTensor`` of shape ``(batch_size,)``, `optional`):
-            Labels for computing the whether or not the text input matches the image (classification) loss. Input
-            should be a sequence pair (see :obj:`input_ids` docstring) Indices should be in ``[0, 1]``:
-
-            - 0 indicates that the sentence does not match the image,
-            - 1 indicates that the sentence does match the image.
-        ans: (``Torch.Tensor`` of shape ``(batch_size)``, `optional`):
-            a one hot representation hof the correct answer `optional`
-
-        Returns:
-        """
-
-        device = lang_input_ids.device if lang_input_ids is not None else inputs_embeds.device
-        lxmert_output = self.lxmert(
-            lang_input_ids=lang_input_ids,
-            kg_input_ids=kg_input_ids,
-            lang_inputs_embeds=lang_inputs_embeds,
-            kg_inputs_embeds=kg_inputs_embeds,
-            lang_attention_mask=lang_attention_mask,
-            kg_attention_mask=kg_attention_mask,
-            token_type_ids=token_type_ids,
-            output_attentions=output_attentions,
-            output_hidden_states=output_hidden_states,
-            return_dict=return_dict,
-        )
-
-        lang_output, kg_output, pooled_output = (
-            lxmert_output[0],
-            lxmert_output[1],
-            lxmert_output[2],
-        )
-        lang_prediction_scores, cross_relationship_score = self.lm_head(lang_output, pooled_output)
-        kg_prediction_scores = self.classifier(self.dropout(kg_output))
-
-        total_loss = (
-            None
-            if (lm_label is None or kg_label is None)
-            else torch.tensor(0.0, device=device)
-        )
-        if lm_label is not None:
-            masked_lm_loss = self.loss_fcts["ce"](
-                lang_prediction_scores.view(-1, self.config.vocab_size['lang']),
-                lm_label.view(-1),
-            )
-            total_loss += masked_lm_loss
-        if kg_label is not None:
-            if self.num_kg_labels == 1:
-                #  We are doing regression
-                kg_intm_loss = loss_fct['mse'](logits.view(-1), labels.view(-1))
-                if kg_label_mask is not None:
-                    active_loss = kg_label_mask.view(-1) == 1
-                    kg_intm_loss = torch.where(active_loss,kg_intm_loss,0.0)
-                kg_loss = kg_intm_loss.mean()
-            else:
-                if kg_label_mask is not None:
-                    active_loss = kg_label_mask.view(-1) == 1
-                    active_logits = logits.view(-1, self.num_labels)
-                    active_labels = torch.where(
-                        active_loss, kg_label.view(-1), torch.tensor(loss_fct['ce'].ignore_index).type_as(labels)
-                    )
-                    kg_loss = loss_fct['ce'](active_logits, active_labels)
-                else:
-                    kg_loss = loss_fct['ce'](logits.view(-1, self.num_kg_labels), labels.view(-1))
-            total_loss += kg_loss
-
-        if not return_dict:
-            output = (
-                lang_prediction_scores,
-                kg_prediction_scores,
-                cross_relationship_score,
-            ) + lxmert_output[3:]
-            return ((total_loss,) + output) if total_loss is not None else output
-
-        return LxmertForPreTrainingOutput(
-            loss=total_loss,
-            lang_prediction_logits=lang_prediction_scores,
-            kg_prediction_logits=kg_prediction_scores,
-            cross_relationship_score=cross_relationship_score,
-            language_hidden_states=lxmert_output.language_hidden_states,
-            kg_hidden_states=lxmert_output.kg_hidden_states,
-            language_attentions=lxmert_output.language_attentions,
-            kg_attentions=lxmert_output.kg_attentions,
-            cross_encoder_attentions=lxmert_output.cross_encoder_attentions,
-        )
-
 @add_start_docstrings(
     """Lxmert Model with a specified pre-training head on top. """,
     LXMERT_START_DOCSTRING,
@@ -1125,9 +981,9 @@ class LxmertForPreTraining(LxmertPreTrainedModel):
         # Use of pre-training tasks
         self.task_mask_lm = config.task_mask_lm
         self.task_mask_kg = config.task_mask_kg
-        # self.task_obj_predict = config.task_obj_predict
-        # self.task_matched = config.task_matched
-        # self.task_qa = config.task_qa
+        self.task_obj_predict = config.task_obj_predict
+        self.task_matched = config.task_matched
+        self.task_qa = config.task_qa
 
         # Lxmert backbone
         self.lxmert = LxmertModel(config)

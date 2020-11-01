@@ -25,13 +25,12 @@
 + Save & Load pretrained models
 
 ## Waiting for implementation
-+ Load pre-trained KG embedding for translation based KG encoder
-+ Full WandB integration 
-+ Literal Regression Loss 
-+ Literal Bucket Prediction Loss
++ Full WandB integration __(In Progress)__
++ Preprocessing Labels for Negative sampling, Bucketized literals & Regression
 + GCN based KG encoder
-+ Downstream tasks _TBD
++ Downstream tasks _TBD_
 
 ## Release Notes
-__v0.1__ : prototype of KG-LXMERT
-__v0.2__ : support T/V/T data split, masking only for literals (not for entities) 
+__v0.1__ : prototype of KG-LXMERT\
+__v0.2__ : support T/V/T data split, add masking only on literals (not for entities)\
+__v0.3__ : support load & initialize pretrained KG embedding, add LxmertForKGTokPredAndMaskedLM in model.py, add NodeMasking_DataCollator, NodeClassification_DataCollator, LiteralRegression_DataCollator (now NCE, literal regression & classification is possible)

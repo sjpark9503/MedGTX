@@ -83,14 +83,6 @@ class DataTrainingArguments:
         },
     )
 
-    kg_pad_idx: int = field(
-        default=0,
-    )
-
-    kg_mask_idx: int = field(
-        default=1,
-    )
-
     overwrite_cache: bool = field(
         default=False, metadata={"help": "Overwrite the cached training and evaluation sets"}
     )
