@@ -22,7 +22,7 @@ from typing import Optional, Tuple
 
 import torch
 from torch import nn
-from torch.nn import CrossEntropyLoss, SmoothL1Loss
+from torch.nn import CrossEntropyLoss, MSELoss, SmoothL1Loss
 
 from transformers.activations import ACT2FN, gelu
 from transformers.configuration_lxmert import LxmertConfig
@@ -1075,15 +1075,13 @@ class LxmertForKGTokPredAndMaskedLM(LxmertPreTrainedModel):
                 #  We are doing regression
                 kg_intm_loss = loss_fct['mse'](logits.view(-1), labels.view(-1))
                 if kg_label_mask is not None:
-                    active_loss = kg_label_mask.view(-1) == 1
-                    kg_intm_loss = torch.where(active_loss,kg_intm_loss,0.0)
+                    kg_intm_loss = torch.where(kg_label_mask.view(-1),kg_intm_loss,0.0)
                 kg_loss = kg_intm_loss.mean()
             else:
                 if kg_label_mask is not None:
-                    active_loss = kg_label_mask.view(-1) == 1
                     active_logits = logits.view(-1, self.num_labels)
                     active_labels = torch.where(
-                        active_loss, kg_label.view(-1), torch.tensor(loss_fct['ce'].ignore_index).type_as(labels)
+                        kg_label_mask.view(-1), kg_label.view(-1), torch.tensor(loss_fct['ce'].ignore_index).type_as(labels)
                     )
                     kg_loss = loss_fct['ce'](active_logits, active_labels)
                 else:

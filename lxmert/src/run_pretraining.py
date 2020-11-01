@@ -97,7 +97,7 @@ def main():
         )
 
     if model_args.model_name_or_path:
-        model = LxmertForPreTraining.from_pretrained(
+        model = LxmertForKGTokPredAndMaskedLM.from_pretrained(
             model_args.model_name_or_path,
             from_tf=bool(".ckpt" in model_args.model_name_or_path),
             config=config,
@@ -105,7 +105,7 @@ def main():
         )
     else:
         logger.info("Training new model from scratch")
-        model = LxmertForPreTraining(config)
+        model = LxmertForKGTokPredAndMaskedLM(config)
 
     #model.resize_token_embeddings(len(tokenizer))
 
@@ -124,14 +124,14 @@ def main():
     # Get datasets
 
     train_dataset = (
-        get_dataset(data_args, tokenizer=tokenizer, kg_pad=data_args.kg_pad_idx) if training_args.do_train else None
+        get_dataset(data_args, tokenizer=tokenizer, kg_pad=config.kg_special_token_ids["PAD"]) if training_args.do_train else None
     )
     eval_dataset = (
-        get_dataset(data_args, tokenizer=tokenizer, evaluate=True)
+        get_dataset(data_args, tokenizer=tokenizer, kg_pad=config.kg_special_token_ids["PAD"], evaluate=True)
         if training_args.do_eval
         else None
     )
-    data_collator = masking_data_collator(tokenizer=tokenizer, kg_special_token_ids=config.kg_special_token_ids, kg_size = config.vocab_size['kg'])
+    data_collator = NodeClassification_DataCollator(tokenizer=tokenizer, kg_special_token_ids=config.kg_special_token_ids, kg_size = config.vocab_size['kg'])
 
     # Initialize our Trainer
     trainer = Trainer(

@@ -140,7 +140,7 @@ class NodeMasking_DataCollator:
 
         # 10% of the time, we replace masked input tokens with random word
         indices_random = torch.bernoulli(torch.full(labels.shape, 0.5)).bool() & masked_indices & ~indices_replaced
-        random_nodes = torch.randint(self.kg_size, labels.shape, dtype=torch.long)
+        random_nodes = torch.randint(len(self.kg_special_token_ids),self.kg_size, labels.shape, dtype=torch.long)
         inputs[indices_random] = random_nodes[indices_random]
 
         # The rest of the time (10% of the time) we keep the masked input tokens unchanged
@@ -264,7 +264,7 @@ class NodeClassification_DataCollator:
 
         # 10% of the time, we replace masked input tokens with random word
         indices_random = torch.bernoulli(torch.full(inputs.shape, 0.5)).bool() & masked_indices & ~indices_replaced
-        random_nodes = torch.randint(self.kg_size, inputs.shape, dtype=torch.long)
+        random_nodes = torch.randint(len(self.kg_special_token_ids),self.kg_size, inputs.shape, dtype=torch.long)
         inputs[indices_random] = random_nodes[indices_random]
 
         # The rest of the time (10% of the time) we keep the masked input tokens unchanged
@@ -390,7 +390,7 @@ class LiteralRegression_DataCollator:
 
         # 10% of the time, we replace masked input tokens with random word
         indices_random = torch.bernoulli(torch.full(inputs.shape, 0.5)).bool() & masked_indices & ~indices_replaced
-        random_nodes = torch.randint(self.kg_size, inputs.shape, dtype=torch.long)
+        random_nodes = torch.randint(len(self.kg_special_token_ids),self.kg_size, inputs.shape, dtype=torch.long)
         inputs[indices_random] = random_nodes[indices_random]
 
         # The rest of the time (10% of the time) we keep the masked input tokens unchanged
