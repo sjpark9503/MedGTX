@@ -1073,19 +1073,19 @@ class LxmertForKGTokPredAndMaskedLM(LxmertPreTrainedModel):
         if kg_label is not None:
             if self.num_kg_labels == 1:
                 #  We are doing regression
-                kg_intm_loss = loss_fct['mse'](logits.view(-1), labels.view(-1))
+                kg_intm_loss = self.loss_fcts['mse'](kg_prediction_scores.view(-1), kg_label.view(-1))
                 if kg_label_mask is not None:
                     kg_intm_loss = torch.where(kg_label_mask.view(-1),kg_intm_loss,0.0)
                 kg_loss = kg_intm_loss.mean()
             else:
                 if kg_label_mask is not None:
-                    active_logits = logits.view(-1, self.num_labels)
+                    active_logits = kg_prediction_scores.view(-1, self.num_kg_labels)
                     active_labels = torch.where(
-                        kg_label_mask.view(-1), kg_label.view(-1), torch.tensor(loss_fct['ce'].ignore_index).type_as(labels)
+                        kg_label_mask.view(-1), kg_label.view(-1), torch.tensor(self.loss_fcts['ce'].ignore_index).type_as(kg_label)
                     )
-                    kg_loss = loss_fct['ce'](active_logits, active_labels)
+                    kg_loss = self.loss_fcts['ce'](active_logits, active_labels)
                 else:
-                    kg_loss = loss_fct['ce'](logits.view(-1, self.num_kg_labels), labels.view(-1))
+                    kg_loss = self.loss_fcts['ce'](kg_prediction_scores.view(-1, self.num_kg_labels), kg_label.view(-1))
             total_loss += kg_loss
 
         if not return_dict:
