@@ -178,6 +178,7 @@ class LxmertForPreTrainingOutput(ModelOutput):
     """
 
     loss: [torch.FloatTensor] = None
+    loss_dict: Optional[dict] = None
     lang_prediction_logits: Optional[torch.FloatTensor] = None
     kg_prediction_logits: Optional[torch.FloatTensor] = None
     cross_relationship_score: Optional[torch.FloatTensor] = None
@@ -1064,12 +1065,14 @@ class LxmertForKGTokPredAndMaskedLM(LxmertPreTrainedModel):
             if (lm_label is None or kg_label is None)
             else torch.tensor(0.0, device=device)
         )
+        loss_dict = dict()
         if lm_label is not None:
             masked_lm_loss = self.loss_fcts["ce"](
                 lang_prediction_scores.view(-1, self.config.vocab_size['lang']),
                 lm_label.view(-1),
             )
             total_loss += masked_lm_loss
+            loss_dict['lm_loss']=masked_lm_loss.item()
         if kg_label is not None:
             if self.num_kg_labels == 1:
                 #  We are doing regression
@@ -1087,17 +1090,21 @@ class LxmertForKGTokPredAndMaskedLM(LxmertPreTrainedModel):
                 else:
                     kg_loss = self.loss_fcts['ce'](kg_prediction_scores.view(-1, self.num_kg_labels), kg_label.view(-1))
             total_loss += kg_loss
+            loss_dict['kg_loss']=kg_loss.item()
 
         if not return_dict:
             output = (
+                loss_dict,
                 lang_prediction_scores,
                 kg_prediction_scores,
                 cross_relationship_score,
+
             ) + lxmert_output[3:]
             return ((total_loss,) + output) if total_loss is not None else output
 
         return LxmertForPreTrainingOutput(
             loss=total_loss,
+            loss_dict=loss_dict,
             lang_prediction_logits=lang_prediction_scores,
             kg_prediction_logits=kg_prediction_scores,
             cross_relationship_score=cross_relationship_score,

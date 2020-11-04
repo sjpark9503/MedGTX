@@ -35,4 +35,6 @@ __v0.1__ : prototype of KG-LXMERT\
 __v0.2__ : support T/V/T data split, add masking only on literals (not for entities)\
 __v0.3__ : support load & initialize pretrained KG embedding, add LxmertForKGTokPredAndMaskedLM in model.py, add NodeMasking_DataCollator, NodeClassification_DataCollator, LiteralRegression_DataCollator (now NCE, literal regression & classification is possible)\
 __v1.0__ : Full-featured (Preprocessing, Pre-training and TVT split evaluation)\
-__v1.0.2__ : Debugging done
+__v1.0.2__ : Debugging done\
+__v1.0.3__ : Fix triple2subgraph.ipynb\
+__v1.1__ : Add custom trainer.py, fix triple2subgraph.ipynb _(Debugging...)_

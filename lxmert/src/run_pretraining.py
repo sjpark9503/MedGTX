@@ -15,6 +15,7 @@ from utils.parameters import parser
 from utils.dataset import get_dataset
 from utils.data_collator import NodeMasking_DataCollator, NodeClassification_DataCollator, LiteralRegression_DataCollator
 from model import LxmertForPreTraining, LxmertForKGTokPredAndMaskedLM
+from trainer import Trainer
 
 # From Huggingface transformers package
 from transformers import (
@@ -23,7 +24,7 @@ from transformers import (
     LxmertConfig,
     LxmertTokenizer,
     PreTrainedTokenizer,
-    Trainer,
+    # Trainer,
     set_seed,
 )
 
@@ -139,7 +140,7 @@ def main():
         args=training_args,
         data_collator=data_collator,
         train_dataset=train_dataset,
-        prediction_loss_only=True,
+        eval_dataset=eval_dataset
     )
 
     # Training
