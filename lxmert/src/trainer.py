@@ -30,6 +30,9 @@ from tqdm import tqdm
 import numpy as np
 import torch
 from packaging import version
+
+from utils.compute_metrics import get_accuracy
+
 from torch import nn
 from torch.utils.data.dataloader import DataLoader
 from torch.utils.data.dataset import Dataset
@@ -738,7 +741,7 @@ class Trainer:
             wandb.log(tr_dict)
             loss_dict = {'lm_loss': list(), 'kg_loss': list()}
 
-        if self.state.global_step % self.args.eval_steps == 0:
+        if (self.state.global_step % self.args.eval_steps == 0) and self.args.evaluate_during_training:
             metrics = self.evaluate()
         else:
             metrics = None
@@ -1203,10 +1206,10 @@ class Trainer:
 
         test_dataloader = self.get_test_dataloader(test_dataset)
 
-        return self.prediction_loop(test_dataloader, description="Prediction")
+        return self.prediction_loop(test_dataloader, description="Prediction", prediction=True)
 
     def prediction_loop(
-        self, dataloader: DataLoader, description: str, prediction_loss_only: Optional[bool] = None
+        self, dataloader: DataLoader, description: str, prediction_loss_only: Optional[bool] = None, prediction: Optional[bool] = False
     ) -> PredictionOutput:
         """
         Prediction/evaluation loop, shared by :obj:`Trainer.evaluate()` and :obj:`Trainer.predict()`.
@@ -1255,6 +1258,7 @@ class Trainer:
 
         model.eval()
 
+
         if is_torch_tpu_available():
             dataloader = pl.ParallelLoader(dataloader, [self.args.device]).per_device_loader(self.args.device)
 
@@ -1262,11 +1266,16 @@ class Trainer:
             self._past = None
         #
         # self.callback_handler.eval_dataloader = dataloader
-        self.metrics = ('loss',0.0)
+        # Initialzie
+        preds = list()
+        metrics = ('loss',0.0)
         if self.eval_criterion is not None:
-            self.metrics = dict((self.metrics,)+((k,0.0) for k in self.eval_criterion))
+            metrics = (metrics,)+((k,0.0) for k in self.eval_criterion)
+        self.metrics = dict(metrics)
         for step, inputs in enumerate(dataloader):
-            preds = self.prediction_step(model, inputs, prediction_loss_only)
+            prediction_step = self.prediction_step(model, inputs, prediction_loss_only, prediction)
+            if prediction:
+                preds.append(prediction_step)
             # if loss is not None:
             #     losses = loss.repeat(batch_size)
             #     losses_host = losses if losses_host is None else torch.cat((losses_host, losses), dim=0)
@@ -1308,12 +1317,19 @@ class Trainer:
         # if eval_loss is not None:
         #     metrics["eval_loss"] = eval_loss.mean().item()
 
+        if preds:
+            numpy_preds = list()
+            for idx in range(len(preds[0])):
+                numpy_preds.append(np.concatenate([pred[idx] for pred in preds],axis=0))
+        else:
+            numpy_preds = None
+
         # Prefix all keys with eval_
         for key in list(self.metrics.keys()):
-            if not key.startswith("eval_"):
-                self.metrics[f"eval_{key}"] = self.metrics.pop(key)
+            if not key.startswith("eval_") and not key.startswith("num_steps"):
+                self.metrics[f"eval_{key}"] = self.metrics.pop(key)/self.metrics['num_steps']
 
-        return preds
+        return PredictionOutput(predictions=numpy_preds, label_ids=None, metrics=self.metrics)
 
     # def _gather_and_numpify(self, tensors, name):
     #     """
@@ -1330,8 +1346,8 @@ class Trainer:
     #     return nested_numpify(tensors)
 
     def prediction_step(
-        self, model: nn.Module, inputs: Dict[str, Union[torch.Tensor, Any]], prediction_loss_only: bool
-    ) -> Tuple[Optional[float], Optional[torch.Tensor], Optional[torch.Tensor]]:
+        self, model: nn.Module, inputs: Dict[str, Union[torch.Tensor, Any]], prediction_loss_only: bool, prediction: bool
+    ):
         """
         Perform an evaluation step on :obj:`model` using obj:`inputs`.
         Subclass and override to inject custom behavior.
@@ -1348,25 +1364,28 @@ class Trainer:
             Tuple[Optional[float], Optional[torch.Tensor], Optional[torch.Tensor]]: A tuple with the loss, logits and
             labels (each being optional).
         """
-        has_labels = all(inputs.get(k) is not None for k in self.label_names)
+        # has_labels = all(inputs.get(k) is not None for k in self.label_names)
         inputs = self._prepare_inputs(inputs)
-
-        _, predicted = torch.max(outputs.data, 1)
-        total += labels.size(0)
-        correct += (predicted == labels).sum().item()
-
+        # !!!! SHOULD BE MODIFIED IN FUTURE VERSION. !!!!
         with torch.no_grad():
             if self.args.fp16 and _use_native_amp:
                 with autocast():
                     outputs = model(**inputs)
             else:
                 outputs = model(**inputs)
-            loss = outputs[0].mean().item()
-            if has_labels:
-                
-                logits = outputs[1:]
-            else:
-                loss = None
+
+            if prediction:
+                return (outputs[2].detach().numpy(), outputs[3].detach().numpy())
+
+            self.metrics['loss'] += outputs[0].mean().item()
+            if not prediction_loss_only:
+                if ('lang_acc' in self.eval_criterion) and ('lm_label' in self.label_names):
+                    self.metrics['lang_acc'] += get_accuracy(outputs[2].data, inputs['lm_label'].data)
+                if ('kg_acc' in self.eval_criterion) and ('kg_label' in self.label_names):
+                    self.metrics['kg_acc'] += get_accuracy(outputs[3].data, inputs['kg_label'].data)
+            self.metrics['num_steps']+=1
+            # else:
+            #     loss = None
                 # Slicing so we get a tuple even if `outputs` is a `ModelOutput`.
                 #logits = outputs[2:4]
             # if self.args.past_index >= 0:
@@ -1374,8 +1393,6 @@ class Trainer:
             #     # Remove the past from the logits.
             #     logits = logits[: self.args.past_index - 1] + logits[self.args.past_index :]
 
-        if prediction_loss_only:
-            return (loss, None, None)
         #
         # logits = nested_detach(logits)
         # if len(logits) == 1:
@@ -1388,7 +1405,7 @@ class Trainer:
         # else:
         #     labels = None
 
-        return (loss, logits, labels)
+        return None
 
     def floating_point_ops(self, inputs: Dict[str, Union[torch.Tensor, Any]]):
         """
