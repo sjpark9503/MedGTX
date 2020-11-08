@@ -55,6 +55,6 @@ __v1.0.3__ : Fix triple2subgraph.ipynb\
 __v1.1__ : Add custom trainer.py, fix triple2subgraph.ipynb _(Debugging...)_\
 __v1.1.1__ : Fix trainer.py _(Debugging...)_\
 __v1.2__ : Debugging for trainer.py **done**!\
-__v1.2.1__ : Fix preprocessing modules, add text preprocessing ipython
-__v1.3__ : Support evaluation
+__v1.2.1__ : Fix preprocessing modules, add text preprocessing ipython\
+__v1.3__ : Support evaluation\
 __v1.3.1__ : Fix preprocessing ipython, add px/rx/dx parts
