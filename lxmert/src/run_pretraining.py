@@ -132,6 +132,11 @@ def main():
         if training_args.do_eval
         else None
     )
+    # test_dataset = (
+    #     get_dataset(data_args, tokenizer=tokenizer, kg_pad=config.kg_special_token_ids["PAD"], test=True)
+    #     if training_args.do_eval
+    #     else None
+    # )
     data_collator = NodeClassification_DataCollator(tokenizer=tokenizer, kg_special_token_ids=config.kg_special_token_ids, kg_size = config.vocab_size['kg'])
 
     # Initialize our Trainer
@@ -157,6 +162,19 @@ def main():
         if trainer.is_world_master():
             tokenizer.save_pretrained(training_args.output_dir)
 
+    # Evaluation
+    # if training_args.do_eval:
+    #     model_path = (
+    #         model_args.model_name_or_path
+    #         if model_args.model_name_or_path is not None and os.path.isdir(model_args.model_name_or_path)
+    #         else None
+    #     )
+    #     trainer.evaluate()
+    #     trainer.save_model()
+    #     # For convenience, we also re-save the tokenizer to the same directory,
+    #     # so that you can share your model easily on huggingface.co/models =)
+    #     if trainer.is_world_master():
+    #         tokenizer.save_pretrained(training_args.output_dir)
 
 def _mp_fn(index):
     # For xla_spawn (TPUs)

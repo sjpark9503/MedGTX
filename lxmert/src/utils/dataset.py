@@ -96,6 +96,7 @@ def get_dataset(
     args: DataTrainingArguments,
     tokenizer: PreTrainedTokenizer,
     evaluate: bool = False,
+    test: bool = False,
     kg_pad: int = 0,
 ):
     def _dataset(file_path):
@@ -103,6 +104,8 @@ def get_dataset(
 
     if evaluate:
         return _dataset(args.eval_data_file)
+    if test:
+        return _dataset(args.test_data_file)
     elif args.train_data_files:
         return ConcatDataset([_dataset(f) for f in glob(args.train_data_files)])
     else:

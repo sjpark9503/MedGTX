@@ -77,7 +77,7 @@ from transformers.trainer_utils import (
     default_hp_space,
     set_seed,
 )
-from transformers.training_args import TrainingArguments
+from utils.training_args import TrainingArguments
 from transformers.utils import logging
 
 
@@ -192,7 +192,7 @@ class Trainer:
         self.eval_dataset = eval_dataset
         self.tokenizer = tokenizer
 
-        self.eval_criterion = eval_criterion
+        self.eval_criterion = args.eval_criterion.split(',')
         self.optimizer, self.lr_scheduler = optimizers
         if model_init is not None and (self.optimizer is not None or self.lr_scheduler is not None):
             raise RuntimeError(
@@ -1267,9 +1267,9 @@ class Trainer:
         # self.callback_handler.eval_dataloader = dataloader
         # Initialzie
         preds = list()
-        metrics = (('loss',0.0),('num_steps',0))
+        metrics = [('loss',0.0),('num_steps',0)]
         if self.eval_criterion is not None:
-            metrics += ((k,0.0) for k in self.eval_criterion)
+            metrics += [(k,0.0) for k in self.eval_criterion]
         self.metrics = dict(metrics)
         for step, inputs in tqdm(enumerate(dataloader),total=len(dataloader)):
             prediction_step = self.prediction_step(model, inputs, prediction_loss_only, prediction)
@@ -1327,6 +1327,9 @@ class Trainer:
         for key in list(self.metrics.keys()):
             if not key.startswith("eval_") and not key.startswith("num_steps"):
                 self.metrics[f"eval_{key}"] = self.metrics.pop(key)/self.metrics['num_steps']
+            elif key.startswith("num_steps"):
+                self.metrics.pop(key)
+
 
         return PredictionOutput(predictions=numpy_preds, label_ids=None, metrics=self.metrics)
 
@@ -1378,9 +1381,9 @@ class Trainer:
 
             self.metrics['loss'] += outputs[0].mean().item()
             if not prediction_loss_only:
-                if ('lang_acc' in self.eval_criterion) and ('lm_label' in self.label_names):
+                if 'lang_acc' in self.eval_criterion:
                     self.metrics['lang_acc'] += get_accuracy(outputs[2].data, inputs['lm_label'].data)
-                if ('kg_acc' in self.eval_criterion) and ('kg_label' in self.label_names):
+                if 'kg_acc' in self.eval_criterion:
                     self.metrics['kg_acc'] += get_accuracy(outputs[3].data, inputs['kg_label'].data)
             self.metrics['num_steps']+=1
             # else:

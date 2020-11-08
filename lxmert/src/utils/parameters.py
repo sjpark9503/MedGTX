@@ -2,11 +2,12 @@
 # Copyleft 2019 project LXRT.
 from dataclasses import dataclass, field
 from typing import Optional
+from utils.training_args import TrainingArguments
 from transformers import (
     CONFIG_MAPPING,
     MODEL_WITH_LM_HEAD_MAPPING,
     HfArgumentParser,
-    TrainingArguments
+    #TrainingArguments
 )
 
 MODEL_CONFIG_CLASSES = list(MODEL_WITH_LM_HEAD_MAPPING.keys())
