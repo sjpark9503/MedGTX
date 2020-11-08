@@ -173,8 +173,8 @@ class Trainer:
             args = TrainingArguments("tmp_trainer")
         self.args = args
         # Initialize WandB
-        wandb.init(config=vars(args), project=args.model_type)
-        wandb.run.name = wandb.run.id
+        wandb.init(config=vars(args), project=model.config.model_type)
+        wandb.run.name = self.args.run_name
         #wandb.run.save()
         # Seed must be set before instantiating the model when using model
         set_seed(self.args.seed)
@@ -633,7 +633,7 @@ class Trainer:
             steps_in_epoch = len(epoch_iterator) if train_dataset_is_sized else self.args.max_steps
             # self.control = self.callback_handler.on_epoch_begin(self.args, self.state, self.control)
 
-            for step, inputs in tqdm(enumerate(epoch_iterator),desc='Step'):
+            for step, inputs in tqdm(enumerate(epoch_iterator),total=steps_in_epoch,desc='Step'):
 
                 # Skip past any already trained steps if resuming training
                 if steps_trained_in_current_epoch > 0:
@@ -685,13 +685,13 @@ class Trainer:
                     self.state.epoch = epoch + (step + 1) / steps_in_epoch
                     # self.control = self.callback_handler.on_step_end(self.args, self.state, self.control)
 
-                    loss_dict = self.log_save_evaluate(tr_loss, loss_dict, model, trial)
+                    loss_dict = self.log_save_evaluate(tr_loss, loss_dict, model)
 
                 # if self.control.should_epoch_stop or self.control.should_training_stop:
                 #     break
 
             # self.control = self.callback_handler.on_epoch_end(self.args, self.state, self.control)
-            loss_dict = self.log_save_evaluate(tr_loss, loss_dict, model, trial)
+            loss_dict = self.log_save_evaluate(tr_loss, loss_dict, model)
 
             if self.args.tpu_metrics_debug or self.args.debug:
                 if is_torch_tpu_available():
@@ -729,7 +729,7 @@ class Trainer:
 
         return TrainOutput(self.state.global_step, tr_loss / self.state.global_step)
 
-    def log_save_evaluate(self, tr_loss, loss_dict, model, trial):
+    def log_save_evaluate(self, tr_loss, loss_dict, model):
         if self.state.global_step % self.args.logging_steps == 0:
             tr_dict = self.process_loss_dict(loss_dict, accumulate=True)
             tr_dict['total_loss'] = tr_loss / self.state.global_step
@@ -740,18 +740,18 @@ class Trainer:
             )
             wandb.log(tr_dict)
             loss_dict = {'lm_loss': list(), 'kg_loss': list()}
-
+            logger.info("log done")
         if (self.state.global_step % self.args.eval_steps == 0) and self.args.evaluate_during_training:
             metrics = self.evaluate()
+            logger.info("eval done")
         else:
             metrics = None
-
         if self.state.global_step % self.args.save_steps == 0:
-            self._save_checkpoint(model, trial, metrics=metrics)
+            self._save_checkpoint(model, metrics=metrics)
 
         return loss_dict
 
-    def _save_checkpoint(self, model, trial, metrics=None):
+    def _save_checkpoint(self, model, trial=None, metrics=None):
         # In all cases (even distributed/parallel), self.model is always a reference
         # to the model we want to save.
         if hasattr(model, "module"):
@@ -761,14 +761,13 @@ class Trainer:
         # Save model checkpoint
         checkpoint_folder = f"{PREFIX_CHECKPOINT_DIR}-{self.state.global_step}"
 
-        if self.hp_search_backend is not None and trial is not None:
-            run_id = trial.number if self.hp_search_backend == HPSearchBackend.OPTUNA else tune.get_trial_id()
-            run_name = self.hp_name(trial) if self.hp_name is not None else f"run-{run_id}"
-            output_dir = os.path.join(self.args.output_dir, run_name, checkpoint_folder)
-        else:
-            output_dir = os.path.join(self.args.output_dir, checkpoint_folder)
-
-            self.store_flos()
+        # if self.hp_search_backend is not None and trial is not None:
+        #     run_id = trial.number if self.hp_search_backend == HPSearchBackend.OPTUNA else tune.get_trial_id()
+        #     run_name = self.hp_name(trial) if self.hp_name is not None else f"run-{run_id}"
+        #     output_dir = os.path.join(self.args.output_dir, run_name, checkpoint_folder)
+        # else:
+        output_dir = os.path.join(self.args.output_dir, checkpoint_folder)
+        self.store_flos()
         self.save_model(output_dir)
 
         # Save optimizer and scheduler
@@ -996,10 +995,10 @@ class Trainer:
 
     def process_loss_dict(self,loss_dict,step_loss_dict=None,accumulate=False):
         if accumulate:
-            return {k:sum(v)/len(v) for (k,v) in list(loss_dict.items())}
+            return {k:(sum(v)/len(v)) for (k,v) in list(loss_dict.items())}
         else:
-            for k in loss_dict:
-                loss_dict[k].append(step_loss_dict)
+            for k in step_loss_dict:
+                loss_dict[k].append(step_loss_dict[k])
             return loss_dict
 
     def compute_loss(self, model, inputs):
@@ -1268,11 +1267,11 @@ class Trainer:
         # self.callback_handler.eval_dataloader = dataloader
         # Initialzie
         preds = list()
-        metrics = ('loss',0.0)
+        metrics = (('loss',0.0),('num_steps',0))
         if self.eval_criterion is not None:
-            metrics = (metrics,)+((k,0.0) for k in self.eval_criterion)
+            metrics += ((k,0.0) for k in self.eval_criterion)
         self.metrics = dict(metrics)
-        for step, inputs in enumerate(dataloader):
+        for step, inputs in tqdm(enumerate(dataloader),total=len(dataloader)):
             prediction_step = self.prediction_step(model, inputs, prediction_loss_only, prediction)
             if prediction:
                 preds.append(prediction_step)

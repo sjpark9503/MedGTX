@@ -4,11 +4,10 @@ import os
 # GPU-IDs which you want to run experiment on
 os.environ["CUDA_VISIBLE_DEVICES"] = '0'
 # Paths
-PATH = ''
-EXP_PATH = os.path.join(PATH,'kg_txt_multimodal/lxmert')
-SRC_PATH = os.path.join(PATH, 'src/run_pretraining.py')
-TASK_NAME = ''
-RUN_NAME = ''
+EXP_PATH = os.getcwd()
+SRC_PATH = os.path.join(EXP_PATH, 'src/run_pretraining.py')
+TASK_NAME = 'masked_literal_prediction'
+RUN_NAME = 'run1'
 #
 TRAINING_CONFIG = {
     "model_type":"lxmert",
@@ -20,13 +19,13 @@ TRAINING_CONFIG = {
     "prediction_loss_only":True,
     "mlm_probability": 0.15,
     "block_size": 512,
-    "per_device_train_batch_size": 4,
+    "per_device_train_batch_size": 8,
     "per_device_eval_batch_size": 4,
     "learning_rate": 1e-3,
-    "num_train_epochs": 10,
-    "logging_steps": 10,
-    "save_steps": 10,
-    "eval_steps": 10,
+    "num_train_epochs": 20,
+    "logging_steps": int(5420/20),
+    "save_steps": int(5420/2),
+    "eval_steps": int(5420/2),
     "train_data_file":os.path.join(EXP_PATH,"data/{}/train".format(TASK_NAME)),
     "eval_data_file": os.path.join(EXP_PATH,"data/{}/valid".format(TASK_NAME)),
     "run_name":RUN_NAME,
