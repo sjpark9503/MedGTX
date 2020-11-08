@@ -5,11 +5,12 @@ import pandas
 import numpy as np
 from datetime import datetime
 
-from process_mimic_db.utils import *
+from utils.evaluation.process_mimic_db.utils import *
 
 def build_demographic_table(data_dir, out_dir, conn):
     print('Build demographic_table')
-    pat_id2name = get_patient_name('process_mimic_db')
+    print(data_dir)
+    pat_id2name = get_patient_name(data_dir)
     pat_info = read_table(data_dir, 'PATIENTS.csv')
     adm_info = read_table(data_dir, 'ADMISSIONS.csv')
     print('-- Process PATIENTS')
