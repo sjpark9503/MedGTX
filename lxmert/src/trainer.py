@@ -1327,9 +1327,6 @@ class Trainer:
         for key in list(self.metrics.keys()):
             if not key.startswith("eval_") and not key.startswith("num_steps"):
                 self.metrics[f"eval_{key}"] = self.metrics.pop(key)/self.metrics['num_steps']
-            elif key.startswith("num_steps"):
-                self.metrics.pop(key)
-
 
         return PredictionOutput(predictions=numpy_preds, label_ids=None, metrics=self.metrics)
 
