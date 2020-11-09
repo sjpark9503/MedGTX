@@ -39,6 +39,35 @@ pip install transformers wandb
 ### Utilities
 + Save & Load pretrained models
 
+### :file_folder: Directory (Briefly)
+
+```
+.
+├── eda
+├── knowemb
+│   ├── openke
+│   ├── optimization
+│   ├── wandb
+│   └── train.py
+├── lxmert
+│   ├── data
+│   ├── config
+│   └── src
+│       ├── utils
+│       ├── model.py
+│       ├── run_pretraining.py
+│       └── trainer.py
+│   ├── debugging.ipynb
+│   └── run.py
+├── preprocessing
+│   ├── utils
+│   ├── extract_text.ipynb
+│   ├── table2triple.ipynb
+│   ├── triple2subgraph.ipynb
+│   └── README.md
+└── README.md
+```
+
 ## Waiting for implementation
 + Full WandB integration __(In Progress)__
 + Preprocessing Labels for Negative sampling, Bucketized literals & Regression __(In Progress)__
