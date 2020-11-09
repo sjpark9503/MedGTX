@@ -994,7 +994,7 @@ class LxmertForKGTokPredAndMaskedLM(LxmertPreTrainedModel):
             logger.info("Load pretrained embedding for translation based KG-LXMERT")
             loaded_state_dict = torch.load(config.pretrained_kg_embedding)
             new_embedding = loaded_state_dict['ent_embeddings.weight']
-            lxmert.set_kg_embeddings(new_embedding)
+            self.lxmert.set_kg_embeddings(new_embedding)
             del loaded_state_dict
             torch.cuda.empty_cache()
 
