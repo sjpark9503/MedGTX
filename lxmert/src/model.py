@@ -36,7 +36,6 @@ from transformers.file_utils import (
 from transformers.modeling_utils import PreTrainedModel
 from transformers.utils import logging
 
-
 logger = logging.get_logger(__name__)
 
 _CONFIG_FOR_DOC = "LxmertConfig"
@@ -836,7 +835,11 @@ class LxmertModel(LxmertPreTrainedModel):
         self.kg_embeddings = LxmertEmbeddings(config,input_type='kg')
         if not config.gcn and config.pretrained_kg_embedding:
             logger.info("Load pretrained embedding for translation based KG-LXMERT")
-            self.set_kg_embeddings(torch.load(config.pretrained_kg_embedding))
+            loaded_state_dict = torch.load(config.pretrained_kg_embedding)
+            new_embedding = loaded_state_dict['ent_embeddings.weight']
+            self.set_kg_embeddings(new_embedding)
+            del loaded_state_dict
+            torch.cuda.empty_cache()
         self.encoder = LxmertEncoder(config)
         self.pooler = LxmertPooler(config)
         self.init_weights()
@@ -850,11 +853,11 @@ class LxmertModel(LxmertPreTrainedModel):
     def get_kg_embeddings(self):
         return self.kg_embeddings.word_embeddings
 
-    def set_kg_embeddings(self, new_embeddings):
-        if len(config.kg_special_token_ids)>0:
-            self.kg_embeddings.word_embeddings.weight.data[len(config.kg_special_token_ids):,:] = new_embeddings.weight.data
+    def set_kg_embeddings(self, new_embedding):
+        if len(self.config.kg_special_token_ids)>0:
+            self.kg_embeddings.word_embeddings.weight.data[len(self.config.kg_special_token_ids):,:] = new_embedding.data
         else:
-            self.kg_embeddings.word_embeddings = new_embeddings
+            self.kg_embeddings.word_embeddings.weight.data = new_embeddings.data
 
     @add_start_docstrings_to_callable(LXMERT_INPUTS_DOCSTRING.format("batch_size, sequence_length"))
     @add_code_sample_docstrings(

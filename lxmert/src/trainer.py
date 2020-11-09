@@ -732,15 +732,16 @@ class Trainer:
     def log_save_evaluate(self, tr_loss, loss_dict, model):
         if self.state.global_step % self.args.logging_steps == 0:
             tr_dict = self.process_loss_dict(loss_dict, accumulate=True)
-            tr_dict['total_loss'] = tr_loss / self.state.global_step
-            tr_dict['lr'] = (
-                self.lr_scheduler.get_last_lr()[0]
-                if version.parse(torch.__version__) >= version.parse("1.4")
-                else self.lr_scheduler.get_lr()[0]
-            )
-            wandb.log(tr_dict)
-            loss_dict = {'lm_loss': list(), 'kg_loss': list()}
-            logger.info("log done")
+            if tr_dict is not None:
+                tr_dict['total_loss'] = tr_loss / self.state.global_step
+                tr_dict['lr'] = (
+                    self.lr_scheduler.get_last_lr()[0]
+                    if version.parse(torch.__version__) >= version.parse("1.4")
+                    else self.lr_scheduler.get_lr()[0]
+                )
+                wandb.log(tr_dict)
+                loss_dict = {'lm_loss': list(), 'kg_loss': list()}
+                #logger.info("log done")
         if (self.state.global_step % self.args.eval_steps == 0) and self.args.evaluate_during_training:
             metrics = self.evaluate()
             logger.info("eval done")
@@ -995,7 +996,11 @@ class Trainer:
 
     def process_loss_dict(self,loss_dict,step_loss_dict=None,accumulate=False):
         if accumulate:
-            return {k:(sum(v)/len(v)) for (k,v) in list(loss_dict.items())}
+            try:
+                processed_loss_dict = {k:(sum(v)/len(v)) for (k,v) in list(loss_dict.items())}
+                return processed_loss_dict
+            except:
+                return None
         else:
             for k in step_loss_dict:
                 loss_dict[k].append(step_loss_dict[k])

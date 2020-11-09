@@ -18,11 +18,11 @@
   "task_mask_lm": true,
   "task_mask_kg": true,
   "contrastive_learning": false,
-  "negative_samples": 10,
+  "negative_samples": 0,
   "max_position_embeddings": {"lang": 512,"kg": 0},
-  "vocab_size": {"lang": 30522, "kg": 2901117},
+  "vocab_size": {"lang": 30522, "kg": 167494},
   "type_vocab_size": {"lang": 2,"kg": 0},
-  "num_kg_labels":9102,
+  "num_kg_labels":3329,
   "kg_special_token_ids":{"PAD":0,"MASK":1},
-  "pretrained_kg_embedding": ""
+  "pretrained_kg_embedding": "/home/ubuntu/experiments/kg_txt_multimodal/lxmert/from_pretrained/TransE/transe.ckpt"
 }
