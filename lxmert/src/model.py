@@ -833,15 +833,9 @@ class LxmertModel(LxmertPreTrainedModel):
         super().__init__(config)
         self.lang_embeddings = LxmertEmbeddings(config,input_type='lang')
         self.kg_embeddings = LxmertEmbeddings(config,input_type='kg')
-        if not config.gcn and config.pretrained_kg_embedding:
-            logger.info("Load pretrained embedding for translation based KG-LXMERT")
-            loaded_state_dict = torch.load(config.pretrained_kg_embedding)
-            new_embedding = loaded_state_dict['ent_embeddings.weight']
-            self.set_kg_embeddings(new_embedding)
-            del loaded_state_dict
-            torch.cuda.empty_cache()
         self.encoder = LxmertEncoder(config)
         self.pooler = LxmertPooler(config)
+        logger.info("Load pretrained embedding for translation based KG-LXMERT")
         self.init_weights()
 
     def get_lang_embeddings(self):
@@ -994,6 +988,15 @@ class LxmertForKGTokPredAndMaskedLM(LxmertPreTrainedModel):
 
         # Weight initialization
         self.init_weights()
+
+        # Warm start KG embedding
+        if not config.gcn and config.pretrained_kg_embedding:
+            logger.info("Load pretrained embedding for translation based KG-LXMERT")
+            loaded_state_dict = torch.load(config.pretrained_kg_embedding)
+            new_embedding = loaded_state_dict['ent_embeddings.weight']
+            lxmert.set_kg_embeddings(new_embedding)
+            del loaded_state_dict
+            torch.cuda.empty_cache()
 
         # Loss functions
         self.loss_fcts = {
