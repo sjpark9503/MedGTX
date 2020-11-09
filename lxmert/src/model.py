@@ -835,7 +835,7 @@ class LxmertModel(LxmertPreTrainedModel):
         self.kg_embeddings = LxmertEmbeddings(config,input_type='kg')
         self.encoder = LxmertEncoder(config)
         self.pooler = LxmertPooler(config)
-        logger.info("Load pretrained embedding for translation based KG-LXMERT")
+
         self.init_weights()
 
     def get_lang_embeddings(self):
