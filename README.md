@@ -86,4 +86,5 @@ __v1.2__ : Fix trainer.py\
 __v1.2.1__ : Fix preprocessing modules, add text preprocessing ipython\
 __v1.3__ : Support evaluation\
 __v1.3.1__ : Fix preprocessing ipython, add px/rx/dx parts\
-__v1.3.2__ : Add warm start KG encoder from translation based KG embedding, add evaluation metrics, pretrainining & evaluation is good-to-go.
+__v1.3.2__ : Add warm start KG encoder from translation based KG embedding, add evaluation metrics, pretrainining & evaluation is good-to-go.\
+__v1.4__ : Add evaluation code, add prediction mode on data_collator.py
