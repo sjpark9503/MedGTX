@@ -655,6 +655,16 @@ class LxmertEncoder(nn.Module):
             cross_encoder_attentions if output_attentions else None,
         )
 
+    def re_init_to_pretrained_lang_model(self):
+        """ If we usep lm to language part, then we re-init our encoder.layer """
+        plm_usage = self.config.pretrained_lang_model
+        from transformers import AutoModel, AutoConfig
+        if plm_usage['use_weight']:
+            self.layer = AutoModel.from_pretrained(plm_usage['model_name']).encoder.layer
+        else:
+            plm_config = AutoConfig.from_pretrained(plm_usage['model_name'])
+            self.layer = AutoModel.from_config(plm_config).encoder.layer
+
 
 class LxmertPooler(nn.Module):
     def __init__(self, config):
@@ -997,6 +1007,11 @@ class LxmertForKGTokPredAndMaskedLM(LxmertPreTrainedModel):
             self.lxmert.set_kg_embeddings(new_embedding)
             del loaded_state_dict
             torch.cuda.empty_cache()
+
+        # Use Pretrained-LM in Language Part
+        if 'pretrained_lang_model' in config.to_dict().keys():
+            logger.info("Load pretrained model for language part")
+            self.lxmert.encoder.re_init_to_pretrained_lang_model()
 
         # Loss functions
         self.loss_fcts = {
