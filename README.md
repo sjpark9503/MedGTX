@@ -88,4 +88,5 @@ __v1.3__ : Support evaluation\
 __v1.3.1__ : Fix preprocessing ipython, add px/rx/dx parts\
 __v1.3.2__ : Add warm start KG encoder from translation based KG embedding, add evaluation metrics, pretrainining & evaluation is good-to-go.\
 __v1.4__ : Add evaluation code, add prediction mode on data_collator.py\
-__v1.5__ : Add unimodal experiment codes
+__v1.5__ : Add unimodal experiment codes\
+__v1.5.1__ : Add re-init to PLM for language part
