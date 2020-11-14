@@ -1072,14 +1072,14 @@ class LxmertForKGTokPredAndMaskedLM(LxmertPreTrainedModel):
             else torch.tensor(0.0, device=device)
         )
         loss_dict = dict()
-        if lm_label is not None:
+        if lm_label is not None and self.config.task_mask_lm:
             masked_lm_loss = self.loss_fcts["ce"](
                 lang_prediction_scores.view(-1, self.config.vocab_size['lang']),
                 lm_label.view(-1),
             )
             total_loss += masked_lm_loss
             loss_dict['lm_loss']=masked_lm_loss.item()
-        if kg_label is not None:
+        if kg_label is not None and self.config.task_mask_kg:
             if self.num_kg_labels == 1:
                 #  We are doing regression
                 kg_intm_loss = self.loss_fcts['mse'](kg_prediction_scores.view(-1), kg_label.view(-1))

@@ -13,7 +13,7 @@ from torch.utils.data import ConcatDataset
 # Own implementation
 from utils.parameters import parser
 from utils.dataset import get_dataset
-from utils.data_collator import NodeMasking_DataCollator, NodeClassification_DataCollator, LiteralRegression_DataCollator
+from utils.data_collator import NodeClassification_DataCollator, UnimodalLM_DataCollator, UnimodalKG_DataCollator
 from model import LxmertForPreTraining, LxmertForKGTokPredAndMaskedLM
 from trainer import Trainer
 
@@ -137,8 +137,22 @@ def main():
     #     if training_args.do_eval
     #     else None
     # )
-    data_collator = NodeClassification_DataCollator(tokenizer=tokenizer, kg_special_token_ids=config.kg_special_token_ids, kg_size = config.vocab_size['kg'])
+    if config.task_mask_lm and config.task_mask_kg:
+        data_collator = NodeClassification_DataCollator(tokenizer=tokenizer,
+                                                        kg_special_token_ids=config.kg_special_token_ids,
+                                                        kg_size=config.vocab_size['kg'])
+    elif config.task_mask_lm and not config.task_mask_kg:
+        data_collator = UnimodalLM_DataCollator(tokenizer=tokenizer,
+                                                        kg_special_token_ids=config.kg_special_token_ids,
+                                                        kg_size=config.vocab_size['kg'])
 
+    elif not config.task_mask_lm and config.task_mask_kg:
+        data_collator = UnimodalKG_DataCollator(tokenizer=tokenizer,
+                                                        kg_special_token_ids=config.kg_special_token_ids,
+                                                        kg_size=config.vocab_size['kg'])
+
+    else:
+        raise ValueError("You can turn off one of modality, but not both.")
     # Initialize our Trainer
     trainer = Trainer(
         model=model,

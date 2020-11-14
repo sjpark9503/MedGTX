@@ -996,11 +996,10 @@ class Trainer:
 
     def process_loss_dict(self,loss_dict,step_loss_dict=None,accumulate=False):
         if accumulate:
-            try:
-                processed_loss_dict = {k:(sum(v)/len(v)) for (k,v) in list(loss_dict.items())}
-                return processed_loss_dict
-            except:
-                return None
+            processed_loss_dict = dict([(k,sum(v)/len(v)) if len(v)>0 else (k,0.0) for (k,v) in list(loss_dict.items())])
+            return processed_loss_dict
+            #except:
+            #    return None
         else:
             for k in step_loss_dict:
                 loss_dict[k].append(step_loss_dict[k])
