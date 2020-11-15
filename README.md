@@ -89,4 +89,5 @@ __v1.3.1__ : Fix preprocessing ipython, add px/rx/dx parts\
 __v1.3.2__ : Add warm start KG encoder from translation based KG embedding, add evaluation metrics, pretrainining & evaluation is good-to-go.\
 __v1.4__ : Add evaluation code, add prediction mode on data_collator.py\
 __v1.5__ : Add unimodal experiment codes\
-__v1.5.1__ : Add re-init to PLM for language part, add viz_attention_heads jupyter notebook
+__v1.5.1__ : Add re-init to PLM for language part, add viz_attention_heads jupyter notebook\
+__v1.6__ : Add class-wise accuracy, integrate all evaluation codes into Evaluation.ipynb
