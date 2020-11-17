@@ -90,4 +90,5 @@ __v1.3.2__ : Add warm start KG encoder from translation based KG embedding, add 
 __v1.4__ : Add evaluation code, add prediction mode on data_collator.py\
 __v1.5__ : Add unimodal experiment codes\
 __v1.5.1__ : Add re-init to PLM for language part, add viz_attention_heads jupyter notebook\
-__v1.6__ : Add class-wise accuracy, integrate all evaluation codes into Evaluation.ipynb
+__v1.6__ : Add class-wise accuracy, integrate all evaluation codes into Evaluation.ipynb\
+__v1.6.1__ : Add data mapping class (like entity2id -> id2entity, id2literal)\
