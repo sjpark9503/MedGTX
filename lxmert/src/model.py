@@ -30,7 +30,8 @@ from transformers.file_utils import (
     ModelOutput,
     add_code_sample_docstrings,
     add_start_docstrings,
-    add_start_docstrings_to_callable,
+    # add_start_docstrings_to_callable,
+    add_start_docstrings_to_model_forward, # transformers PR #8120
     replace_return_docstrings,
 )
 from transformers.modeling_utils import PreTrainedModel
@@ -863,7 +864,7 @@ class LxmertModel(LxmertPreTrainedModel):
         else:
             self.kg_embeddings.word_embeddings.weight.data = new_embeddings.data
 
-    @add_start_docstrings_to_callable(LXMERT_INPUTS_DOCSTRING.format("batch_size, sequence_length"))
+    @add_start_docstrings_to_model_forward(LXMERT_INPUTS_DOCSTRING.format("batch_size, sequence_length"))
     @add_code_sample_docstrings(
         tokenizer_class=_TOKENIZER_FOR_DOC,
         checkpoint="unc-nlp/lxmert-base-uncased",
@@ -1020,7 +1021,7 @@ class LxmertForKGTokPredAndMaskedLM(LxmertPreTrainedModel):
             "ce": CrossEntropyLoss(),
         }
 
-    @add_start_docstrings_to_callable(LXMERT_INPUTS_DOCSTRING.format("batch_size, sequence_length"))
+    @add_start_docstrings_to_model_forward(LXMERT_INPUTS_DOCSTRING.format("batch_size, sequence_length"))
     @replace_return_docstrings(output_type=LxmertForPreTrainingOutput, config_class=_CONFIG_FOR_DOC)
     def forward(
         self,
@@ -1272,7 +1273,7 @@ class LxmertForPreTraining(LxmertPreTrainedModel):
     #
     #     return new_qa_logit_layer
 
-    @add_start_docstrings_to_callable(LXMERT_INPUTS_DOCSTRING.format("batch_size, sequence_length"))
+    @add_start_docstrings_to_model_forward(LXMERT_INPUTS_DOCSTRING.format("batch_size, sequence_length"))
     @replace_return_docstrings(output_type=LxmertForPreTrainingOutput, config_class=_CONFIG_FOR_DOC)
     def forward(
         self,
@@ -1502,7 +1503,7 @@ class LxmertForQuestionAnswering(LxmertPreTrainedModel):
 
         return new_qa_logit_layer
 
-    @add_start_docstrings_to_callable(LXMERT_INPUTS_DOCSTRING.format("batch_size, sequence_length"))
+    @add_start_docstrings_to_model_forward(LXMERT_INPUTS_DOCSTRING.format("batch_size, sequence_length"))
     @add_code_sample_docstrings(
         tokenizer_class=_TOKENIZER_FOR_DOC,
         checkpoint="unc-nlp/lxmert-base-uncased",
