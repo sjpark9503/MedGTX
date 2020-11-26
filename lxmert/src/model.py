@@ -30,8 +30,7 @@ from transformers.file_utils import (
     ModelOutput,
     add_code_sample_docstrings,
     add_start_docstrings,
-    # add_start_docstrings_to_callable,
-    add_start_docstrings_to_model_forward, # transformers PR #8120
+    add_start_docstrings_to_callable,
     replace_return_docstrings,
 )
 from transformers.modeling_utils import PreTrainedModel
@@ -504,7 +503,7 @@ class LxmertXLayer(nn.Module):
             visual_input,
             lang_input,
             ctx_att_mask=lang_attention_mask,
-            output_attentions=False,
+            output_attentions=output_x_attentions,
         )
         return lang_att_output, visual_att_output
 
@@ -541,7 +540,8 @@ class LxmertXLayer(nn.Module):
             visual_attention_mask=visual_attention_mask,
             output_x_attentions=output_attentions,
         )
-        attention_probs = lang_att_output[1:]
+        attention_probs = {'txt->kg':lang_att_output[-1],
+                           'kg->txt':visual_att_output[-1]}
         lang_att_output, visual_att_output = self.self_att(
             lang_att_output[0],
             lang_attention_mask,
@@ -554,7 +554,7 @@ class LxmertXLayer(nn.Module):
             (
                 lang_output,
                 visual_output,
-                attention_probs[0],
+                attention_probs,
             )
             if output_attentions
             else (lang_output, visual_output)
@@ -605,7 +605,7 @@ class LxmertEncoder(nn.Module):
         language_hidden_states = ()
         kg_attentions = () if output_attentions or self.config.output_attentions else None
         language_attentions = () if output_attentions or self.config.output_attentions else None
-        cross_encoder_attentions = () if output_attentions or self.config.output_attentions else None
+        cross_encoder_attentions = {'txt->kg':(),'kg->txt':()} if output_attentions or self.config.output_attentions else None
 
         if self.config.gcn:
             kg_feats = self.kg_fc(kg_raw_feats)
@@ -641,7 +641,7 @@ class LxmertEncoder(nn.Module):
             kg_hidden_states = kg_hidden_states + (kg_feats,)
             language_hidden_states = language_hidden_states + (lang_feats,)
             if cross_encoder_attentions is not None:
-                cross_encoder_attentions = cross_encoder_attentions + (x_outputs[2],)
+                cross_encoder_attentions = {k:cross_encoder_attentions[k] + (x_outputs[2][k],) for k in cross_encoder_attentions}
         kg_encoder_outputs = (
             kg_hidden_states,
             kg_attentions if output_attentions else None,
@@ -655,16 +655,6 @@ class LxmertEncoder(nn.Module):
             lang_encoder_outputs,
             cross_encoder_attentions if output_attentions else None,
         )
-
-    def re_init_to_pretrained_lang_model(self):
-        """ If we usep lm to language part, then we re-init our encoder.layer """
-        plm_usage = self.config.pretrained_lang_model
-        from transformers import AutoModel, AutoConfig
-        if plm_usage['use_weight']:
-            self.layer = AutoModel.from_pretrained(plm_usage['model_name']).encoder.layer
-        else:
-            plm_config = AutoConfig.from_pretrained(plm_usage['model_name'])
-            self.layer = AutoModel.from_config(plm_config).encoder.layer
 
 
 class LxmertPooler(nn.Module):
@@ -864,7 +854,7 @@ class LxmertModel(LxmertPreTrainedModel):
         else:
             self.kg_embeddings.word_embeddings.weight.data = new_embeddings.data
 
-    @add_start_docstrings_to_model_forward(LXMERT_INPUTS_DOCSTRING.format("batch_size, sequence_length"))
+    @add_start_docstrings_to_callable(LXMERT_INPUTS_DOCSTRING.format("batch_size, sequence_length"))
     @add_code_sample_docstrings(
         tokenizer_class=_TOKENIZER_FOR_DOC,
         checkpoint="unc-nlp/lxmert-base-uncased",
@@ -1009,11 +999,6 @@ class LxmertForKGTokPredAndMaskedLM(LxmertPreTrainedModel):
             del loaded_state_dict
             torch.cuda.empty_cache()
 
-        # Use Pretrained-LM in Language Part
-        if 'pretrained_lang_model' in config.to_dict().keys():
-            logger.info("Load pretrained model for language part")
-            self.lxmert.encoder.re_init_to_pretrained_lang_model()
-
         # Loss functions
         self.loss_fcts = {
             "l2": SmoothL1Loss(reduction="none"),
@@ -1021,7 +1006,7 @@ class LxmertForKGTokPredAndMaskedLM(LxmertPreTrainedModel):
             "ce": CrossEntropyLoss(),
         }
 
-    @add_start_docstrings_to_model_forward(LXMERT_INPUTS_DOCSTRING.format("batch_size, sequence_length"))
+    @add_start_docstrings_to_callable(LXMERT_INPUTS_DOCSTRING.format("batch_size, sequence_length"))
     @replace_return_docstrings(output_type=LxmertForPreTrainingOutput, config_class=_CONFIG_FOR_DOC)
     def forward(
         self,
@@ -1273,7 +1258,7 @@ class LxmertForPreTraining(LxmertPreTrainedModel):
     #
     #     return new_qa_logit_layer
 
-    @add_start_docstrings_to_model_forward(LXMERT_INPUTS_DOCSTRING.format("batch_size, sequence_length"))
+    @add_start_docstrings_to_callable(LXMERT_INPUTS_DOCSTRING.format("batch_size, sequence_length"))
     @replace_return_docstrings(output_type=LxmertForPreTrainingOutput, config_class=_CONFIG_FOR_DOC)
     def forward(
         self,
@@ -1503,7 +1488,7 @@ class LxmertForQuestionAnswering(LxmertPreTrainedModel):
 
         return new_qa_logit_layer
 
-    @add_start_docstrings_to_model_forward(LXMERT_INPUTS_DOCSTRING.format("batch_size, sequence_length"))
+    @add_start_docstrings_to_callable(LXMERT_INPUTS_DOCSTRING.format("batch_size, sequence_length"))
     @add_code_sample_docstrings(
         tokenizer_class=_TOKENIZER_FOR_DOC,
         checkpoint="unc-nlp/lxmert-base-uncased",
