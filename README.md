@@ -92,3 +92,5 @@ __v1.5__ : Add unimodal experiment codes\
 __v1.5.1__ : Add re-init to PLM for language part, add viz_attention_heads jupyter notebook\
 __v1.6__ : Add class-wise accuracy, integrate all evaluation codes into Evaluation.ipynb\
 __v1.6.1__ : Add data mapping class (like entity2id -> id2entity, id2literal)\
+__v1.7__ : Attention visualization tool is successfully integrated to Evaluation.ipynb. **This is the final version without graph encoder**\
+
