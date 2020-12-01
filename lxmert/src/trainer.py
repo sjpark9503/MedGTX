@@ -173,7 +173,7 @@ class Trainer:
             args = TrainingArguments("tmp_trainer")
         self.args = args
         # Initialize WandB
-        wandb.init(config=vars(args), project=model.config.model_type)
+        wandb.init(config=vars(args), entity='kgtxt', project='GraphEncoder')
         wandb.run.name = self.args.run_name
         #wandb.run.save()
         # Seed must be set before instantiating the model when using model
@@ -317,7 +317,7 @@ class Trainer:
         elif self.args.local_rank != -1:
             return SequentialDistributedSampler(eval_dataset)
         else:
-            return SequentialSampler(eval_dataset)
+            return SequentialSampler(eval_datanhjset)
 
     def get_eval_dataloader(self, eval_dataset: Optional[Dataset] = None) -> DataLoader:
         """

@@ -6,9 +6,10 @@ os.environ["CUDA_VISIBLE_DEVICES"] = '1'
 # Paths
 EXP_PATH = os.getcwd()
 SRC_PATH = os.path.join(EXP_PATH, 'src/run_pretraining.py')
-TASK_NAME = 'masked_literal_prediction'
-RUN_NAME = 'TransE_init_1'
-#
+TASK_NAME = 'masked_literal_pred_with_adjacency'
+RUN_NAME = 'KGEnc_H128'
+# step size = 856 at batch 24
+# step size = 642 at batch 32
 TRAINING_CONFIG = {
     "model_type":"lxmert",
     "config_name":os.path.join(EXP_PATH,"config/config.json"),
@@ -23,11 +24,11 @@ TRAINING_CONFIG = {
     "per_device_train_batch_size": 32,
     "per_device_eval_batch_size": 8,
     "learning_rate": 5e-4,
-    "num_train_epochs": 50,
+    "num_train_epochs": 40,
     "logging_steps": int(642/20),
-    "save_steps": int(642/5),
-    "eval_steps": int(642/5),
-    "eval_criterion" :"lang_acc,kg_acc",
+    "save_steps": int(642/2),
+    "eval_steps": int(642/2),
+    "eval_criterion" :"lang_acc, kg_acc",
     "train_data_file":os.path.join(EXP_PATH,"data/{}/train".format(TASK_NAME)),
     "eval_data_file": os.path.join(EXP_PATH,"data/{}/valid".format(TASK_NAME)),
     #"test_data_file": os.path.join(EXP_PATH, "data/{}/test".format(TASK_NAME)),

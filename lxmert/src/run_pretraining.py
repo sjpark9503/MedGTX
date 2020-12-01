@@ -14,7 +14,7 @@ from torch.utils.data import ConcatDataset
 from utils.parameters import parser
 from utils.dataset import get_dataset
 from utils.data_collator import NodeClassification_DataCollator, UnimodalLM_DataCollator, UnimodalKG_DataCollator
-from model import LxmertForPreTraining, LxmertForKGTokPredAndMaskedLM
+from model import LxmertForKGTokPredAndMaskedLM
 from trainer import Trainer
 
 # From Huggingface transformers package
@@ -95,6 +95,10 @@ def main():
         raise ValueError(
             "You are instantiating a new tokenizer from scratch. This is not supported, but you can do it from another script, save it,"
             "and load it from here, using --tokenizer_name"
+        )
+    if ((config.num_attention_heads % config.num_relations) != 0) and config.gcn:
+        raise ValueError(
+            "# attentions heads must be divisible by # relations"
         )
 
     if model_args.model_name_or_path:

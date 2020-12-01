@@ -30,7 +30,7 @@ from transformers.file_utils import (
     ModelOutput,
     add_code_sample_docstrings,
     add_start_docstrings,
-    add_start_docstrings_to_callable,
+    #add_start_docstrings_to_callable,
     replace_return_docstrings,
 )
 from transformers.modeling_utils import PreTrainedModel
@@ -425,7 +425,6 @@ class LxmertSelfAttentionLayer(nn.Module):
         outputs = (attention_output, attention_probs) if output_attentions else (attention_output,)
         return outputs
 
-
 class LxmertIntermediate(nn.Module):
     def __init__(self, config):
         super().__init__()
@@ -466,7 +465,6 @@ class LxmertLayer(nn.Module):
         layer_output = self.output(intermediate_output, attention_output)
         outputs = (layer_output,) + outputs[1:]  # add attentions if we output them
         return outputs
-
 
 class LxmertXLayer(nn.Module):
     def __init__(self, config):
@@ -530,6 +528,7 @@ class LxmertXLayer(nn.Module):
         lang_attention_mask,
         visual_feats,
         visual_attention_mask,
+        visual_padding_mask,
         output_attentions=False,
     ):
 
@@ -537,7 +536,7 @@ class LxmertXLayer(nn.Module):
             lang_input=lang_feats,
             lang_attention_mask=lang_attention_mask,
             visual_input=visual_feats,
-            visual_attention_mask=visual_attention_mask,
+            visual_attention_mask=visual_padding_mask,
             output_x_attentions=output_attentions,
         )
         attention_probs = {'txt->kg':lang_att_output[-1],
@@ -561,24 +560,21 @@ class LxmertXLayer(nn.Module):
         )
 
 
-class LxmertKGFeatureEncoder(nn.Module):
-    def __init__(self, config):
-        super().__init__()
-        self.dropout = nn.Dropout(config.hidden_dropout_prob)
-
-    def forward(self):
-        """
-        To-Do : Some GCNs will be integrated in future
-        """
-        return None
-
+# class LxmertKGFeatureEncoder(nn.Module):
+#     def __init__(self, config):
+#         super().__init__()
+#         self.dropout = nn.Dropout(config.hidden_dropout_prob)
+#
+#     def forward(self):
+#         """
+#         To-Do : Some GCNs will be integrated in future
+#         """
+#         return None
 
 class LxmertEncoder(nn.Module):
     def __init__(self, config):
         super().__init__()
 
-        # Obj-level image embedding layer
-        self.KG_fc = LxmertKGFeatureEncoder(config)
         self.config = config
 
         # Number of layers
@@ -592,12 +588,23 @@ class LxmertEncoder(nn.Module):
         self.x_layers = nn.ModuleList([LxmertXLayer(config) for _ in range(self.num_x_layers)])
         self.r_layers = nn.ModuleList([LxmertLayer(config) for _ in range(self.num_r_layers)])
 
+    def re_init_to_pretrained_lang_model(self):
+        """ If we usep lm to language part, then we re-init our encoder.layer """
+        plm_usage = self.config.pretrained_lang_model
+        from transformers import AutoModel, AutoConfig
+        if plm_usage['use_weight']:
+            self.layer = AutoModel.from_pretrained(plm_usage['model_name']).encoder.layer
+        else:
+            plm_config = AutoConfig.from_pretrained(plm_usage['model_name'])
+            self.layer = AutoModel.from_config(plm_config).encoder.layer
+
     def forward(
         self,
         lang_feats,
         lang_attention_mask,
-        kg_raw_feats,
+        kg_feats,
         kg_attention_mask,
+        kg_padding_mask,
         output_attentions=None,
     ):
 
@@ -606,11 +613,6 @@ class LxmertEncoder(nn.Module):
         kg_attentions = () if output_attentions or self.config.output_attentions else None
         language_attentions = () if output_attentions or self.config.output_attentions else None
         cross_encoder_attentions = {'txt->kg':(),'kg->txt':()} if output_attentions or self.config.output_attentions else None
-
-        if self.config.gcn:
-            kg_feats = self.kg_fc(kg_raw_feats)
-        else:
-            kg_feats = kg_raw_feats
 
         # Run language layers
         for layer_module in self.layer:
@@ -635,6 +637,7 @@ class LxmertEncoder(nn.Module):
                 lang_attention_mask,
                 kg_feats,
                 kg_attention_mask,
+                kg_padding_mask,
                 output_attentions=output_attentions,
             )
             lang_feats, kg_feats = x_outputs[:2]
@@ -655,7 +658,6 @@ class LxmertEncoder(nn.Module):
             lang_encoder_outputs,
             cross_encoder_attentions if output_attentions else None,
         )
-
 
 class LxmertPooler(nn.Module):
     def __init__(self, config):
@@ -854,7 +856,7 @@ class LxmertModel(LxmertPreTrainedModel):
         else:
             self.kg_embeddings.word_embeddings.weight.data = new_embeddings.data
 
-    @add_start_docstrings_to_callable(LXMERT_INPUTS_DOCSTRING.format("batch_size, sequence_length"))
+    #@add_start_docstrings_to_callable(LXMERT_INPUTS_DOCSTRING.format("batch_size, sequence_length"))
     @add_code_sample_docstrings(
         tokenizer_class=_TOKENIZER_FOR_DOC,
         checkpoint="unc-nlp/lxmert-base-uncased",
@@ -869,6 +871,7 @@ class LxmertModel(LxmertPreTrainedModel):
         kg_inputs_embeds=None,
         lang_attention_mask=None,
         kg_attention_mask=None,
+        kg_padding_mask=None,
         token_type_ids=None,
         output_attentions=None,
         output_hidden_states=None,
@@ -885,18 +888,6 @@ class LxmertModel(LxmertPreTrainedModel):
             raise ValueError("You cannot specify both input_ids and inputs_embeds at the same time")
         elif kg_input_ids is not None and kg_inputs_embeds is not None:
             raise ValueError("You cannot specify both input_ids and inputs_embeds at the same time")
-        # elif lang_input_ids is not None:
-        #     input_shape = lang_input_ids.size()
-        # elif inputs_embeds is not None:
-        #     input_shape = inputs_embeds.size()[:-1]
-        # else:
-        #     raise ValueError("You have to specify either input_ids or inputs_embeds")
-        #device = input_.device if input_ids is not None else inputs_embeds.device
-        #
-        # if attention_mask is None:
-        #     attention_mask = torch.ones(input_shape, device=device)
-        # if token_type_ids is None:
-        #     token_type_ids = torch.zeros(input_shape, dtype=torch.long, device=device)
 
         # We create a 3D attention mask from a 2D tensor mask.
         # Sizes are [batch_size, 1, 1, to_seq_length]
@@ -913,11 +904,23 @@ class LxmertModel(LxmertPreTrainedModel):
         extended_lang_attention_mask = extended_lang_attention_mask.to(dtype=self.dtype)
         extended_lang_attention_mask = (1.0 - extended_lang_attention_mask) * -10000.0
 
-        # Process the visual attention mask
+        # Process the KG attention mask
         if kg_attention_mask is not None:
-            extended_kg_attention_mask = kg_attention_mask.unsqueeze(1).unsqueeze(2)
-            extended_kg_attention_mask = extended_kg_attention_mask.to(dtype=self.dtype)
-            extended_kg_attention_mask = (1.0 - extended_kg_attention_mask) * -10000.0
+            if len(kg_attention_mask.shape)==2:
+                extended_kg_attention_mask = kg_attention_mask.unsqueeze(1).unsqueeze(2)
+                extended_kg_attention_mask = extended_kg_attention_mask.to(dtype=self.dtype)
+                extended_kg_attention_mask = (1.0 - extended_kg_attention_mask) * -10000.0
+            elif len(kg_attention_mask.shape)==4:
+                # Process KG-side self attention mask
+                extended_kg_attention_mask = kg_attention_mask
+                extended_kg_attention_mask = extended_kg_attention_mask.to(dtype=self.dtype)
+                extended_kg_attention_mask = (1.0 - extended_kg_attention_mask) * -10000.0
+                # Process KG padding mask for cross attention
+                extended_kg_padding_mask = kg_padding_mask.unsqueeze(1).unsqueeze(2)
+                extended_kg_padding_mask = extended_kg_padding_mask.to(dtype=self.dtype)
+                extended_kg_padding_mask = (1.0 - extended_kg_padding_mask) * -10000.0
+            else:
+                raise ValueError("Only supports seq_len X seq_len mask or batch_size X # head X seq_len X seq_len")
         else:
             extended_kg_attention_mask = None
 
@@ -929,8 +932,9 @@ class LxmertModel(LxmertPreTrainedModel):
         encoder_outputs = self.encoder(
             lang_feats=lang_embedding_output,
             lang_attention_mask=extended_lang_attention_mask,
-            kg_raw_feats=kg_embedding_output,
+            kg_feats=kg_embedding_output,
             kg_attention_mask=extended_kg_attention_mask,
+            kg_padding_mask=extended_kg_padding_mask,
             output_attentions=output_attentions,
         )
 
@@ -999,6 +1003,11 @@ class LxmertForKGTokPredAndMaskedLM(LxmertPreTrainedModel):
             del loaded_state_dict
             torch.cuda.empty_cache()
 
+        # Use Pretrained-LM in Language Part
+        if 'pretrained_lang_model' in config.to_dict().keys():
+            logger.info("Load pretrained model for language part")
+            self.lxmert.encoder.re_init_to_pretrained_lang_model()
+
         # Loss functions
         self.loss_fcts = {
             "l2": SmoothL1Loss(reduction="none"),
@@ -1006,7 +1015,7 @@ class LxmertForKGTokPredAndMaskedLM(LxmertPreTrainedModel):
             "ce": CrossEntropyLoss(),
         }
 
-    @add_start_docstrings_to_callable(LXMERT_INPUTS_DOCSTRING.format("batch_size, sequence_length"))
+    #@add_start_docstrings_to_callable(LXMERT_INPUTS_DOCSTRING.format("batch_size, sequence_length"))
     @replace_return_docstrings(output_type=LxmertForPreTrainingOutput, config_class=_CONFIG_FOR_DOC)
     def forward(
         self,
@@ -1016,6 +1025,7 @@ class LxmertForKGTokPredAndMaskedLM(LxmertPreTrainedModel):
         kg_inputs_embeds=None,
         lang_attention_mask=None,
         kg_attention_mask=None,
+        kg_padding_mask=None,
         kg_label_mask=None,
         lm_label=None,
         kg_label=None,
@@ -1053,6 +1063,7 @@ class LxmertForKGTokPredAndMaskedLM(LxmertPreTrainedModel):
             kg_inputs_embeds=kg_inputs_embeds,
             lang_attention_mask=lang_attention_mask,
             kg_attention_mask=kg_attention_mask,
+            kg_padding_mask=kg_padding_mask,
             token_type_ids=token_type_ids,
             output_attentions=output_attentions,
             output_hidden_states=output_hidden_states,
@@ -1121,433 +1132,166 @@ class LxmertForKGTokPredAndMaskedLM(LxmertPreTrainedModel):
             kg_attentions=lxmert_output.kg_attentions,
             cross_encoder_attentions=lxmert_output.cross_encoder_attentions,
         )
-
-@add_start_docstrings(
-    """Lxmert Model with a specified pre-training head on top. """,
-    LXMERT_START_DOCSTRING,
-)
-class LxmertForPreTraining(LxmertPreTrainedModel):
-    def __init__(self, config):
-        super().__init__(config)
-        # Configuration
-        self.config = config
-        self.num_qa_labels = config.num_qa_labels
-        self.visual_loss_normalizer = config.visual_loss_normalizer
-
-        # Use of pre-training tasks
-        self.task_mask_lm = config.task_mask_lm
-        self.task_mask_kg = config.task_mask_kg
-        # self.task_obj_predict = config.task_obj_predict
-        # self.task_matched = config.task_matched
-        # self.task_qa = config.task_qa
-
-        # Lxmert backbone
-        self.lxmert = LxmertModel(config)
-
-        # Pre-training heads
-        self.lm_head = LxmertPreTrainingHeads(config, self.lxmert.lang_embeddings.word_embeddings.weight)
-        self.kg_head = LxmertPreTrainingHeads(config, self.lxmert.kg_embeddings.word_embeddings.weight)
-        # if self.task_obj_predict:
-        #     self.obj_predict_head = LxmertVisualObjHead(config)
-        # if self.task_qa:
-        #     self.answer_head = LxmertVisualAnswerHead(config, self.num_qa_labels)
-
-        # Weight initialization
-        self.init_weights()
-
-        # Loss functions
-        self.loss_fcts = {
-            "l2": SmoothL1Loss(reduction="none"),
-            "visual_ce": CrossEntropyLoss(reduction="none"),
-            "ce": CrossEntropyLoss(),
-        }
-        #
-        # visual_losses = {}
-        # if config.visual_obj_loss:
-        #     visual_losses["obj"] = {
-        #         "shape": (-1,),
-        #         "num": config.num_object_labels,
-        #         "loss": "visual_ce",
-        #     }
-        # if config.visual_attr_loss:
-        #     visual_losses["attr"] = {
-        #         "shape": (-1,),
-        #         "num": config.num_attr_labels,
-        #         "loss": "visual_ce",
-        #     }
-        # if config.visual_obj_loss:
-        #     visual_losses["feat"] = {
-        #         "shape": (-1, config.visual_feat_dim),
-        #         "num": config.visual_feat_dim,
-        #         "loss": "l2",
-        #     }
-        # self.visual_losses = visual_losses
-    #
-    # def resize_num_qa_labels(self, num_labels):
-    #     """
-    #     Build a resized question answering linear layer Module from a provided new linear layer. Increasing the size
-    #     will add newly initialized weights. Reducing the size will remove weights from the end
-    #
-    #     Args:
-    #         cur_qa_logit_layer (:obj:`torch.nn.Linear`):
-    #             Old linear layer to be resized.
-    #         num_labels (:obj:`int`, `optional`):
-    #             New number of labels in the linear layer weight matrix. Increasing the size will add newly initialized
-    #             weights at the end. Reducing the size will remove weights from the end. If not provided or :obj:`None`,
-    #             just returns a pointer to the qa labels :obj:`torch.nn.Linear`` module of the model wihtout doing
-    #             anything.
-    #
-    #     Return:
-    #         :obj:`torch.nn.Linear`: Pointer to the resized Linear layer or the old Linear layer
-    #     """
-    #
-    #     cur_qa_logit_layer = self.get_qa_logit_layer()
-    #     if num_labels is None or cur_qa_logit_layer is None:
-    #         return
-    #     new_qa_logit_layer = self._resize_qa_labels(num_labels)
-    #     self.config.num_qa_labels = num_labels
-    #     self.num_qa_labels = num_labels
-    #
-    #     return new_qa_logit_layer
-    #
-    # def _resize_qa_labels(self, num_labels):
-    #     cur_qa_logit_layer = self.get_qa_logit_layer()
-    #     new_qa_logit_layer = self._get_resized_qa_labels(cur_qa_logit_layer, num_labels)
-    #     self._set_qa_logit_layer(new_qa_logit_layer)
-    #     return self.get_qa_logit_layer()
-    #
-    # def get_qa_logit_layer(self) -> nn.Module:
-    #     """
-    #     Returns the the linear layer that produces question answering logits.
-    #
-    #     Returns:
-    #         :obj:`nn.Module`: A torch module mapping the question answering prediction hidden states or :obj:`None` if
-    #         LXMERT does not have a visual answering head.
-    #     """
-    #     if hasattr(self, "answer_head"):
-    #         return self.answer_head.logit_fc[-1]
-    #
-    # def _set_qa_logit_layer(self, qa_logit_layer):
-    #     self.answer_head.logit_fc[-1] = qa_logit_layer
-    #
-    # def _get_resized_qa_labels(self, cur_qa_logit_layer, num_labels):
-    #
-    #     if num_labels is None:
-    #         return cur_qa_logit_layer
-    #
-    #     cur_qa_labels, hidden_dim = cur_qa_logit_layer.weight.size()
-    #     if cur_qa_labels == num_labels:
-    #         return cur_qa_logit_layer
-    #
-    #     # Build new linear output
-    #     if getattr(cur_qa_logit_layer, "bias", None) is not None:
-    #         new_qa_logit_layer = nn.Linear(hidden_dim, num_labels)
-    #     else:
-    #         new_qa_logit_layer = nn.Linear(hidden_dim, num_labels, bias=False)
-    #
-    #     new_qa_logit_layer.to(cur_qa_logit_layer.weight.device)
-    #
-    #     # initialize all new labels
-    #     self._init_weights(new_qa_logit_layer)
-    #
-    #     # Copy labels from the previous weights
-    #     num_labels_to_copy = min(cur_qa_labels, num_labels)
-    #     new_qa_logit_layer.weight.data[:num_labels_to_copy, :] = cur_qa_logit_layer.weight.data[:num_labels_to_copy, :]
-    #     if getattr(cur_qa_logit_layer, "bias", None) is not None:
-    #         new_qa_logit_layer.bias.data[:num_labels_to_copy] = cur_qa_logit_layer.bias.data[:num_labels_to_copy]
-    #
-    #     return new_qa_logit_layer
-
-    @add_start_docstrings_to_callable(LXMERT_INPUTS_DOCSTRING.format("batch_size, sequence_length"))
-    @replace_return_docstrings(output_type=LxmertForPreTrainingOutput, config_class=_CONFIG_FOR_DOC)
-    def forward(
-        self,
-        lang_input_ids=None,
-        kg_input_ids=None,
-        lang_inputs_embeds=None,
-        kg_inputs_embeds=None,
-        lang_attention_mask=None,
-        kg_attention_mask=None,
-        lm_label=None,
-        kg_label=None,
-        token_type_ids=None,
-        output_attentions=None,
-        output_hidden_states=None,
-        return_dict=None,
-    ):
-        r"""
-        masked_lm_labels (``torch.LongTensor`` of shape ``(batch_size, sequence_length)``, `optional`):
-            Labels for computing the masked language modeling loss. Indices should be in ``[-100, 0, ...,
-            config.vocab_size]`` (see ``input_ids`` docstring) Tokens with indices set to ``-100`` are ignored
-            (masked), the loss is only computed for the tokens with labels in ``[0, ..., config.vocab_size]``
-        obj_labels: (``Dict[Str: Tuple[Torch.FloatTensor, Torch.FloatTensor]]``, `optional`):
-            each key is named after each one of the visual losses and each element of the tuple is of the shape
-            ``(batch_size, num_features)`` and ``(batch_size, num_features, visual_feature_dim)`` for each the label id
-            and the label score respectively
-        matched_label (``torch.LongTensor`` of shape ``(batch_size,)``, `optional`):
-            Labels for computing the whether or not the text input matches the image (classification) loss. Input
-            should be a sequence pair (see :obj:`input_ids` docstring) Indices should be in ``[0, 1]``:
-
-            - 0 indicates that the sentence does not match the image,
-            - 1 indicates that the sentence does match the image.
-        ans: (``Torch.Tensor`` of shape ``(batch_size)``, `optional`):
-            a one hot representation hof the correct answer `optional`
-
-        Returns:
-        """
-
-        device = lang_input_ids.device if lang_input_ids is not None else inputs_embeds.device
-        lxmert_output = self.lxmert(
-            lang_input_ids=lang_input_ids,
-            kg_input_ids=kg_input_ids,
-            lang_inputs_embeds=lang_inputs_embeds,
-            kg_inputs_embeds=kg_inputs_embeds,
-            lang_attention_mask=lang_attention_mask,
-            kg_attention_mask=kg_attention_mask,
-            token_type_ids=token_type_ids,
-            output_attentions=output_attentions,
-            output_hidden_states=output_hidden_states,
-            return_dict=return_dict,
-        )
-
-        lang_output, kg_output, pooled_output = (
-            lxmert_output[0],
-            lxmert_output[1],
-            lxmert_output[2],
-        )
-        lang_prediction_scores, cross_relationship_score = self.lm_head(lang_output, pooled_output)
-        kg_prediction_scores, _ = self.kg_head(kg_output, None)
-        # if self.task_qa:
-        #     answer_score = self.answer_head(pooled_output)
-        # else:
-        #     answer_score = pooled_output[0][0]
-
-        total_loss = (
-            None
-            if (lm_label is None and kg_label)
-            else torch.tensor(0.0, device=device)
-        )
-        if lm_label is not None and self.task_mask_lm:
-            masked_lm_loss = self.loss_fcts["ce"](
-                lang_prediction_scores.view(-1, self.config.vocab_size['lang']),
-                lm_label.view(-1),
-            )
-            total_loss += masked_lm_loss
-        if kg_label is not None and self.task_mask_kg:
-            masked_kg_loss = self.loss_fcts["ce"](
-                kg_prediction_scores.view(-1, self.config.vocab_size['kg']),
-                kg_label.view(-1),
-            )
-            total_loss += masked_kg_loss
-        # if matched_label is not None and self.task_matched:
-        #     matched_loss = self.loss_fcts["ce"](cross_relationship_score.view(-1, 2), matched_label.view(-1))
-        #     total_loss += matched_loss
-        # if obj_labels is not None and self.task_obj_predict:
-        #     total_visual_loss = torch.tensor(0.0, device=input_ids.device)
-        #     visual_prediction_scores_dict = self.obj_predict_head(visual_output)
-        #     for key, key_info in self.visual_losses.items():
-        #         label, mask_conf = obj_labels[key]
-        #         output_dim = key_info["num"]
-        #         loss_fct_name = key_info["loss"]
-        #         label_shape = key_info["shape"]
-        #         weight = self.visual_loss_normalizer
-        #         visual_loss_fct = self.loss_fcts[loss_fct_name]
-        #         visual_prediction_scores = visual_prediction_scores_dict[key]
-        #         visual_loss = visual_loss_fct(
-        #             visual_prediction_scores.view(-1, output_dim),
-        #             label.view(*label_shape),
-        #         )
-        #         if visual_loss.dim() > 1:  # Regression Losses
-        #             visual_loss = visual_loss.mean(1)
-        #         visual_loss = (visual_loss * mask_conf.view(-1)).mean() * weight
-        #         total_visual_loss += visual_loss
-        #     total_loss += total_visual_loss
-        # if ans is not None and self.task_qa:
-        #     answer_loss = self.loss_fcts["ce"](answer_score.view(-1, self.num_qa_labels), ans.view(-1))
-        #     total_loss += answer_loss
-
-        if not return_dict:
-            output = (
-                lang_prediction_scores,
-                kg_prediction_scores,
-                cross_relationship_score,
-                # answer_score,
-            ) + lxmert_output[3:]
-            return ((total_loss,) + output) if total_loss is not None else output
-
-        return LxmertForPreTrainingOutput(
-            loss=total_loss,
-            lang_prediction_logits=lang_prediction_scores,
-            kg_prediction_logits=kg_prediction_scores,
-            cross_relationship_score=cross_relationship_score,
-            # question_answering_score=answer_score,
-            language_hidden_states=lxmert_output.language_hidden_states,
-            kg_hidden_states=lxmert_output.kg_hidden_states,
-            language_attentions=lxmert_output.language_attentions,
-            kg_attentions=lxmert_output.kg_attentions,
-            cross_encoder_attentions=lxmert_output.cross_encoder_attentions,
-        )
-
-
-@add_start_docstrings(
-    """Lxmert Model with a visual-answering head on top for downstream QA tasks""",
-    LXMERT_START_DOCSTRING,
-)
-class LxmertForQuestionAnswering(LxmertPreTrainedModel):
-    def __init__(self, config):
-        super().__init__(config)
-        # Configuration
-        self.config = config
-        self.num_qa_labels = config.num_qa_labels
-        self.visual_loss_normalizer = config.visual_loss_normalizer
-
-        # Lxmert backbone
-        self.lxmert = LxmertModel(config)
-
-        self.answer_head = LxmertVisualAnswerHead(config, self.num_qa_labels)
-
-        # Weight initialization
-        self.init_weights()
-
-        # Loss function
-        self.loss = CrossEntropyLoss()
-
-    def resize_num_qa_labels(self, num_labels):
-        """
-        Build a resized question answering linear layer Module from a provided new linear layer. Increasing the size
-        will add newly initialized weights. Reducing the size will remove weights from the end
-
-        Args:
-            cur_qa_logit_layer (:obj:`torch.nn.Linear`):
-                Old linear layer to be resized.
-            num_labels (:obj:`int`, `optional`):
-                New number of labels in the linear layer weight matrix. Increasing the size will add newly initialized
-                weights at the end. Reducing the size will remove weights from the end. If not provided or :obj:`None`,
-                just returns a pointer to the qa labels :obj:`torch.nn.Linear`` module of the model wihtout doing
-                anything.
-
-        Return:
-            :obj:`torch.nn.Linear`: Pointer to the resized Linear layer or the old Linear layer
-        """
-
-        cur_qa_logit_layer = self.get_qa_logit_layer()
-        if num_labels is None or cur_qa_logit_layer is None:
-            return
-        new_qa_logit_layer = self._resize_qa_labels(num_labels)
-        self.config.num_qa_labels = num_labels
-        self.num_qa_labels = num_labels
-
-        return new_qa_logit_layer
-
-    def _resize_qa_labels(self, num_labels):
-        cur_qa_logit_layer = self.get_qa_logit_layer()
-        new_qa_logit_layer = self._get_resized_qa_labels(cur_qa_logit_layer, num_labels)
-        self._set_qa_logit_layer(new_qa_logit_layer)
-        return self.get_qa_logit_layer()
-
-    def get_qa_logit_layer(self) -> nn.Module:
-        """
-        Returns the the linear layer that produces question answering logits
-
-        Returns:
-            :obj:`nn.Module`: A torch module mapping the question answering prediction hidden states. :obj:`None`: A
-            NoneType object if Lxmert does not have the visual answering head.
-        """
-
-        if hasattr(self, "answer_head"):
-            return self.answer_head.logit_fc[-1]
-
-    def _set_qa_logit_layer(self, qa_logit_layer):
-        self.answer_head.logit_fc[-1] = qa_logit_layer
-
-    def _get_resized_qa_labels(self, cur_qa_logit_layer, num_labels):
-
-        if num_labels is None:
-            return cur_qa_logit_layer
-
-        cur_qa_labels, hidden_dim = cur_qa_logit_layer.weight.size()
-        if cur_qa_labels == num_labels:
-            return cur_qa_logit_layer
-
-        # Build new linear output
-        if getattr(cur_qa_logit_layer, "bias", None) is not None:
-            new_qa_logit_layer = nn.Linear(hidden_dim, num_labels)
-        else:
-            new_qa_logit_layer = nn.Linear(hidden_dim, num_labels, bias=False)
-
-        new_qa_logit_layer.to(cur_qa_logit_layer.weight.device)
-
-        # initialize all new labels
-        self._init_weights(new_qa_logit_layer)
-
-        # Copy labels from the previous weights
-        num_labels_to_copy = min(cur_qa_labels, num_labels)
-        new_qa_logit_layer.weight.data[:num_labels_to_copy, :] = cur_qa_logit_layer.weight.data[:num_labels_to_copy, :]
-        if getattr(cur_qa_logit_layer, "bias", None) is not None:
-            new_qa_logit_layer.bias.data[:num_labels_to_copy] = cur_qa_logit_layer.bias.data[:num_labels_to_copy]
-
-        return new_qa_logit_layer
-
-    @add_start_docstrings_to_callable(LXMERT_INPUTS_DOCSTRING.format("batch_size, sequence_length"))
-    @add_code_sample_docstrings(
-        tokenizer_class=_TOKENIZER_FOR_DOC,
-        checkpoint="unc-nlp/lxmert-base-uncased",
-        output_type=LxmertForQuestionAnsweringOutput,
-        config_class=_CONFIG_FOR_DOC,
-    )
-    def forward(
-        self,
-        input_ids=None,
-        visual_feats=None,
-        visual_pos=None,
-        attention_mask=None,
-        visual_attention_mask=None,
-        token_type_ids=None,
-        inputs_embeds=None,
-        labels=None,
-        output_attentions=None,
-        output_hidden_states=None,
-        return_dict=None,
-    ):
-        r"""
-        labels: (``Torch.Tensor`` of shape ``(batch_size)``, `optional`):
-            A one-hot representation of the correct answer
-
-        Returns:
-        """
-
-        lxmert_output = self.lxmert(
-            input_ids=input_ids,
-            visual_feats=visual_feats,
-            visual_pos=visual_pos,
-            token_type_ids=token_type_ids,
-            attention_mask=attention_mask,
-            visual_attention_mask=visual_attention_mask,
-            inputs_embeds=inputs_embeds,
-            output_hidden_states=output_hidden_states,
-            output_attentions=output_attentions,
-            return_dict=return_dict,
-        )
-
-        pooled_output = lxmert_output[2]
-        answer_score = self.answer_head(pooled_output)
-        loss = None
-        if labels is not None:
-            loss = self.loss(answer_score.view(-1, self.num_qa_labels), labels.view(-1))
-
-        if not return_dict:
-            output = (answer_score,) + lxmert_output[3:]
-            return (loss,) + output if loss is not None else output
-
-        return LxmertForQuestionAnsweringOutput(
-            loss=loss,
-            question_answering_score=answer_score,
-            language_hidden_states=lxmert_output.language_hidden_states,
-            vision_hidden_states=lxmert_output.vision_hidden_states,
-            language_attentions=lxmert_output.language_attentions,
-            vision_attentions=lxmert_output.vision_attentions,
-            cross_encoder_attentions=lxmert_output.cross_encoder_attentions,
-        )
+#
+# @add_start_docstrings(
+#     """Lxmert Model with a visual-answering head on top for downstream QA tasks""",
+#     LXMERT_START_DOCSTRING,
+# )
+# class LxmertForQuestionAnswering(LxmertPreTrainedModel):
+#     def __init__(self, config):
+#         super().__init__(config)
+#         # Configuration
+#         self.config = config
+#         self.num_qa_labels = config.num_qa_labels
+#         self.visual_loss_normalizer = config.visual_loss_normalizer
+#
+#         # Lxmert backbone
+#         self.lxmert = LxmertModel(config)
+#
+#         self.answer_head = LxmertVisualAnswerHead(config, self.num_qa_labels)
+#
+#         # Weight initialization
+#         self.init_weights()
+#
+#         # Loss function
+#         self.loss = CrossEntropyLoss()
+#
+#     def resize_num_qa_labels(self, num_labels):
+#         """
+#         Build a resized question answering linear layer Module from a provided new linear layer. Increasing the size
+#         will add newly initialized weights. Reducing the size will remove weights from the end
+#
+#         Args:
+#             cur_qa_logit_layer (:obj:`torch.nn.Linear`):
+#                 Old linear layer to be resized.
+#             num_labels (:obj:`int`, `optional`):
+#                 New number of labels in the linear layer weight matrix. Increasing the size will add newly initialized
+#                 weights at the end. Reducing the size will remove weights from the end. If not provided or :obj:`None`,
+#                 just returns a pointer to the qa labels :obj:`torch.nn.Linear`` module of the model wihtout doing
+#                 anything.
+#
+#         Return:
+#             :obj:`torch.nn.Linear`: Pointer to the resized Linear layer or the old Linear layer
+#         """
+#
+#         cur_qa_logit_layer = self.get_qa_logit_layer()
+#         if num_labels is None or cur_qa_logit_layer is None:
+#             return
+#         new_qa_logit_layer = self._resize_qa_labels(num_labels)
+#         self.config.num_qa_labels = num_labels
+#         self.num_qa_labels = num_labels
+#
+#         return new_qa_logit_layer
+#
+#     def _resize_qa_labels(self, num_labels):
+#         cur_qa_logit_layer = self.get_qa_logit_layer()
+#         new_qa_logit_layer = self._get_resized_qa_labels(cur_qa_logit_layer, num_labels)
+#         self._set_qa_logit_layer(new_qa_logit_layer)
+#         return self.get_qa_logit_layer()
+#
+#     def get_qa_logit_layer(self) -> nn.Module:
+#         """
+#         Returns the the linear layer that produces question answering logits
+#
+#         Returns:
+#             :obj:`nn.Module`: A torch module mapping the question answering prediction hidden states. :obj:`None`: A
+#             NoneType object if Lxmert does not have the visual answering head.
+#         """
+#
+#         if hasattr(self, "answer_head"):
+#             return self.answer_head.logit_fc[-1]
+#
+#     def _set_qa_logit_layer(self, qa_logit_layer):
+#         self.answer_head.logit_fc[-1] = qa_logit_layer
+#
+#     def _get_resized_qa_labels(self, cur_qa_logit_layer, num_labels):
+#
+#         if num_labels is None:
+#             return cur_qa_logit_layer
+#
+#         cur_qa_labels, hidden_dim = cur_qa_logit_layer.weight.size()
+#         if cur_qa_labels == num_labels:
+#             return cur_qa_logit_layer
+#
+#         # Build new linear output
+#         if getattr(cur_qa_logit_layer, "bias", None) is not None:
+#             new_qa_logit_layer = nn.Linear(hidden_dim, num_labels)
+#         else:
+#             new_qa_logit_layer = nn.Linear(hidden_dim, num_labels, bias=False)
+#
+#         new_qa_logit_layer.to(cur_qa_logit_layer.weight.device)
+#
+#         # initialize all new labels
+#         self._init_weights(new_qa_logit_layer)
+#
+#         # Copy labels from the previous weights
+#         num_labels_to_copy = min(cur_qa_labels, num_labels)
+#         new_qa_logit_layer.weight.data[:num_labels_to_copy, :] = cur_qa_logit_layer.weight.data[:num_labels_to_copy, :]
+#         if getattr(cur_qa_logit_layer, "bias", None) is not None:
+#             new_qa_logit_layer.bias.data[:num_labels_to_copy] = cur_qa_logit_layer.bias.data[:num_labels_to_copy]
+#
+#         return new_qa_logit_layer
+#
+#     @add_start_docstrings_to_callable(LXMERT_INPUTS_DOCSTRING.format("batch_size, sequence_length"))
+#     @add_code_sample_docstrings(
+#         tokenizer_class=_TOKENIZER_FOR_DOC,
+#         checkpoint="unc-nlp/lxmert-base-uncased",
+#         output_type=LxmertForQuestionAnsweringOutput,
+#         config_class=_CONFIG_FOR_DOC,
+#     )
+#     def forward(
+#         self,
+#         input_ids=None,
+#         visual_feats=None,
+#         visual_pos=None,
+#         attention_mask=None,
+#         visual_attention_mask=None,
+#         token_type_ids=None,
+#         inputs_embeds=None,
+#         labels=None,
+#         output_attentions=None,
+#         output_hidden_states=None,
+#         return_dict=None,
+#     ):
+#         r"""
+#         labels: (``Torch.Tensor`` of shape ``(batch_size)``, `optional`):
+#             A one-hot representation of the correct answer
+#
+#         Returns:
+#         """
+#
+#         lxmert_output = self.lxmert(
+#             input_ids=input_ids,
+#             visual_feats=visual_feats,
+#             visual_pos=visual_pos,
+#             token_type_ids=token_type_ids,
+#             attention_mask=attention_mask,
+#             visual_attention_mask=visual_attention_mask,
+#             inputs_embeds=inputs_embeds,
+#             output_hidden_states=output_hidden_states,
+#             output_attentions=output_attentions,
+#             return_dict=return_dict,
+#         )
+#
+#         pooled_output = lxmert_output[2]
+#         answer_score = self.answer_head(pooled_output)
+#         loss = None
+#         if labels is not None:
+#             loss = self.loss(answer_score.view(-1, self.num_qa_labels), labels.view(-1))
+#
+#         if not return_dict:
+#             output = (answer_score,) + lxmert_output[3:]
+#             return (loss,) + output if loss is not None else output
+#
+#         return LxmertForQuestionAnsweringOutput(
+#             loss=loss,
+#             question_answering_score=answer_score,
+#             language_hidden_states=lxmert_output.language_hidden_states,
+#             vision_hidden_states=lxmert_output.vision_hidden_states,
+#             language_attentions=lxmert_output.language_attentions,
+#             vision_attentions=lxmert_output.vision_attentions,
+#             cross_encoder_attentions=lxmert_output.cross_encoder_attentions,
+#         )
 
 
 # class LxmertVisualAnswerHead(nn.Module):

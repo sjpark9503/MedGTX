@@ -43,7 +43,7 @@ class InputFeatures:
     kg_input_ids: List[int]
     lang_attention_mask: Optional[List[int]] = None
     kg_attention_mask: Optional[List[int]] = None
-    kg_entity_mask: Optional[List[int]] = None
+    kg_label_mask: Optional[List[int]] = None
     kg_label: Optional[List[int]] = None
     token_type_ids: Optional[List[int]] = None
 
@@ -63,9 +63,8 @@ class HeadOnlyDataset(Dataset):
         if not os.path.isfile(os.path.join(file_path,'cached_feature')):
             logger.info("Creating features from dataset file at %s", file_path)
             # Loading preprocessed data
-            lines = torch.load(os.path.join(file_path,'note'))
-            self.text_batch_encoding = tokenizer(lines, add_special_tokens=True,padding='max_length', truncation=True, max_length=block_size)
-            self.kg_batch_encoding = torch.load(os.path.join(file_path,'kg_norel'))
+            self.batch_encoding = torch.load(os.path.join(file_path,'db'))
+            self.batch_encoding['text'] = tokenizer(self.batch_encoding['text'] , add_special_tokens=True,padding='max_length', truncation=True, max_length=block_size)
             self.features = list()
             self.batch2feature(kg_pad)
             logger.info("Saving features...")
@@ -75,14 +74,14 @@ class HeadOnlyDataset(Dataset):
             self.features = torch.load(os.path.join(file_path,'cached_feature'))
 
     def batch2feature(self,kg_pad):
-        for idx in tqdm(range(len(self.kg_batch_encoding['input']))):
-            inputs = dict([('lang_'+k,self.text_batch_encoding[k][idx]) if 'token_type' not in k else (k, self.text_batch_encoding[k][idx]) for k in self.text_batch_encoding])
-            inputs['kg_input_ids'] = self.kg_batch_encoding['input'][idx]
-            if 'mask' in self.kg_batch_encoding:
-                inputs['kg_entity_mask'] = self.kg_batch_encoding['mask'][idx]
-            if 'label' in self.kg_batch_encoding:
-                inputs['kg_label'] = self.kg_batch_encoding['label'][idx]
-            inputs['kg_attention_mask'] = (np.array(inputs['kg_input_ids'])!=kg_pad).astype(np.int64).tolist()
+        for idx in tqdm(range(len(self.batch_encoding['input']))):
+            inputs = dict([('lang_'+k,self.batch_encoding['text'][k][idx]) if 'token_type' not in k else (k, self.batch_encoding['text'][k][idx]) for k in self.batch_encoding['text']])
+            inputs['kg_input_ids'] = self.batch_encoding['input'][idx]
+            if 'mask' in self.batch_encoding:
+                inputs['kg_attention_mask'] = self.batch_encoding['mask'][idx]
+            if 'label' in self.batch_encoding:
+                inputs['kg_label'] = self.batch_encoding['label'][idx]
+            inputs['kg_label_mask'] = self.batch_encoding['label_mask'][idx]
             feature = InputFeatures(**inputs)
             self.features.append(feature)
 
