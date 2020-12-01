@@ -317,7 +317,7 @@ class Trainer:
         elif self.args.local_rank != -1:
             return SequentialDistributedSampler(eval_dataset)
         else:
-            return SequentialSampler(eval_datanhjset)
+            return SequentialSampler(eval_dataset)
 
     def get_eval_dataloader(self, eval_dataset: Optional[Dataset] = None) -> DataLoader:
         """
