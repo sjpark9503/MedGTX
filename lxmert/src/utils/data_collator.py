@@ -74,16 +74,20 @@ class NodeClassification_DataCollator:
         batch = {}
 
         for k, v in first.items():
-            if (k == "kg_attention_mask") and (len(v.shape)==3) and not isinstance(v, str):
+            if (k == "kg_attention_mask") and not isinstance(v, str):
                 if isinstance(v, torch.Tensor):
-                    batch[k] = torch.stack([f[k] for f in features]).permute(0,3,1,2)
+                    if (len(v.shape) == 3):
+                        batch[k] = torch.stack([f[k] for f in features]).permute(0,3,1,2)
+                    else:
+                        batch[k] = torch.stack([f[k] for f in features])
                 else:
-                    batch[k] = torch.tensor([f[k] for f in features]).permute(0,3,1,2)
+                    batch[k] = torch.tensor([f[k] for f in features])
             elif v is not None and not isinstance(v, str):
                 if isinstance(v, torch.Tensor):
                     batch[k] = torch.stack([f[k] for f in features])
                 else:
                     batch[k] = torch.tensor([f[k] for f in features])
+
         return batch
 
     def mask_tokens(self, inputs: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:

@@ -164,7 +164,7 @@ class Trainer:
         eval_dataset: Optional[Dataset] = None,
         tokenizer: Optional["PreTrainedTokenizerBase"] = None,
         model_init: Callable[[], PreTrainedModel] = None,
-        eval_criterion: Optional[List] = None,
+        # eval_criterion: Optional[List] = None,
         optimizers: Tuple[torch.optim.Optimizer, torch.optim.lr_scheduler.LambdaLR] = (None, None),
         **kwargs,
     ):
@@ -192,7 +192,7 @@ class Trainer:
         self.eval_dataset = eval_dataset
         self.tokenizer = tokenizer
 
-        self.eval_criterion = args.eval_criterion.split(',')
+        self.eval_criterion = [x.lower().strip() for x in args.eval_criterion.split(',')]
         self.optimizer, self.lr_scheduler = optimizers
         if model_init is not None and (self.optimizer is not None or self.lr_scheduler is not None):
             raise RuntimeError(
