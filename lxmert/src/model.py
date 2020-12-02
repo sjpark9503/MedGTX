@@ -907,10 +907,14 @@ class LxmertModel(LxmertPreTrainedModel):
         # Process the KG attention mask
         if kg_attention_mask is not None:
             if len(kg_attention_mask.shape)==2:
+                # Process KG-side self attention mask
                 extended_kg_attention_mask = kg_attention_mask.unsqueeze(1).unsqueeze(2)
                 extended_kg_attention_mask = extended_kg_attention_mask.to(dtype=self.dtype)
                 extended_kg_attention_mask = (1.0 - extended_kg_attention_mask) * -10000.0
-                extended_kg_padding_mask = extended_kg_attention_mask
+                # Process KG padding mask for cross attention
+                extended_kg_padding_mask = kg_padding_mask.unsqueeze(1).unsqueeze(2)
+                extended_kg_padding_mask = extended_kg_padding_mask.to(dtype=self.dtype)
+                extended_kg_padding_mask = (1.0 - extended_kg_padding_mask) * -10000.0
 
             elif len(kg_attention_mask.shape)==4:
                 # Process KG-side self attention mask
@@ -924,7 +928,11 @@ class LxmertModel(LxmertPreTrainedModel):
             else:
                 raise ValueError("Only supports seq_len X seq_len mask or batch_size X # head X seq_len X seq_len")
         else:
-            extended_kg_attention_mask = None
+            # Process KG padding mask for cross attention
+            extended_kg_padding_mask = kg_padding_mask.unsqueeze(1).unsqueeze(2)
+            extended_kg_padding_mask = extended_kg_padding_mask.to(dtype=self.dtype)
+            extended_kg_padding_mask = (1.0 - extended_kg_padding_mask) * -10000.0
+            extended_kg_attention_mask = extended_kg_padding_mask.clone().detach()
 
         # Positional Word Embeddings
         lang_embedding_output = self.lang_embeddings(lang_input_ids, token_type_ids, lang_inputs_embeds)
