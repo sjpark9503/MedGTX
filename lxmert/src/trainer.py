@@ -173,7 +173,10 @@ class Trainer:
             args = TrainingArguments("tmp_trainer")
         self.args = args
         # Initialize WandB
-        wandb.init(config=vars(args), entity='kgtxt', project='GraphEncoder')
+        wandb_config = dict()
+        wandb_config.update(vars(args))
+        wandb_config.update(vars(model.config))
+        wandb.init(config=wandb_config, entity='kgtxt', project='GraphEncoder')
         wandb.run.name = self.args.run_name
         #wandb.run.save()
         # Seed must be set before instantiating the model when using model

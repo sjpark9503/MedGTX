@@ -593,8 +593,10 @@ class LxmertEncoder(nn.Module):
         plm_usage = self.config.pretrained_lang_model
         from transformers import AutoModel, AutoConfig
         if plm_usage['use_weight']:
+            logger.info("Load weight of pretrained model for language part")
             self.layer = AutoModel.from_pretrained(plm_usage['model_name']).encoder.layer
         else:
+            logger.info("Load only configuration of pretrained model for language part")
             plm_config = AutoConfig.from_pretrained(plm_usage['model_name'])
             self.layer = AutoModel.from_config(plm_config).encoder.layer
 
@@ -1014,9 +1016,7 @@ class LxmertForKGTokPredAndMaskedLM(LxmertPreTrainedModel):
             torch.cuda.empty_cache()
 
         # Use Pretrained-LM in Language Part
-        if 'pretrained_lang_model' in config.to_dict().keys():
-            logger.info("Load pretrained model for language part")
-            self.lxmert.encoder.re_init_to_pretrained_lang_model()
+        self.lxmert.encoder.re_init_to_pretrained_lang_model()
 
         # Loss functions
         self.loss_fcts = {
