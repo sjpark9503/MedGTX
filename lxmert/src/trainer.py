@@ -690,12 +690,6 @@ class Trainer:
 
                     loss_dict = self.log_save_evaluate(tr_loss, loss_dict, model)
 
-                # if self.control.should_epoch_stop or self.control.should_training_stop:
-                #     break
-
-            # self.control = self.callback_handler.on_epoch_end(self.args, self.state, self.control)
-            loss_dict = self.log_save_evaluate(tr_loss, loss_dict, model)
-
             if self.args.tpu_metrics_debug or self.args.debug:
                 if is_torch_tpu_available():
                     # tpu-comment: Logging debug metrics for PyTorch/XLA (compile, execute times, ops, etc.)
