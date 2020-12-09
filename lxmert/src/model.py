@@ -636,7 +636,7 @@ class LxmertEncoder(nn.Module):
                 lang_feats,
                 lang_attention_mask,
                 kg_feats,
-                kg_attention_mask,
+                kg_attention_mask if self.config.structured_cross else kg_padding_mask,
                 kg_padding_mask,
                 output_attentions=output_attentions,
             )

@@ -18,7 +18,6 @@
   "task_mask_lm": true,
   "task_mask_kg": true,
   "contrastive_learning": false,
-  "structured_cross": false,
   "negative_samples": 0,
   "max_position_embeddings": {"lang": 512,"kg": 0},
   "vocab_size": {"lang": 30522, "kg": 167494},
