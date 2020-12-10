@@ -95,5 +95,6 @@ __v1.6.1__ : Add data mapping class (like entity2id -> id2entity, id2literal)\
 __v1.7__ : Attention visualization tool is successfully integrated to Evaluation.ipynb. **This is the final version without graph encoder**\
 __v2.0__ : Add graph encoder, Refine codes under preprocessing\
 __v2.0.1__ : minor bug fix\
-__v2.0.2__ : Code refinement (Disambiguate LM init part, Add model spec to WandB configuration)
+__v2.0.2__ : Code refinement (Disambiguate LM init part, Add model spec to WandB configuration)\
+__v2.1__ : Support attention mask for homogeneous graph
 

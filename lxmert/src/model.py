@@ -908,9 +908,9 @@ class LxmertModel(LxmertPreTrainedModel):
 
         # Process the KG attention mask
         if kg_attention_mask is not None:
-            if len(kg_attention_mask.shape)==2:
+            if len(kg_attention_mask.shape)==3:
                 # Process KG-side self attention mask
-                extended_kg_attention_mask = kg_attention_mask.unsqueeze(1).unsqueeze(2)
+                extended_kg_attention_mask = kg_attention_mask.unsqueeze(1)
                 extended_kg_attention_mask = extended_kg_attention_mask.to(dtype=self.dtype)
                 extended_kg_attention_mask = (1.0 - extended_kg_attention_mask) * -10000.0
                 # Process KG padding mask for cross attention
