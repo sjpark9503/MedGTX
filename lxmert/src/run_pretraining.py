@@ -96,7 +96,7 @@ def main():
             "You are instantiating a new tokenizer from scratch. This is not supported, but you can do it from another script, save it,"
             "and load it from here, using --tokenizer_name"
         )
-    if ((config.num_attention_heads % config.num_relations) != 0) and config.gcn:
+    if ((config.num_attention_heads % config.num_relations) != 0) and config.gcn and ('Multi' in training_args.output_dir):
         raise ValueError(
             "# attentions heads must be divisible by # relations"
         )

@@ -96,5 +96,6 @@ __v1.7__ : Attention visualization tool is successfully integrated to Evaluation
 __v2.0__ : Add graph encoder, Refine codes under preprocessing\
 __v2.0.1__ : minor bug fix\
 __v2.0.2__ : Code refinement (Disambiguate LM init part, Add model spec to WandB configuration)\
-__v2.1__ : Support attention mask for homogeneous graph
+__v2.1__ : Support attention mask for homogeneous graph\
+__v2.2__ : Reorganize preprocessing code, fully support experiments until 20201219
 
