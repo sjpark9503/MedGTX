@@ -162,46 +162,38 @@ class NodeClassification_DataCollator:
         return NotImplementedError("Not Support Yet")
 
 @dataclass
-class UnimodalKG_DataCollator:
+class NegativeSampling_DataCollator:
     """
     Data collator used for language modeling.
     - collates batches of tensors, honoring their tokenizer's pad_token
     - preprocesses batches for masked language modeling
     """
     tokenizer: PreTrainedTokenizerBase
-    kg_special_token_ids: dict
-    kg_size: int
-    mlm: bool = True
-    mlm_probability: float = 0.15
-    contrastive: bool = False
+    seed_list : list
+    NCE : bool
+    n_negatives: int = 1
     prediction: bool = False
 
     def __call__(self,features: List[InputDataClass]) -> Dict[str, torch.Tensor]:
         if not isinstance(features[0], (dict, BatchEncoding)):
             features = [vars(f) for f in features]
-        batch, entity_mask = self._tensorize_batch(features)
+        batch = self._tensorize_batch(features, self.n_negatives, self.NCE)
 
         if not self.prediction:
-            masked_texts, lm_label = self.mask_tokens(batch['lang_input_ids'])
-            if not self.contrastive:
-                masked_subs, kg_label_mask = self.mask_kg(batch['kg_input_ids'], entity_mask)
-                batch['kg_label_mask'] = kg_label_mask
-                batch['kg_input_ids'] = masked_subs
+            if self.NCE:
+                shuffled_idx = (torch.arange(batch_size) + torch.randint(1, batch_size - 1, (1, 1)).item()) % batch_size
+                batch['negative_kg_input_ids'] = batch['kg_input_ids'].detach().clone()[shuffled_idx]
+                batch['label'] = None
             else:
-                batch['kg_label_mask'] = None
-
-            # Define batch and return
-            batch['lang_input_ids'] = masked_texts
-            batch['lm_label'] = lm_label
+                batch_size = batch['lang_input_ids'].size(0)
+                batch['label'] = torch.stack([torch.ones(batch_size, dtype=torch.long()),
+                                             torch.zeros(batch_size*self.n_negagtives, dtype=torch.long())]).to(lang_input_ids.device)
         else:
-            batch['lang_input_ids'] = batch['lang_input_ids']
-            batch['lm_label'] = None
-            batch['kg_input_ids'] = batch['kg_input_ids']
-            batch['kg_label'] = None
+            return NotImplementedError("Not Support Yet")
 
         return batch
 
-    def _tensorize_batch(self,features: List[Dict]) -> Dict[str, torch.Tensor]:
+    def _tensorize_batch(self,features: List[Dict], n_negatives, NCE) -> Dict[str, torch.Tensor]:
         # In this function we'll make the assumption that all `features` in the batch
         # have the same attributes.
         # So we will look at the first element as a proxy for what attributes exist
@@ -210,448 +202,28 @@ class UnimodalKG_DataCollator:
         batch = {}
 
         for k, v in first.items():
-            if (k == "kg_entity_mask") and not isinstance(v, str):
-                if v is not None:
+            if 'label' in k:
+                continue
+            if (v is not None) and (not isinstance(v, str)):
+                if (k == "kg_attention_mask"):
                     if isinstance(v, torch.Tensor):
-                        entity_mask = torch.stack([f[k] for f in features])
+                        if (len(v.shape) == 3):
+                            batch[k] = torch.stack([f[k] for f in features]).permute(0,3,1,2)
+                        else:
+                            batch[k] = torch.stack([f[k] for f in features])
                     else:
-                        entity_mask = torch.tensor([f[k] for f in features])
+                        batch[k] = torch.tensor([f[k] for f in features])
                 else:
-                    entity_mask = v
-            elif v is not None and not isinstance(v, str):
-                if isinstance(v, torch.Tensor):
-                    batch[k] = torch.stack([f[k] for f in features])
-                else:
-                    batch[k] = torch.tensor([f[k] for f in features])
-        return batch, entity_mask
+                    if isinstance(v, torch.Tensor):
+                        batch[k] = torch.stack([f[k] for f in features])
+                    else:
+                        batch[k] = torch.tensor([f[k] for f in features])
 
-    def mask_tokens(self, inputs: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
-        """
-        Prepare masked tokens inputs/labels for masked language modeling: 80% MASK, 10% random, 10% original.
-        """
-
-        if self.tokenizer.mask_token is None:
-            raise ValueError(
-                "This tokenizer does not have a mask token which is necessary for masked language modeling. Remove the --mlm flag if you want to use this tokenizer."
-            )
-
-        labels = inputs.clone()
-        # We sample a few tokens in each sequence for masked-LM training (with probability args.mlm_probability defaults to 0.15 in Bert/RoBERTa)
-        probability_matrix = torch.ones(labels.shape)
-        masked_indices = torch.bernoulli(probability_matrix).bool()
-        labels[masked_indices] = -100  # We only compute loss on masked tokens
-        inputs[masked_indices] = self.tokenizer.convert_tokens_to_ids(self.tokenizer.pad_token)
-
-        # The rest of the time (10% of the time) we keep the masked input tokens unchanged
-        return inputs, labels
-
-    def mask_kg(self, inputs: torch.Tensor, entity_mask = None) -> Tuple[torch.Tensor, torch.Tensor]:
-        """
-        Prepare masked tokens inputs/labels for masked language modeling: 80% MASK, 10% random, 10% original.
-        """
-
-        if self.kg_special_token_ids['MASK'] is None:
-            raise ValueError(
-                "This tokenizer does not have a mask token which is necessary for masked language modeling. Remove the --mlm flag if you want to use this tokenizer."
-            )
-        label_mask = torch.ones(inputs.shape, dtype=torch.bool)
-        # We sample a few tokens in each sequence for masked-LM training (with probability args.mlm_probability defaults to 0.15 in Bert/RoBERTa)
-        probability_matrix = torch.full(inputs.shape, self.mlm_probability)
-        if entity_mask is not None:
-            probability_matrix.masked_fill_(torch.tensor(entity_mask, dtype=torch.bool), value=0.0)
-            label_mask.masked_fill_(torch.tensor(entity_mask, dtype=torch.bool), value=False)
-        if self.kg_special_token_ids['PAD'] is not None:
-            padding_mask = inputs.eq(self.kg_special_token_ids['PAD'])
-            probability_matrix.masked_fill_(padding_mask, value=0.0)
-            label_mask.masked_fill_(padding_mask, value=False)
-        masked_indices = torch.bernoulli(probability_matrix).bool()
-
-        # 80% of the time, we replace masked input tokens with tokenizer.mask_token ([MASK])
-        indices_replaced = torch.bernoulli(torch.full(inputs.shape, 0.8)).bool() & masked_indices
-        inputs[indices_replaced] = self.kg_special_token_ids['MASK']
-
-        # 10% of the time, we replace masked input tokens with random word
-        indices_random = torch.bernoulli(torch.full(inputs.shape, 0.5)).bool() & masked_indices & ~indices_replaced
-        random_nodes = torch.randint(len(self.kg_special_token_ids),self.kg_size, inputs.shape, dtype=torch.long)
-        inputs[indices_random] = random_nodes[indices_random]
-
-        # The rest of the time (10% of the time) we keep the masked input tokens unchanged
-        return inputs, label_mask
-
-    def kg_negative_sampling(self, inputs: torch.Tensor, entity_mask = None) -> Tuple[torch.Tensor, torch.Tensor]:
-        """
-        Prepare masked tokens inputs/labels for masked language modeling: 80% MASK, 10% random, 10% original.
-        """
-        return NotImplementedError("Not Support Yet")
-
-@dataclass
-class UnimodalLM_DataCollator:
-    """
-    Data collator used for language modeling.
-    - collates batches of tensors, honoring their tokenizer's pad_token
-    - preprocesses batches for masked language modeling
-    """
-    tokenizer: PreTrainedTokenizerBase
-    kg_special_token_ids: dict
-    kg_size: int
-    mlm: bool = True
-    mlm_probability: float = 0.15
-    contrastive: bool = False
-    prediction: bool = False
-
-    def __call__(self,features: List[InputDataClass]) -> Dict[str, torch.Tensor]:
-        if not isinstance(features[0], (dict, BatchEncoding)):
-            features = [vars(f) for f in features]
-        batch, entity_mask = self._tensorize_batch(features)
-
-        if not self.prediction:
-            masked_texts, lm_label = self.mask_tokens(batch['lang_input_ids'])
-            if not self.contrastive:
-                masked_subs, kg_label_mask = self.mask_kg(batch['kg_input_ids'], entity_mask)
-                batch['kg_label_mask'] = kg_label_mask
-                batch['kg_input_ids'] = masked_subs
-            else:
-                batch['kg_label_mask'] = None
-
-            # Define batch and return
-            batch['lang_input_ids'] = masked_texts
-            batch['lm_label'] = lm_label
-        else:
-            batch['lang_input_ids'] = batch['lang_input_ids']
-            batch['lm_label'] = None
-            batch['kg_input_ids'] = batch['kg_input_ids']
-            batch['kg_label'] = None
+                if not NCE:
+                    if 'lang' in k:
+                        batch_size = len(features)
+                        batch[k] = torch.stack([batch[k].detach().clone()[(torch.arange(batch_size) + idx) % batch_size] for idx in range(n_negatives+1)])
+                    else:
+                        batch[k] = torch.stack([batch[k].detach().clone() for _ in range(n_negatives + 1)])
 
         return batch
-
-    def _tensorize_batch(self,features: List[Dict]) -> Dict[str, torch.Tensor]:
-        # In this function we'll make the assumption that all `features` in the batch
-        # have the same attributes.
-        # So we will look at the first element as a proxy for what attributes exist
-        # on the whole batch.
-        first = features[0]
-        batch = {}
-
-        for k, v in first.items():
-            if (k == "kg_entity_mask") and not isinstance(v, str):
-                if v is not None:
-                    if isinstance(v, torch.Tensor):
-                        entity_mask = torch.stack([f[k] for f in features])
-                    else:
-                        entity_mask = torch.tensor([f[k] for f in features])
-                else:
-                    entity_mask = v
-            elif v is not None and not isinstance(v, str):
-                if isinstance(v, torch.Tensor):
-                    batch[k] = torch.stack([f[k] for f in features])
-                else:
-                    batch[k] = torch.tensor([f[k] for f in features])
-        return batch, entity_mask
-
-    def mask_tokens(self, inputs: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
-        """
-        Prepare masked tokens inputs/labels for masked language modeling: 80% MASK, 10% random, 10% original.
-        """
-
-        if self.tokenizer.mask_token is None:
-            raise ValueError(
-                "This tokenizer does not have a mask token which is necessary for masked language modeling. Remove the --mlm flag if you want to use this tokenizer."
-            )
-
-        labels = inputs.clone()
-        # We sample a few tokens in each sequence for masked-LM training (with probability args.mlm_probability defaults to 0.15 in Bert/RoBERTa)
-        probability_matrix = torch.full(labels.shape, self.mlm_probability)
-        special_tokens_mask = [
-            self.tokenizer.get_special_tokens_mask(val, already_has_special_tokens=True) for val in labels.tolist()
-        ]
-        probability_matrix.masked_fill_(torch.tensor(special_tokens_mask, dtype=torch.bool), value=0.0)
-        if self.tokenizer._pad_token is not None:
-            padding_mask = labels.eq(self.tokenizer.pad_token_id)
-            probability_matrix.masked_fill_(padding_mask, value=0.0)
-        masked_indices = torch.bernoulli(probability_matrix).bool()
-        labels[~masked_indices] = -100  # We only compute loss on masked tokens
-
-        # 80% of the time, we replace masked input tokens with tokenizer.mask_token ([MASK])
-        indices_replaced = torch.bernoulli(torch.full(labels.shape, 0.8)).bool() & masked_indices
-        inputs[indices_replaced] = self.tokenizer.convert_tokens_to_ids(self.tokenizer.mask_token)
-
-        # 10% of the time, we replace masked input tokens with random word
-        indices_random = torch.bernoulli(torch.full(labels.shape, 0.5)).bool() & masked_indices & ~indices_replaced
-        random_words = torch.randint(len(self.tokenizer), labels.shape, dtype=torch.long)
-        inputs[indices_random] = random_words[indices_random]
-
-        # The rest of the time (10% of the time) we keep the masked input tokens unchanged
-        return inputs, labels
-
-    def mask_kg(self, inputs: torch.Tensor, entity_mask = None) -> Tuple[torch.Tensor, torch.Tensor]:
-        """
-        Prepare masked tokens inputs/labels for masked language modeling: 80% MASK, 10% random, 10% original.
-        """
-
-        if self.kg_special_token_ids['MASK'] is None:
-            raise ValueError(
-                "This tokenizer does not have a mask token which is necessary for masked language modeling. Remove the --mlm flag if you want to use this tokenizer."
-            )
-        label_mask = torch.ones(inputs.shape, dtype=torch.bool)
-        # We sample a few tokens in each sequence for masked-LM training (with probability args.mlm_probability defaults to 0.15 in Bert/RoBERTa)
-        probability_matrix = torch.ones(inputs.shape)
-        masked_indices = torch.bernoulli(probability_matrix).bool()
-        inputs[masked_indices] = self.kg_special_token_ids['PAD']
-
-        # The rest of the time (10% of the time) we keep the masked input tokens unchanged
-        return inputs, label_mask
-
-    def kg_negative_sampling(self, inputs: torch.Tensor, entity_mask = None) -> Tuple[torch.Tensor, torch.Tensor]:
-        """
-        Prepare masked tokens inputs/labels for masked language modeling: 80% MASK, 10% random, 10% original.
-        """
-        return NotImplementedError("Not Support Yet")
-
-# @dataclass
-# class NodeMasking_DataCollator:
-#     """
-#     Data collator used for language modeling.
-#     - collates batches of tensors, honoring their tokenizer's pad_token
-#     - preprocesses batches for masked language modeling
-#     """
-#     tokenizer: PreTrainedTokenizerBase
-#     kg_special_token_ids: dict
-#     kg_size: int
-#     mlm: bool = True
-#     mlm_probability: float = 0.15
-#     prediction: bool = False
-#
-#     def __call__(self,features: List[InputDataClass]) -> Dict[str, torch.Tensor]:
-#         if not isinstance(features[0], (dict, BatchEncoding)):
-#             features = [vars(f) for f in features]
-#         batch, entity_mask = self._tensorize_batch(features)
-#         if not prediction:
-#             masked_texts, lm_label = self.mask_tokens(batch['lang_input_ids'])
-#             masked_subs, kg_label = self.mask_kg(batch['kg_input_ids'], entity_mask)
-#             # Define batch and return
-#             batch['lang_input_ids'] = masked_texts
-#             batch['lm_label'] = lm_label
-#             batch['kg_input_ids'] = masked_subs
-#             batch['kg_label'] = kg_label
-#         else:
-#             batch['lang_input_ids'] = batch['lang_input_ids']
-#             batch['lm_label'] = None
-#             batch['kg_input_ids'] = batch['kg_input_ids']
-#             batch['kg_label'] = None
-#
-#         return batch
-#
-#     def _tensorize_batch(self,features: List[Dict]) -> Dict[str, torch.Tensor]:
-#         # In this function we'll make the assumption that all `features` in the batch
-#         # have the same attributes.
-#         # So we will look at the first element as a proxy for what attributes exist
-#         # on the whole batch.
-#         first = features[0]
-#         batch = {}
-#
-#         # Handling of all other possible keys.
-#         # Again, we will use the first element to figure out which key/values are not None for this model.
-#         for k, v in first.items():
-#             if (k == "kg_entity_mask") and not isinstance(v, str):
-#                 if v is not None:
-#                     if isinstance(v, torch.Tensor):
-#                         entity_mask = torch.stack([f[k] for f in features])
-#                     else:
-#                         entity_mask = torch.tensor([f[k] for f in features])
-#                 else:
-#                     entity_mask = v
-#             elif "label" not in k and v is not None and not isinstance(v, str):
-#                 if isinstance(v, torch.Tensor):
-#                     batch[k] = torch.stack([f[k] for f in features])
-#                 else:
-#                     batch[k] = torch.tensor([f[k] for f in features])
-#
-#         return batch, entity_mask
-#
-#     def mask_tokens(self, inputs: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
-#         """
-#         Prepare masked tokens inputs/labels for masked language modeling: 80% MASK, 10% random, 10% original.
-#         """
-#
-#         if self.tokenizer.mask_token is None:
-#             raise ValueError(
-#                 "This tokenizer does not have a mask token which is necessary for masked language modeling. Remove the --mlm flag if you want to use this tokenizer."
-#             )
-#
-#         labels = inputs.clone()
-#         # We sample a few tokens in each sequence for masked-LM training (with probability args.mlm_probability defaults to 0.15 in Bert/RoBERTa)
-#         probability_matrix = torch.full(labels.shape, self.mlm_probability)
-#         special_tokens_mask = [
-#             self.tokenizer.get_special_tokens_mask(val, already_has_special_tokens=True) for val in labels.tolist()
-#         ]
-#         probability_matrix.masked_fill_(torch.tensor(special_tokens_mask, dtype=torch.bool), value=0.0)
-#         if self.tokenizer._pad_token is not None:
-#             padding_mask = labels.eq(self.tokenizer.pad_token_id)
-#             probability_matrix.masked_fill_(padding_mask, value=0.0)
-#         masked_indices = torch.bernoulli(probability_matrix).bool()
-#         labels[~masked_indices] = -100  # We only compute loss on masked tokens
-#
-#         # 80% of the time, we replace masked input tokens with tokenizer.mask_token ([MASK])
-#         indices_replaced = torch.bernoulli(torch.full(labels.shape, 0.8)).bool() & masked_indices
-#         inputs[indices_replaced] = self.tokenizer.convert_tokens_to_ids(self.tokenizer.mask_token)
-#
-#         # 10% of the time, we replace masked input tokens with random word
-#         indices_random = torch.bernoulli(torch.full(labels.shape, 0.5)).bool() & masked_indices & ~indices_replaced
-#         random_words = torch.randint(len(self.tokenizer), labels.shape, dtype=torch.long)
-#         inputs[indices_random] = random_words[indices_random]
-#
-#         # The rest of the time (10% of the time) we keep the masked input tokens unchanged
-#         return inputs, labels
-#
-#     def mask_kg(self, inputs: torch.Tensor, entity_mask = None) -> Tuple[torch.Tensor, torch.Tensor]:
-#         """
-#         Prepare masked tokens inputs/labels for masked language modeling: 80% MASK, 10% random, 10% original.
-#         """
-#
-#         if self.kg_special_token_ids['MASK'] is None:
-#             raise ValueError(
-#                 "This tokenizer does not have a mask token which is necessary for masked language modeling. Remove the --mlm flag if you want to use this tokenizer."
-#             )
-#
-#         labels = inputs.clone()
-#         # We sample a few tokens in each sequence for masked-LM training (with probability args.mlm_probability defaults to 0.15 in Bert/RoBERTa)
-#         probability_matrix = torch.full(labels.shape, self.mlm_probability)
-#         if entity_mask is not None:
-#             probability_matrix.masked_fill_(torch.tensor(entity_mask, dtype=torch.bool), value=0.0)
-#         if self.kg_special_token_ids['PAD'] is not None:
-#             padding_mask = labels.eq(self.kg_special_token_ids['PAD'])
-#             probability_matrix.masked_fill_(padding_mask, value=0.0)
-#         masked_indices = torch.bernoulli(probability_matrix).bool()
-#         labels[~masked_indices] = -100  # We only compute loss on masked tokens
-#
-#         # 80% of the time, we replace masked input tokens with tokenizer.mask_token ([MASK])
-#         indices_replaced = torch.bernoulli(torch.full(labels.shape, 0.8)).bool() & masked_indices
-#         inputs[indices_replaced] = self.kg_special_token_ids['MASK']
-#
-#         # 10% of the time, we replace masked input tokens with random word
-#         indices_random = torch.bernoulli(torch.full(labels.shape, 0.5)).bool() & masked_indices & ~indices_replaced
-#         random_nodes = torch.randint(len(self.kg_special_token_ids),self.kg_size, labels.shape, dtype=torch.long)
-#         inputs[indices_random] = random_nodes[indices_random]
-#
-#         # The rest of the time (10% of the time) we keep the masked input tokens unchanged
-#         return inputs, labels
-#
-# @dataclass
-# class LiteralRegression_DataCollator:
-#     """
-#     Data collator used for language modeling.
-#     - collates batches of tensors, honoring their tokenizer's pad_token
-#     - preprocesses batches for masked language modeling
-#     """
-#     tokenizer: PreTrainedTokenizerBase
-#     kg_special_token_ids: dict
-#     kg_size: int
-#     mlm: bool = True
-#     mlm_probability: float = 0.15
-#
-#     def __call__(self,features: List[InputDataClass]) -> Dict[str, torch.Tensor]:
-#         if not isinstance(features[0], (dict, BatchEncoding)):
-#             features = [vars(f) for f in features]
-#         batch, entity_mask = self._tensorize_batch(features)
-#         masked_texts, lm_label = self.mask_tokens(batch['lang_input_ids'])
-#         masked_subs, kg_label_mask = self.mask_kg(batch['kg_input_ids'], entity_mask)
-#         batch['kg_label_mask'] = kg_label_mask
-#         batch['kg_input_ids'] = masked_subs
-#
-#         # Define batch and return
-#         batch['lang_input_ids'] = masked_texts
-#         batch['lm_label'] = lm_label
-#
-#         return batch
-#
-#     def _tensorize_batch(self,features: List[Dict]) -> Dict[str, torch.Tensor]:
-#         # In this function we'll make the assumption that all `features` in the batch
-#         # have the same attributes.
-#         # So we will look at the first element as a proxy for what attributes exist
-#         # on the whole batch.
-#         first = features[0]
-#         batch = {}
-#
-#         for k, v in first.items():
-#             if (k == "kg_entity_mask") and not isinstance(v, str):
-#                 if v is not None:
-#                     if isinstance(v, torch.Tensor):
-#                         entity_mask = torch.stack([f[k] for f in features])
-#                     else:
-#                         entity_mask = torch.tensor([f[k] for f in features])
-#                 else:
-#                     entity_mask = v
-#             elif v is not None and not isinstance(v, str):
-#                 if isinstance(v, torch.Tensor):
-#                     batch[k] = torch.stack([f[k] for f in features])
-#                 else:
-#                     batch[k] = torch.tensor([f[k] for f in features])
-#         return batch, entity_mask
-#
-#     def mask_tokens(self, inputs: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
-#         """
-#         Prepare masked tokens inputs/labels for masked language modeling: 80% MASK, 10% random, 10% original.
-#         """
-#
-#         if self.tokenizer.mask_token is None:
-#             raise ValueError(
-#                 "This tokenizer does not have a mask token which is necessary for masked language modeling. Remove the --mlm flag if you want to use this tokenizer."
-#             )
-#
-#         labels = inputs.clone()
-#         # We sample a few tokens in each sequence for masked-LM training (with probability args.mlm_probability defaults to 0.15 in Bert/RoBERTa)
-#         probability_matrix = torch.full(labels.shape, self.mlm_probability)
-#         special_tokens_mask = [
-#             self.tokenizer.get_special_tokens_mask(val, already_has_special_tokens=True) for val in labels.tolist()
-#         ]
-#         probability_matrix.masked_fill_(torch.tensor(special_tokens_mask, dtype=torch.bool), value=0.0)
-#         if self.tokenizer._pad_token is not None:
-#             padding_mask = labels.eq(self.tokenizer.pad_token_id)
-#             probability_matrix.masked_fill_(padding_mask, value=0.0)
-#         masked_indices = torch.bernoulli(probability_matrix).bool()
-#         labels[~masked_indices] = -100  # We only compute loss on masked tokens
-#
-#         # 80% of the time, we replace masked input tokens with tokenizer.mask_token ([MASK])
-#         indices_replaced = torch.bernoulli(torch.full(labels.shape, 0.8)).bool() & masked_indices
-#         inputs[indices_replaced] = self.tokenizer.convert_tokens_to_ids(self.tokenizer.mask_token)
-#
-#         # 10% of the time, we replace masked input tokens with random word
-#         indices_random = torch.bernoulli(torch.full(labels.shape, 0.5)).bool() & masked_indices & ~indices_replaced
-#         random_words = torch.randint(len(self.tokenizer), labels.shape, dtype=torch.long)
-#         inputs[indices_random] = random_words[indices_random]
-#
-#         # The rest of the time (10% of the time) we keep the masked input tokens unchanged
-#         return inputs, labels
-#
-#     def mask_kg(self, inputs: torch.Tensor, entity_mask = None) -> Tuple[torch.Tensor, torch.Tensor]:
-#         """
-#         Prepare masked tokens inputs/labels for masked language modeling: 80% MASK, 10% random, 10% original.
-#         """
-#
-#         if self.kg_special_token_ids['MASK'] is None:
-#             raise ValueError(
-#                 "This tokenizer does not have a mask token which is necessary for masked language modeling. Remove the --mlm flag if you want to use this tokenizer."
-#             )
-#         label_mask = torch.ones(inputs.shape, dtype=torch.bool)
-#         # We sample a few tokens in each sequence for masked-LM training (with probability args.mlm_probability defaults to 0.15 in Bert/RoBERTa)
-#         probability_matrix = torch.full(inputs.shape, self.mlm_probability)
-#         if entity_mask is not None:
-#             probability_matrix.masked_fill_(torch.tensor(entity_mask, dtype=torch.bool), value=0.0)
-#             label_mask.masked_fill_(torch.tensor(entity_mask, dtype=torch.bool), value=False)
-#         if self.kg_special_token_ids['PAD'] is not None:
-#             padding_mask = inputs.eq(self.kg_special_token_ids['PAD'])
-#             probability_matrix.masked_fill_(padding_mask, value=0.0)
-#             label_mask.masked_fill_(padding_mask, value=False)
-#         masked_indices = torch.bernoulli(probability_matrix).bool()
-#
-#         # 80% of the time, we replace masked input tokens with tokenizer.mask_token ([MASK])
-#         indices_replaced = torch.bernoulli(torch.full(inputs.shape, 0.8)).bool() & masked_indices
-#         inputs[indices_replaced] = self.kg_special_token_ids['MASK']
-#
-#         # 10% of the time, we replace masked input tokens with random word
-#         indices_random = torch.bernoulli(torch.full(inputs.shape, 0.5)).bool() & masked_indices & ~indices_replaced
-#         random_nodes = torch.randint(len(self.kg_special_token_ids),self.kg_size, inputs.shape, dtype=torch.long)
-#         inputs[indices_random] = random_nodes[indices_random]
-#
-#         # The rest of the time (10% of the time) we keep the masked input tokens unchanged
-#         return inputs, label_mask

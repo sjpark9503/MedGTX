@@ -97,7 +97,7 @@ diagnoses_dtype = {
 
 d_icd_diagnoses_dtype = {
     'DIAGNOSES_ICD9_CODE': 'entity',
-    'DIAGNOSES_SHORT_TITLE': XSD.string,
+    #'DIAGNOSES_SHORT_TITLE': XSD.string,
     'DIAGNOSES_LONG_TITLE': XSD.string,
 }
 
@@ -110,7 +110,7 @@ procedures_dtype = {
 
 d_icd_procedures_dtype = {
     'PROCEDURES_ICD9_CODE': 'entity',
-    'PROCEDURES_SHORT_TITLE': XSD.string,
+    #'PROCEDURES_SHORT_TITLE': XSD.string,
     'PROCEDURES_LONG_TITLE': XSD.string,
 }
 

@@ -64,7 +64,7 @@ class HeadOnlyDataset(Dataset):
             logger.info("Creating features from dataset file at %s", file_path)
             # Loading preprocessed data
             self.batch_encoding = torch.load(os.path.join(file_path,'db'))
-            self.batch_encoding['text'] = tokenizer(self.batch_encoding['text'] , add_special_tokens=True,padding='max_length', truncation=True, max_length=block_size)
+            self.batch_encoding['text'] = tokenizer(self.batch_encoding['text'] , add_special_tokens=True, padding='max_length', truncation=True, max_length=block_size)
             self.features = list()
             self.batch2feature(kg_pad)
             logger.info("Saving features...")

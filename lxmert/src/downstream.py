@@ -13,7 +13,7 @@ from torch.utils.data import ConcatDataset
 # Own implementation
 from utils.parameters import parser
 from utils.dataset import get_dataset
-from utils.data_collator import NodeClassification_DataCollator #, UnimodalLM_DataCollator, UnimodalKG_DataCollator
+from utils.data_collator import NodeClassification_DataCollator, UnimodalLM_DataCollator, UnimodalKG_DataCollator
 from model import LxmertForKGTokPredAndMaskedLM
 from trainer import Trainer
 
@@ -179,20 +179,6 @@ def main():
         # so that you can share your model easily on huggingface.co/models =)
         if trainer.is_world_master():
             tokenizer.save_pretrained(training_args.output_dir)
-
-    # Evaluation
-    # if training_args.do_eval:
-    #     model_path = (
-    #         model_args.model_name_or_path
-    #         if model_args.model_name_or_path is not None and os.path.isdir(model_args.model_name_or_path)
-    #         else None
-    #     )
-    #     trainer.evaluate()
-    #     trainer.save_model()
-    #     # For convenience, we also re-save the tokenizer to the same directory,
-    #     # so that you can share your model easily on huggingface.co/models =)
-    #     if trainer.is_world_master():
-    #         tokenizer.save_pretrained(training_args.output_dir)
 
 def _mp_fn(index):
     # For xla_spawn (TPUs)

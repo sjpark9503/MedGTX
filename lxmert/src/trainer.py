@@ -31,7 +31,9 @@ import numpy as np
 import torch
 from packaging import version
 
-from utils.compute_metrics import get_accuracy
+#from utils.compute_metrics import get_accuracy
+from sklearn.metrics import accuracy_score, f1_score
+from utils.metrics import MRR, Hits_at_k
 
 from torch import nn
 from torch.utils.data.dataloader import DataLoader
@@ -80,7 +82,6 @@ from transformers.trainer_utils import (
 from utils.training_args import TrainingArguments
 from transformers.utils import logging
 
-
 _use_native_amp = False
 _use_apex = False
 
@@ -102,11 +103,6 @@ else:
 
 if is_datasets_available():
     import datasets
-
-if is_torch_tpu_available():
-    import torch_xla.core.xla_model as xm
-    import torch_xla.debug.metrics as met
-    import torch_xla.distributed.parallel_loader as pl
 
 logger = logging.get_logger(__name__)
 
@@ -164,7 +160,6 @@ class Trainer:
         eval_dataset: Optional[Dataset] = None,
         tokenizer: Optional["PreTrainedTokenizerBase"] = None,
         model_init: Callable[[], PreTrainedModel] = None,
-        # eval_criterion: Optional[List] = None,
         optimizers: Tuple[torch.optim.Optimizer, torch.optim.lr_scheduler.LambdaLR] = (None, None),
         **kwargs,
     ):
@@ -179,52 +174,27 @@ class Trainer:
         wandb.init(config=wandb_config, entity='kgtxt', project='GraphEncoder')
         wandb.run.name = self.args.run_name
         #wandb.run.save()
+
         # Seed must be set before instantiating the model when using model
         set_seed(self.args.seed)
         assert (
             model is not None or model_init is not None
         ), "You must provide a model to use `Trainer`, either by using the `model` argument or the `model_init` argument."
         self.model_init = model_init
-        # self.hp_name = None
-        # if model is None and model_init is not None:
-        #     model = self.call_model_init()
         self.model = model.to(args.device) if model is not None else None
         default_collator = default_data_collator if tokenizer is None else DataCollatorWithPadding(tokenizer)
         self.data_collator = data_collator if data_collator is not None else default_collator
         self.train_dataset = train_dataset
         self.eval_dataset = eval_dataset
         self.tokenizer = tokenizer
-
-        self.eval_criterion = [x.lower().strip() for x in args.eval_criterion.split(',')]
+        self.task = args.task
         self.optimizer, self.lr_scheduler = optimizers
         if model_init is not None and (self.optimizer is not None or self.lr_scheduler is not None):
             raise RuntimeError(
                 "Passing a `model_init` is incompatible with providing the `optimizers` argument."
                 "You should subclass `Trainer` and override the `create_optimizer_and_scheduler` method."
             )
-        # callbacks = DEFAULT_CALLBACKS if callbacks is None else DEFAULT_CALLBACKS + callbacks
-        # self.callback_handler = CallbackHandler(callbacks, self.model, self.optimizer, self.lr_scheduler)
-        # self.add_callback(PrinterCallback if self.args.disable_tqdm else DEFAULT_PROGRESS_CALLBACK)
 
-        # Deprecated arguments
-        # if "tb_writer" in kwargs:
-        #     warnings.warn(
-        #         "Passing `tb_writer` as a keyword argument is deprecated and won't be possible in a "
-        #         + "future version. Use `TensorBoardCallback(tb_writer=...)` instead and pass it to the `callbacks`"
-        #         + "argument",
-        #         FutureWarning,
-        #     )
-        #     tb_writer = kwargs.pop("tb_writer")
-        #     self.remove_callback(TensorBoardCallback)
-        #     self.add_callback(TensorBoardCallback(tb_writer=tb_writer))
-        # if "prediction_loss_only" in kwargs:
-        #     warnings.warn(
-        #         "Passing `prediction_loss_only` as a keyword argument is deprecated and won't be possible in a "
-        #         + "future version. Use `args.prediction_loss_only` instead. Setting "
-        #         + f"`args.prediction_loss_only={kwargs['prediction_loss_only']}",
-        #         FutureWarning,
-        #     )
-        #     self.args.prediction_loss_only = kwargs.pop("prediction_loss_only")
         assert kwargs == {}, f"Unexpected keyword arguments: {list(kwargs.keys())}."
 
         # Will be set to True by `self._setup_loggers()` on first call to `self.log()`.
@@ -255,29 +225,19 @@ class Trainer:
             raise ValueError("train_dataset does not implement __len__, max_steps has to be specified")
         if eval_dataset is not None and not isinstance(eval_dataset, collections.abc.Sized):
             raise ValueError("eval_dataset must implement __len__")
-        #
-        # if is_datasets_available():
-        #     if isinstance(train_dataset, datasets.Dataset):
-        #         self._remove_unused_columns(self.train_dataset, description="training")
-        #     if isinstance(eval_dataset, datasets.Dataset):
-        #         self._remove_unused_columns(self.eval_dataset, description="evaluation")
 
         self.state = TrainerState()
-        # self.control = TrainerControl()
-        # Internal variable for total_flos used to count as tensors (for distributed + TPU), will be sent in the
-        # state at each call to self.log.
+
         self._total_flos = None
         if self.args.fp16 and _use_native_amp:
             self.scaler = torch.cuda.amp.GradScaler()
-        # self.hp_search_backend = None
-        # self.use_tune_checkpoints = False
+
         default_label_names = (
             ["start_positions, end_positions"]
             if type(self.model) in MODEL_FOR_QUESTION_ANSWERING_MAPPING.values()
             else ["labels"]
         )
         self.label_names = default_label_names if self.args.label_names is None else self.args.label_names
-        # self.control = self.callback_handler.on_init_end(self.args, self.state, self.control)
 
     def _get_train_sampler(self) -> Optional[torch.utils.data.sampler.Sampler]:
         if isinstance(self.train_dataset, torch.utils.data.IterableDataset) or not isinstance(
@@ -363,7 +323,7 @@ class Trainer:
             raise ValueError("test_dataset must implement __len__")
         elif is_datasets_available() and isinstance(test_dataset, datasets.Dataset):
             self._remove_unused_columns(test_dataset, description="test")
-        test_sampler = self._get_eval_sampler(test_dataset)
+        test_  = self._get_eval_sampler(test_dataset)
 
         # We use the same batch_size as for eval.
         return DataLoader(
@@ -410,54 +370,6 @@ class Trainer:
         Will raise an exception if the underlying dataset dese not implement method :obj:`__len__`
         """
         return len(dataloader.dataset)
-    #
-    # def _hp_search_setup(self, trial: Union["optuna.Trial", Dict[str, Any]]):
-    #     """ HP search setup code """
-    #     self._trial = trial
-    #
-    #     if self.hp_search_backend is None or trial is None:
-    #         return
-    #
-    #     params = self.hp_space(trial) if self.hp_search_backend == HPSearchBackend.OPTUNA else trial
-    #     for key, value in params.items():
-    #         if not hasattr(self.args, key):
-    #             raise AttributeError(
-    #                 f"Trying to set {key} in the hyperparameter search but there is no corresponding field in `TrainingArguments`."
-    #             )
-    #         old_attr = getattr(self.args, key, None)
-    #         # Casting value to the proper type
-    #         if old_attr is not None:
-    #             value = type(old_attr)(value)
-    #         setattr(self.args, key, value)
-    #     if self.hp_search_backend == HPSearchBackend.OPTUNA:
-    #         logger.info("Trial:", trial.params)
-    #
-    # def _report_to_hp_search(
-    #     self, trial: Union["optuna.Trial", Dict[str, Any]], epoch: int, metrics: Dict[str, float]
-    # ):
-    #     if self.hp_search_backend is None or trial is None:
-    #         return
-    #     self.objective = self.compute_objective(metrics.copy())
-    #     if self.hp_search_backend == HPSearchBackend.OPTUNA:
-    #         trial.report(self.objective, epoch)
-    #         if trial.should_prune():
-    #             raise optuna.TrialPruned()
-    #     elif self.hp_search_backend == HPSearchBackend.RAY:
-    #         if self.state.global_step % self.args.save_steps == 0:
-    #             self._tune_save_checkpoint()
-    #         tune.report(objective=self.objective, **metrics)
-    #
-    # def _tune_save_checkpoint(self):
-    #     if not self.use_tune_checkpoints:
-    #         return
-    #     with tune.checkpoint_dir(step=self.state.global_step) as checkpoint_dir:
-    #         self.args.output_dir = checkpoint_dir
-    #         output_dir = os.path.join(self.args.output_dir, f"{PREFIX_CHECKPOINT_DIR}-{self.state.global_step}")
-    #         self.save_model(output_dir)
-    #         if self.is_world_master():
-    #             self.state.save_to_json(os.path.join(output_dir, "trainer_state.json"))
-    #             torch.save(self.optimizer.state_dict(), os.path.join(output_dir, "optimizer.pt"))
-    #             torch.save(self.lr_scheduler.state_dict(), os.path.join(output_dir, "scheduler.pt"))
 
     def call_model_init(self, trial=None):
         model_init_argcount = len(inspect.signature(self.model_init).parameters)
@@ -595,21 +507,13 @@ class Trainer:
             logger.info("  Will skip the first %d steps in the first epoch", steps_trained_in_current_epoch)
 
         # Update the references
-        # self.callback_handler.model = self.model
-        # self.callback_handler.optimizer = self.optimizer
-        # self.callback_handler.lr_scheduler = self.lr_scheduler
-        # self.callback_handler.train_dataloader = train_dataloader
-        # self.state.trial_name = self.hp_name(trial) if self.hp_name is not None else None
-        # self.state.trial_params = hp_params(trial) if trial is not None else None
-        # This should be the same if the state has been saved but in case the training arguments changed, it's safer
-        # to set this after the load.
+
         self.state.max_steps = max_steps
         self.state.num_train_epochs = num_train_epochs
         self.state.is_local_process_zero = self.is_local_process_zero()
         self.state.is_world_process_zero = self.is_world_process_zero()
 
-        tr_loss = 0.0
-        loss_dict = {'lm_loss':list(),'kg_loss':list()}
+        loss_dict = dict()
         self._logging_loss_scalar = 0
         self._globalstep_last_logged = 0
         self._total_flos = self.state.total_flos
@@ -652,12 +556,10 @@ class Trainer:
                     and _use_ddp_no_sync
                 ):
                     with model.no_sync():
-                        step_tr_loss, step_loss_dict = self.training_step(model, inputs)
-                        tr_loss += step_tr_loss
+                        _, step_loss_dict = self.training_step(model, inputs)
                         loss_dict = self.process_loss_dict(loss_dict,step_loss_dict)
                 else:
-                    step_tr_loss, step_loss_dict = self.training_step(model, inputs)
-                    tr_loss += step_tr_loss
+                    _, step_loss_dict = self.training_step(model, inputs)
                     loss_dict = self.process_loss_dict(loss_dict, step_loss_dict)
                 self._total_flos += self.floating_point_ops(inputs)
 
@@ -688,7 +590,7 @@ class Trainer:
                     self.state.epoch = epoch + (step + 1) / steps_in_epoch
                     # self.control = self.callback_handler.on_step_end(self.args, self.state, self.control)
 
-                    loss_dict = self.log_save_evaluate(tr_loss, loss_dict, model)
+                    loss_dict = self.log_save_evaluate(loss_dict, model)
 
             if self.args.tpu_metrics_debug or self.args.debug:
                 if is_torch_tpu_available():
@@ -724,20 +626,19 @@ class Trainer:
 
         # self.control = self.callback_handler.on_train_end(self.args, self.state, self.control)
 
-        return TrainOutput(self.state.global_step, tr_loss / self.state.global_step)
+        return TrainOutput(self.state.global_step, self.process_loss_dict(loss_dict,accumulate=True)['loss'])
 
-    def log_save_evaluate(self, tr_loss, loss_dict, model):
+    def log_save_evaluate(self, loss_dict, model):
         if self.state.global_step % self.args.logging_steps == 0:
             tr_dict = self.process_loss_dict(loss_dict, accumulate=True)
             if tr_dict is not None:
-                tr_dict['total_loss'] = tr_loss / self.state.global_step
                 tr_dict['lr'] = (
                     self.lr_scheduler.get_last_lr()[0]
                     if version.parse(torch.__version__) >= version.parse("1.4")
                     else self.lr_scheduler.get_lr()[0]
                 )
                 wandb.log(tr_dict)
-                loss_dict = {'lm_loss': list(), 'kg_loss': list()}
+                loss_dict = dict()
                 #logger.info("log done")
         if (self.state.global_step % self.args.eval_steps == 0) and self.args.evaluate_during_training:
             metrics = self.evaluate()
@@ -833,104 +734,6 @@ class Trainer:
                     self.lr_scheduler.load_state_dict(torch.load(os.path.join(model_path, "scheduler.pt")))
                 reissue_pt_warnings(caught_warnings)
 
-    # def hyperparameter_search(
-    #     self,
-    #     hp_space: Optional[Callable[["optuna.Trial"], Dict[str, float]]] = None,
-    #     compute_objective: Optional[Callable[[Dict[str, float]], float]] = None,
-    #     n_trials: int = 20,
-    #     direction: str = "minimize",
-    #     backend: Optional[Union["str", HPSearchBackend]] = None,
-    #     hp_name: Optional[Callable[["optuna.Trial"], str]] = None,
-    #     **kwargs
-    # ) -> BestRun:
-    #     """
-    #     Launch an hyperparameter search using ``optuna`` or ``Ray Tune``. The optimized quantity is determined by
-    #     :obj:`compute_objectie`, which defaults to a function returning the evaluation loss when no metric is provided,
-    #     the sum of all metrics otherwise.
-    #     .. warning::
-    #         To use this method, you need to have provided a ``model_init`` when initializing your
-    #         :class:`~transformers.Trainer`: we need to reinitialize the model at each new run. This is incompatible
-    #         with the ``optimizers`` argument, so you need to subclass :class:`~transformers.Trainer` and override the
-    #         method :meth:`~transformers.Trainer.create_optimizer_and_scheduler` for custom optimizer/scheduler.
-    #     Args:
-    #         hp_space (:obj:`Callable[["optuna.Trial"], Dict[str, float]]`, `optional`):
-    #             A function that defines the hyperparameter search space. Will default to
-    #             :func:`~transformers.trainer_utils.default_hp_space_optuna` or
-    #             :func:`~transformers.trainer_utils.default_hp_space_ray` depending on your backend.
-    #         compute_objective (:obj:`Callable[[Dict[str, float]], float]`, `optional`):
-    #             A function computing the objective to minimize or maximize from the metrics returned by the
-    #             :obj:`evaluate` method. Will default to :func:`~transformers.trainer_utils.default_compute_objective`.
-    #         n_trials (:obj:`int`, `optional`, defaults to 100):
-    #             The number of trial runs to test.
-    #         direction(:obj:`str`, `optional`, defaults to :obj:`"minimize"`):
-    #             Whether to optimize greater or lower objects. Can be :obj:`"minimize"` or :obj:`"maximize"`, you should
-    #             pick :obj:`"minimize"` when optimizing the validation loss, :obj:`"maximize"` when optimizing one or
-    #             several metrics.
-    #         backend(:obj:`str` or :class:`~transformers.training_utils.HPSearchBackend`, `optional`):
-    #             The backend to use for hyperparameter search. Will default to optuna or Ray Tune, depending on which
-    #             one is installed. If both are installed, will default to optuna.
-    #         kwargs:
-    #             Additional keyword arguments passed along to :obj:`optuna.create_study` or :obj:`ray.tune.run`. For
-    #             more information see:
-    #             - the documentation of `optuna.create_study
-    #               <https://optuna.readthedocs.io/en/stable/reference/alias_generated/optuna.create_study.html#optuna.create_study>`__
-    #             - the documentation of `tune.run
-    #               <https://docs.ray.io/en/latest/tune/api_docs/execution.html#tune-run>`__
-    #     Returns:
-    #         :class:`transformers.trainer_utils.BestRun`: All the information about the best run.
-    #     """
-    #     if backend is None:
-    #         backend = default_hp_search_backend()
-    #         if backend is None:
-    #             raise RuntimeError(
-    #                 "At least one of optuna or ray should be installed. "
-    #                 "To install optuna run `pip install optuna`."
-    #                 "To install ray run `pip install ray[tune]`."
-    #             )
-    #     backend = HPSearchBackend(backend)
-    #     if backend == HPSearchBackend.OPTUNA and not is_optuna_available():
-    #         raise RuntimeError("You picked the optuna backend, but it is not installed. Use `pip install optuna`.")
-    #     if backend == HPSearchBackend.RAY and not is_ray_available():
-    #         raise RuntimeError(
-    #             "You picked the Ray Tune backend, but it is not installed. Use `pip install 'ray[tune]'`."
-    #         )
-    #     self.hp_search_backend = backend
-    #     if self.model_init is None:
-    #         raise RuntimeError(
-    #             "To use hyperparameter search, you need to pass your model through a model_init function."
-    #         )
-    #
-    #     self.hp_space = default_hp_space[backend] if hp_space is None else hp_space
-    #     self.hp_name = hp_name
-    #     self.compute_objective = default_compute_objective if compute_objective is None else compute_objective
-    #
-    #     run_hp_search = run_hp_search_optuna if backend == HPSearchBackend.OPTUNA else run_hp_search_ray
-    #     best_run = run_hp_search(self, n_trials, direction, **kwargs)
-    #
-    #     self.hp_search_backend = None
-    #     return best_run
-    #
-    # def log(self, logs: Dict[str, float]) -> None:
-    #     """
-    #     Log :obj:`logs` on the various objects watching training.
-    #     Subclass and override this method to inject custom behavior.
-    #     Args:
-    #         logs (:obj:`Dict[str, float]`):
-    #             The values to log.
-    #     """
-    #     if hasattr(self, "_log"):
-    #         warnings.warn(
-    #             "The `_log` method is deprecated and won't be called in a future version, define `log` in your subclass.",
-    #             FutureWarning,
-    #         )
-    #         return self._log(logs)
-    #     if self.state.epoch is not None:
-    #         logs["epoch"] = self.state.epoch
-    #
-    #     self.control = self.callback_handler.on_log(self.args, self.state, self.control, logs)
-    #     output = {**logs, **{"step": self.state.global_step}}
-    #     self.state.log_history.append(output)
-
     def _prepare_inputs(self, inputs: Dict[str, Union[torch.Tensor, Any]]) -> Dict[str, Union[torch.Tensor, Any]]:
         """
         Prepare :obj:`inputs` before feeding them to the model, converting them to tensors if they are not already and
@@ -995,9 +798,9 @@ class Trainer:
         if accumulate:
             processed_loss_dict = dict([(k,sum(v)/len(v)) if len(v)>0 else (k,0.0) for (k,v) in list(loss_dict.items())])
             return processed_loss_dict
-            #except:
-            #    return None
         else:
+            if len(loss_dict)==0:
+                loss_dict = {k:list() for k in step_loss_dict}
             for k in step_loss_dict:
                 loss_dict[k].append(step_loss_dict[k])
             return loss_dict
@@ -1008,11 +811,9 @@ class Trainer:
         Subclass and override for custom behavior.
         """
         outputs = model(**inputs)
-        # Save past state if it exists
-        if self.args.past_index >= 0:
-            self._past = outputs[self.args.past_index]
+
         # We don't use .loss here since the model may return tuples instead of ModelOutput.
-        return outputs[0], outputs[1]
+        return outputs.loss, outputs.loss_dict
 
     def is_local_master(self) -> bool:
         """
@@ -1173,8 +974,7 @@ class Trainer:
             eval_dataloader,
             description="Evaluation",
             # No point gathering the predictions if there are no metrics, otherwise we defer to
-            # self.args.prediction_loss_only
-            prediction_loss_only=True if self.eval_criterion is None else None,
+            prediction_loss_only=False,
         )
 
         wandb.log(output.metrics)
@@ -1240,82 +1040,36 @@ class Trainer:
         logger.info("***** Running %s *****", description)
         logger.info("  Num examples = %d", num_examples)
         logger.info("  Batch size = %d", batch_size)
-        # losses_host: torch.Tensor = None
-        # preds_host: Union[torch.Tensor, List[torch.Tensor]] = None
-        # labels_host: Union[torch.Tensor, List[torch.Tensor]] = None
-        #
-        # world_size = 1
-        # if is_torch_tpu_available():
-        #     world_size = xm.xrt_world_size()
-        # elif self.args.local_rank != -1:
-        #     world_size = torch.distributed.get_world_size()
-        # world_size = max(1, world_size)
-        #
-        # eval_losses_gatherer = DistributedTensorGatherer(world_size, num_examples, make_multiple_of=batch_size)
-        # if not prediction_loss_only:
-        #     preds_gatherer = DistributedTensorGatherer(world_size, num_examples)
-        #     labels_gatherer = DistributedTensorGatherer(world_size, num_examples)
 
         model.eval()
-
 
         if is_torch_tpu_available():
             dataloader = pl.ParallelLoader(dataloader, [self.args.device]).per_device_loader(self.args.device)
 
         if self.args.past_index >= 0:
             self._past = None
-        #
-        # self.callback_handler.eval_dataloader = dataloader
+
         # Initialzie
         preds = list()
-        metrics = [('loss',0.0),('num_steps',0)]
-        if self.eval_criterion is not None:
-            metrics += [(k,0.0) for k in self.eval_criterion]
-        self.metrics = dict(metrics)
+        self.predicted = [('loss',[])]
+        if self.task == 'pretrain':
+            self.predicted += [(k,[]) for k in ['kg, lang']]
+            self.predicted += [('gt_'+k, []) for k in ['kg, lang']]
+        elif self.task == 'binary_retrieval':
+            self.predicted += [('score',[])]
+            self.predicted += [('label', [])]
+        else:
+            raise NotImplementedError("Other tasks are not implemented yet")
+        self.predicted = dict(self.predicted)
+        self.metrics = dict()
         for step, inputs in tqdm(enumerate(dataloader),total=len(dataloader)):
             prediction_step = self.prediction_step(model, inputs, prediction_loss_only, prediction)
             if prediction:
                 preds.append(prediction_step)
-            # if loss is not None:
-            #     losses = loss.repeat(batch_size)
-            #     losses_host = losses if losses_host is None else torch.cat((losses_host, losses), dim=0)
-            # if logits is not None:
-            #     preds_host = logits if preds_host is None else nested_concat(preds_host, logits, dim=0)
-            # if labels is not None:
-            #     labels_host = labels if labels_host is None else nested_concat(labels_host, labels, dim=0)
-            # self.control = self.callback_handler.on_prediction_step(self.args, self.state, self.control)
-            #
-            # # Gather all tensors and put them back on the CPU if we have done enough accumulation steps.
-            # if self.args.eval_accumulation_steps is not None and (step + 1) % self.args.eval_accumulation_steps == 0:
-            #     eval_losses_gatherer.add_arrays(self._gather_and_numpify(losses_host, "eval_losses"))
-            #     if not prediction_loss_only:
-            #         preds_gatherer.add_arrays(self._gather_and_numpify(preds_host, "eval_preds"))
-            #         labels_gatherer.add_arrays(self._gather_and_numpify(labels_host, "eval_label_ids"))
-            #
-            #     # Set back to None to begin a new accumulation
-            #     losses_host, preds_host, labels_host = None, None, None
 
         if self.args.past_index and hasattr(self, "_past"):
             # Clean the state at the end of the evaluation loop
             delattr(self, "_past")
-        #
-        # # Gather all remaining tensors and put them back on the CPU
-        # eval_losses_gatherer.add_arrays(self._gather_and_numpify(losses_host, "eval_losses"))
-        # if not prediction_loss_only:
-        #     preds_gatherer.add_arrays(self._gather_and_numpify(preds_host, "eval_preds"))
-        #     labels_gatherer.add_arrays(self._gather_and_numpify(labels_host, "eval_label_ids"))
-        #
-        # eval_loss = eval_losses_gatherer.finalize()
-        # preds = preds_gatherer.finalize() if not prediction_loss_only else None
-        # label_ids = labels_gatherer.finalize() if not prediction_loss_only else None
-
-        # if self.compute_metrics is not None and preds is not None and label_ids is not None:
-        #     metrics = self.compute_metrics(EvalPrediction(predictions=preds, label_ids=label_ids))
-        # else:
-        #
-        #
-        # if eval_loss is not None:
-        #     metrics["eval_loss"] = eval_loss.mean().item()
 
         if preds:
             numpy_preds = list()
@@ -1325,25 +1079,15 @@ class Trainer:
             numpy_preds = None
 
         # Prefix all keys with eval_
-        for key in list(self.metrics.keys()):
-            if not key.startswith("eval_") and not key.startswith("num_steps"):
-                self.metrics[f"eval_{key}"] = self.metrics.pop(key)/self.metrics['num_steps']
-
+        for key in self.predicted:
+            if key=='loss':
+                self.metrics[f"eval_{key}"] = sum(self.predicted[key])/len(self.predicted[key])
+            if (self.task == 'pretrain') and (key in ['lang','kg']):
+                self.metrics[f"eval_{key}_Acc"] = accuracy_score(self.predicted[f'gt_{key}'],self.predicted[key])
+                self.metrics[f"eval_{key}_MacroF1"] = f1_score(self.predicted[f'gt_{key}'], self.predicted[key],average='macro')
+            if (self.task == 'binary_retrieval') and (key in ['score']):
+                self.metrics["eval_align_Acc"] = accuracy_score(self.predicted['label'],self.predicted['score'])
         return PredictionOutput(predictions=numpy_preds, label_ids=None, metrics=self.metrics)
-
-    # def _gather_and_numpify(self, tensors, name):
-    #     """
-    #     Gather value of `tensors` (tensor or list/tuple of nested tensors) and convert them to numpy before
-    #     concatenating them to `gathered`
-    #     """
-    #     if tensors is None:
-    #         return
-    #     if is_torch_tpu_available():
-    #         tensors = nested_xla_mesh_reduce(tensors, name)
-    #     elif self.args.local_rank != -1:
-    #         tensors = distributed_concat(tensors)
-    #
-    #     return nested_numpify(tensors)
 
     def prediction_step(
         self, model: nn.Module, inputs: Dict[str, Union[torch.Tensor, Any]], prediction_loss_only: bool, prediction: bool
@@ -1366,7 +1110,7 @@ class Trainer:
         """
         # has_labels = all(inputs.get(k) is not None for k in self.label_names)
         inputs = self._prepare_inputs(inputs)
-        # !!!! SHOULD BE MODIFIED IN FUTURE VERSION. !!!!
+
         with torch.no_grad():
             if self.args.fp16 and _use_native_amp:
                 with autocast():
@@ -1374,36 +1118,34 @@ class Trainer:
             else:
                 outputs = model(**inputs)
 
-            if prediction:
-                return (outputs[2].detach().numpy(), outputs[3].detach().numpy())
+            self.predicted['loss'].append(outputs.loss.mean().item())
+            ## prediction for pretraining
+            if self.task == 'pretrain':
+                if prediction:
+                    return (outputs.lang_prediction_logits.detach().numpy(), outputs.kg_prediction_logits.detach().numpy())
 
-            self.metrics['loss'] += outputs[0].mean().item()
-            if not prediction_loss_only:
-                if 'lang_acc' in self.eval_criterion:
-                    self.metrics['lang_acc'] += get_accuracy(outputs[2].data, inputs['lm_label'].data)
-                if 'kg_acc' in self.eval_criterion:
-                    self.metrics['kg_acc'] += get_accuracy(outputs[3].data, inputs['kg_label'].data)
-            self.metrics['num_steps']+=1
-            # else:
-            #     loss = None
-                # Slicing so we get a tuple even if `outputs` is a `ModelOutput`.
-                #logits = outputs[2:4]
-            # if self.args.past_index >= 0:
-            #     self._past = outputs[self.args.past_index if has_labels else self.args.past_index - 1]
-            #     # Remove the past from the logits.
-            #     logits = logits[: self.args.past_index - 1] + logits[self.args.past_index :]
+                if not prediction_loss_only:
+                    self.predicted['lang'] += torch.max(outputs.lang_prediction_logits, dim=2)[-1][~inputs['lm_label'].eq(-100)].view(
+                        -1).long().tolist()
+                    self.predicted['gt_lang'] += inputs['lm_label'][~inputs['lm_label'].eq(-100)].view(
+                        -1).long().tolist()
+                    self.predicted['kg'] += torch.max(outputs.kg_prediction_logits, dim=2)[-1][~inputs['kg_label'].eq(-100)].view(
+                        -1).long().tolist()
+                    self.predicted['gt_kg'] += inputs['kg_label'][~inputs['kg_label'].eq(-100)].view(
+                        -1).long().tolist()
 
-        #
-        # logits = nested_detach(logits)
-        # if len(logits) == 1:
-        #     logits = logits[0]
-        #
-        # if has_labels:
-        #     labels = nested_detach(tuple(inputs.get(name) for name in self.label_names))
-        #     if len(labels) == 1:
-        #         labels = labels[0]
-        # else:
-        #     labels = None
+            ## prediction for binary retreival
+            elif self.task == 'binary_retrieval':
+                if prediction:
+                    return outputs.cross_relationship_score.detach().numpy()
+
+                if not prediction_loss_only:
+                    self.predicted['score'] += (outputs.cross_relationship_score>0.5).long().tolist()
+                    self.predicted['label'] += inputs['label'].tolist()
+
+            ## prediction for triplet retreival
+
+            ## prediction for generation
 
         return None
 

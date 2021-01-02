@@ -272,13 +272,13 @@ class LxmertEmbeddings(nn.Module):
 
     def __init__(self, config, input_type=None):
         super().__init__()
-        self.word_embeddings = nn.Embedding(config.vocab_size[input_type], config.hidden_size, padding_idx=0)
+        self.word_embeddings = nn.Embedding(config.vocab_size[input_type], config.hidden_size)
         if config.max_position_embeddings[input_type]>0:
-            self.position_embeddings = nn.Embedding(config.max_position_embeddings[input_type], config.hidden_size, padding_idx=0)
+            self.position_embeddings = nn.Embedding(config.max_position_embeddings[input_type], config.hidden_size)
         else:
             self.position_embeddings = None
         if config.type_vocab_size[input_type]>0:
-            self.token_type_embeddings = nn.Embedding(config.type_vocab_size[input_type], config.hidden_size, padding_idx=0)
+            self.token_type_embeddings = nn.Embedding(config.type_vocab_size[input_type], config.hidden_size)
         else:
             self.token_type_embeddings = None
         # self.LayerNorm is not snake-cased to stick with TensorFlow model variable name and be able to load
@@ -664,15 +664,16 @@ class LxmertEncoder(nn.Module):
 class LxmertPooler(nn.Module):
     def __init__(self, config):
         super(LxmertPooler, self).__init__()
-        self.dense = nn.Linear(config.hidden_size, config.hidden_size)
-        self.activation = nn.Tanh()
+        self.pooler = nn.Sequential(nn.Linear(config.hidden_size, config.hidden_size),
+                                    nn.Tanh(),
+                                    nn.Linear(config.hidden_size, 1),
+                                    nn.Sigmoid())
 
     def forward(self, hidden_states):
         # We "pool" the model by simply taking the hidden state corresponding
         # to the first token.
         first_token_tensor = hidden_states[:, 0]
-        pooled_output = self.dense(first_token_tensor)
-        pooled_output = self.activation(pooled_output)
+        pooled_output = self.pooler(first_token_tensor)
         return pooled_output
 
 
@@ -714,15 +715,11 @@ class LxmertPreTrainingHeads(nn.Module):
     def __init__(self, config, lxmert_model_embedding_weights):
         super(LxmertPreTrainingHeads, self).__init__()
         self.predictions = LxmertLMPredictionHead(config, lxmert_model_embedding_weights)
-        self.seq_relationship = nn.Linear(config.hidden_size, 2)
 
-    def forward(self, sequence_output, pooled_output):
+    def forward(self, sequence_output):
         prediction_scores = self.predictions(sequence_output)
-        if pooled_output is not None:
-            seq_relationship_score = self.seq_relationship(pooled_output)
-        else:
-            seq_relationship_score = None
-        return prediction_scores, seq_relationship_score
+
+        return prediction_scores
 
 class LxmertPreTrainedModel(PreTrainedModel):
     """
@@ -1042,7 +1039,7 @@ class LxmertForKGTokPredAndMaskedLM(LxmertPreTrainedModel):
         token_type_ids=None,
         output_attentions=None,
         output_hidden_states=None,
-        return_dict=None,
+        return_dict=True,
     ):
         r"""
         masked_lm_labels (``torch.LongTensor`` of shape ``(batch_size, sequence_length)``, `optional`):
@@ -1080,12 +1077,12 @@ class LxmertForKGTokPredAndMaskedLM(LxmertPreTrainedModel):
             return_dict=return_dict,
         )
 
-        lang_output, kg_output, pooled_output = (
-            lxmert_output[0],
-            lxmert_output[1],
-            lxmert_output[2],
+        lang_output, kg_output, cross_relationship_score = (
+            lxmert_output.language_output,
+            lxmert_output.kg_output,
+            lxmert_output.pooled_output,
         )
-        lang_prediction_scores, cross_relationship_score = self.lm_head(lang_output, pooled_output)
+        lang_prediction_scores = self.lm_head(lang_output)
         kg_prediction_scores = self.classifier(self.dropout(kg_output))
 
         total_loss = (
@@ -1100,7 +1097,7 @@ class LxmertForKGTokPredAndMaskedLM(LxmertPreTrainedModel):
                 lm_label.view(-1),
             )
             total_loss += masked_lm_loss
-            loss_dict['lm_loss']=masked_lm_loss.item()
+            loss_dict['lm_loss']=masked_lm_loss.mean().item()
         if kg_label is not None and self.config.task_mask_kg:
             if self.num_kg_labels == 1:
                 #  We are doing regression
@@ -1118,8 +1115,9 @@ class LxmertForKGTokPredAndMaskedLM(LxmertPreTrainedModel):
                 else:
                     kg_loss = self.loss_fcts['ce'](kg_prediction_scores.view(-1, self.num_kg_labels), kg_label.view(-1))
             total_loss += kg_loss
-            loss_dict['kg_loss']=kg_loss.item()
+            loss_dict['kg_loss']=kg_loss.mean().item()
 
+        loss_dict['loss'] = total_loss.mean().item()
         if not return_dict:
             output = (
                 loss_dict,
@@ -1142,6 +1140,108 @@ class LxmertForKGTokPredAndMaskedLM(LxmertPreTrainedModel):
             kg_attentions=lxmert_output.kg_attentions,
             cross_encoder_attentions=lxmert_output.cross_encoder_attentions,
         )
+
+class LxmertForRanking(LxmertPreTrainedModel):
+    def __init__(self, config):
+        super().__init__(config)
+        # Configuration
+        self.config = config
+
+        # Lxmert backbone
+        self.lxmert = LxmertModel(config)
+        self.dropout = nn.Dropout(config.hidden_dropout_prob)
+
+        # Weight initialization
+        self.init_weights()
+
+        # Loss functions
+        self.loss_fcts = {
+            "bce": nn.BCELoss(),
+            "ranking": nn.TripletMarginLoss(),
+        }
+
+    #@add_start_docstrings_to_callable(LXMERT_INPUTS_DOCSTRING.format("batch_size, sequence_length"))
+    @replace_return_docstrings(output_type=LxmertForPreTrainingOutput, config_class=_CONFIG_FOR_DOC)
+    def forward(
+        self,
+        lang_input_ids=None,
+        kg_input_ids=None,
+        lang_inputs_embeds=None,
+        kg_inputs_embeds=None,
+        lang_attention_mask=None,
+        kg_attention_mask=None,
+        kg_padding_mask=None,
+        label=None,
+        token_type_ids=None,
+        output_attentions=None,
+        output_hidden_states=None,
+        return_dict=True,
+    ):
+        r"""
+        masked_lm_labels (``torch.LongTensor`` of shape ``(batch_size, sequence_length)``, `optional`):
+            Labels for computing the masked language modeling loss. Indices should be in ``[-100, 0, ...,
+            config.vocab_size]`` (see ``input_ids`` docstring) Tokens with indices set to ``-100`` are ignored
+            (masked), the loss is only computed for the tokens with labels in ``[0, ..., config.vocab_size]``
+        obj_labels: (``Dict[Str: Tuple[Torch.FloatTensor, Torch.FloatTensor]]``, `optional`):
+            each key is named after each one of the visual losses and each element of the tuple is of the shape
+            ``(batch_size, num_features)`` and ``(batch_size, num_features, visual_feature_dim)`` for each the label id
+            and the label score respectively
+        matched_label (``torch.LongTensor`` of shape ``(batch_size,)``, `optional`):
+            Labels for computing the whether or not the text input matches the image (classification) loss. Input
+            should be a sequence pair (see :obj:`input_ids` docstring) Indices should be in ``[0, 1]``:
+
+            - 0 indicates that the sentence does not match the image,
+            - 1 indicates that the sentence does match the image.
+        ans: (``Torch.Tensor`` of shape ``(batch_size)``, `optional`):
+            a one hot representation hof the correct answer `optional`
+
+        Returns:
+        """
+
+        device = lang_input_ids.device if lang_input_ids is not None else inputs_embeds.device
+
+        lxmert_output = self.lxmert(
+            lang_input_ids=lang_input_ids,
+            kg_input_ids=kg_input_ids,
+            lang_inputs_embeds=lang_inputs_embeds,
+            kg_inputs_embeds=kg_inputs_embeds,
+            lang_attention_mask=lang_attention_mask,
+            kg_attention_mask=kg_attention_mask,
+            kg_padding_mask=kg_padding_mask,
+            token_type_ids=token_type_ids,
+            output_attentions=output_attentions,
+            output_hidden_states=output_hidden_states,
+            return_dict=return_dict,
+        )
+
+        lang_output, kg_output, pooled_output = (
+            lxmert_output.language_output,
+            lxmert_output.kg_output,
+            lxmert_output.pooled_output,
+        )
+
+        cross_relationship_score = pooled_output.squeeze()
+        total_loss = self.loss_fcts["bce"](cross_relationship_score, label)
+
+        loss_dict['loss']=total_loss.mean().item()
+
+        if not return_dict:
+            output = (
+                loss_dict,
+            ) + lxmert_output[3:]
+            return ((total_loss,) + output) if total_loss is not None else output
+
+        return LxmertForPreTrainingOutput(
+            loss=total_loss,
+            loss_dict=loss_dict,
+            cross_relationship_score=cross_relationship_score,
+            language_hidden_states=lxmert_output.language_hidden_states,
+            kg_hidden_states=lxmert_output.kg_hidden_states,
+            language_attentions=lxmert_output.language_attentions,
+            kg_attentions=lxmert_output.kg_attentions,
+            cross_encoder_attentions=lxmert_output.cross_encoder_attentions,
+        )
+
 #
 # @add_start_docstrings(
 #     """Lxmert Model with a visual-answering head on top for downstream QA tasks""",
