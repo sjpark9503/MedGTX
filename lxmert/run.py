@@ -48,17 +48,18 @@ TRAINING_CONFIG = {
     "train_data_file":os.path.join(EXP_PATH,"data/{}/train".format(MODEL_NAME)),
     "eval_data_file": os.path.join(EXP_PATH,"data/{}/valid".format(MODEL_NAME)),
     #"test_data_file": os.path.join(EXP_PATH, "data/{}/test".format(MODEL_NAME)),
-    "run_name":f"{TASK_NAME}_{RUN_NAME}",
-    "output_dir":os.path.join(EXP_PATH,"pretrained_models/{}".format(RUN_NAME)),
+    "run_name":f"{TASK_NAME}_{RUN_NAME}"
 }
 
 if TASK_NAME == 'pretrain':
     SRC_PATH = os.path.join(EXP_PATH, 'src/run_pretraining.py')
     TRAINING_CONFIG['config_name'] = os.path.join(EXP_PATH, f"config/config_{Var_UNIFIED}{DB}.json")
     TRAINING_CONFIG['tokenizer_name'] = "bert-base-uncased"
+    TRAINING_CONFIG['output_dir'] = os.path.join(EXP_PATH,"pretrained_models/{}".format(RUN_NAME))
 else:
     SRC_PATH = os.path.join(EXP_PATH, 'src/run_downstream.py')
     TRAINING_CONFIG['model_name_or_path'] = os.path.join(EXP_PATH, f'pretrained_models/{RUN_NAME}')
+    TRAINING_CONFIG['output_dir'] = os.path.join(EXP_PATH,f"pretrained_models/{TASK_NAME}_{RUN_NAME}")
 
 TRAINING_CONFIG_LIST = list()
 for (k,v) in list(TRAINING_CONFIG.items()):
