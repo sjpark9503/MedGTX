@@ -33,7 +33,7 @@ from packaging import version
 
 #from utils.compute_metrics import get_accuracy
 from sklearn.metrics import accuracy_score, f1_score
-from utils.metrics import MRR, Hits_at_k
+#from utils.metrics import MRR, Hits_at_k
 
 from torch import nn
 from torch.utils.data.dataloader import DataLoader

@@ -1200,6 +1200,8 @@ class LxmertForRanking(LxmertPreTrainedModel):
 
         device = lang_input_ids.device if lang_input_ids is not None else inputs_embeds.device
 
+        loss_dict = dict()
+
         lxmert_output = self.lxmert(
             lang_input_ids=lang_input_ids,
             kg_input_ids=kg_input_ids,

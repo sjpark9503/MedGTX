@@ -16,6 +16,7 @@ from transformers.tokenization_utils_base import BatchEncoding, PaddingStrategy,
 from transformers.tokenization_utils import PreTrainedTokenizer
 from transformers.utils import logging
 
+logger = logging.get_logger(__name__)
 InputDataClass = NewType("InputDataClass", Any)
 
 """
@@ -169,8 +170,8 @@ class NegativeSampling_DataCollator:
     - preprocesses batches for masked language modeling
     """
     tokenizer: PreTrainedTokenizerBase
-    seed_list : list
     NCE : bool
+    kg_special_token_ids: dict
     n_negatives: int = 1
     prediction: bool = False
 
@@ -178,6 +179,7 @@ class NegativeSampling_DataCollator:
         if not isinstance(features[0], (dict, BatchEncoding)):
             features = [vars(f) for f in features]
         batch = self._tensorize_batch(features, self.n_negatives, self.NCE)
+        batch_size = len(features)
 
         if not self.prediction:
             if self.NCE:
@@ -185,9 +187,8 @@ class NegativeSampling_DataCollator:
                 batch['negative_kg_input_ids'] = batch['kg_input_ids'].detach().clone()[shuffled_idx]
                 batch['label'] = None
             else:
-                batch_size = batch['lang_input_ids'].size(0)
-                batch['label'] = torch.stack([torch.ones(batch_size, dtype=torch.long()),
-                                             torch.zeros(batch_size*self.n_negagtives, dtype=torch.long())]).to(lang_input_ids.device)
+                batch['label'] = torch.cat([torch.ones(batch_size, dtype=torch.float),
+                                             torch.zeros(batch_size*self.n_negatives, dtype=torch.float)],dim=0)
         else:
             return NotImplementedError("Not Support Yet")
 
@@ -219,11 +220,16 @@ class NegativeSampling_DataCollator:
                     else:
                         batch[k] = torch.tensor([f[k] for f in features])
 
+                    if (k == "kg_input_ids"):
+                        batch['kg_padding_mask'] = ~batch[k].detach().clone().eq(self.kg_special_token_ids['PAD'])
+
                 if not NCE:
                     if 'lang' in k:
                         batch_size = len(features)
-                        batch[k] = torch.stack([batch[k].detach().clone()[(torch.arange(batch_size) + idx) % batch_size] for idx in range(n_negatives+1)])
+                        batch[k] = torch.cat([batch[k].detach().clone()[(torch.arange(batch_size) + idx) % batch_size] for idx in range(n_negatives+1)],dim=0)
                     else:
-                        batch[k] = torch.stack([batch[k].detach().clone() for _ in range(n_negatives + 1)])
+                        batch[k] = torch.cat([batch[k].detach().clone() for _ in range(n_negatives + 1)],dim=0)
+                        if (k == "kg_input_ids"):
+                            batch['kg_padding_mask'] = torch.cat([batch['kg_padding_mask'].detach().clone() for _ in range(n_negatives + 1)],dim=0)
 
         return batch

@@ -172,6 +172,9 @@ class TrainingArguments:
     output_dir: str = field(
         metadata={"help": "The output directory where the model predictions and checkpoints will be written."}
     )
+    task: str = field(
+        metadata={"help": "Task"}
+    )
     overwrite_output_dir: bool = field(
         default=False,
         metadata={
