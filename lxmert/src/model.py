@@ -890,13 +890,21 @@ class LxmertModel(LxmertPreTrainedModel):
             raise ValueError("You cannot specify both input_ids and inputs_embeds at the same time")
         elif kg_input_ids is not None and kg_inputs_embeds is not None:
             raise ValueError("You cannot specify both input_ids and inputs_embeds at the same time")
-
+        
         # We create a 3D attention mask from a 2D tensor mask.
         # Sizes are [batch_size, 1, 1, to_seq_length]
         # So we can broadcast to [batch_size, num_heads, from_seq_length, to_seq_length]
         # this attention mask is more simple than the triangular masking of causal attention
         # used in OpenAI GPT, we just need to prepare the broadcast dimension here.
-        extended_lang_attention_mask = lang_attention_mask.unsqueeze(1).unsqueeze(2)
+        if lang_attention_mask is not None:
+            if len(lang_attention_mask.shape)==2:
+                extended_lang_attention_mask = lang_attention_mask.unsqueeze(1).unsqueeze(2)
+            elif len(lang_attention_mask.shape)==3:
+                extended_lang_attention_mask = lang_attention_mask.unsqueeze(1)
+            else:
+                raise ValueError("Only supports (batch_size, seq_length) or (batch_size, seq_length, seq_length)")    
+        else:
+            raise ValueError("there is no attention mask for langauge part")
 
         # Since attention_mask is 1.0 for positions we want to attend and 0.0 for
         # masked positions, this operation will create a tensor which is 0.0 for
