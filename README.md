@@ -99,5 +99,6 @@ __v2.0.2__ : Code refinement (Disambiguate LM init part, Add model spec to WandB
 __v2.1__ : Support attention mask for homogeneous graph\
 __v2.2__ : Reorganize preprocessing code, fully support experiments until 20201219\
 __v2.3__ : Supports Downstream task. Debugging & Full-featured downstream task will be supported at v3.0\
-__v3.0__ : Now supports Downstream task (Debugging done)
+__v3.0__ : Now supports Downstream task (Debugging done)\
+__v3.0.1__ : Fix run.py, easier configuration via run.py
 

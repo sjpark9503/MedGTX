@@ -250,8 +250,8 @@ class TrainingArguments:
 
     logging_dir: Optional[str] = field(default_factory=default_logdir, metadata={"help": "Tensorboard log dir."})
     logging_first_step: bool = field(default=False, metadata={"help": "Log the first global_step"})
-    logging_steps: int = field(default=500, metadata={"help": "Log every X updates steps."})
-    save_steps: int = field(default=500, metadata={"help": "Save checkpoint every X updates steps."})
+    num_log_per_epoch: int = field(default=100, metadata={"help": "Log every X updates steps."})
+    num_save_per_epoch: int = field(default=1, metadata={"help": "Save checkpoint every X updates steps."})
     save_total_limit: Optional[int] = field(
         default=None,
         metadata={
@@ -291,7 +291,7 @@ class TrainingArguments:
     dataloader_drop_last: bool = field(
         default=False, metadata={"help": "Drop the last incomplete batch if it is not divisible by the batch size."}
     )
-    eval_steps: int = field(default=None, metadata={"help": "Run an evaluation every X steps."})
+    num_eval_per_epoch: int = field(default=None, metadata={"help": "Run an evaluation every X steps."})
     dataloader_num_workers: int = field(
         default=0,
         metadata={
@@ -341,8 +341,8 @@ class TrainingArguments:
         self.evaluation_strategy = EvaluationStrategy(self.evaluation_strategy)
         if self.do_eval is False and self.evaluation_strategy != EvaluationStrategy.NO:
             self.do_eval = True
-        if self.eval_steps is None:
-            self.eval_steps = self.logging_steps
+        if self.num_eval_per_epoch is None:
+            self.num_eval_per_epoch = 1
 
         if self.load_best_model_at_end and self.metric_for_best_model is None:
             self.metric_for_best_model = "loss"

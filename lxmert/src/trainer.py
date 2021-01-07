@@ -176,7 +176,7 @@ class Trainer:
         #wandb.run.save()
 
         # Seed must be set before instantiating the model when using model
-        set_seed(self.args.seed)
+        #set_seed(self.args.seed)
         assert (
             model is not None or model_init is not None
         ), "You must provide a model to use `Trainer`, either by using the `model` argument or the `model_init` argument."
@@ -401,7 +401,7 @@ class Trainer:
         # Model re-init
         if self.model_init is not None:
             # Seed must be set before instantiating the model when using model_init.
-            set_seed(self.args.seed)
+            #set_seed(self.args.seed)
             model = self.call_model_init(trial)
             self.model = model.to(self.args.device)
             # Reinitializes optimizer and scheduler
@@ -537,10 +537,10 @@ class Trainer:
             if self.args.past_index >= 0:
                 self._past = None
 
-            steps_in_epoch = len(epoch_iterator) if train_dataset_is_sized else self.args.max_steps
+            self.steps_in_epoch = len(epoch_iterator) if train_dataset_is_sized else self.args.max_steps
             # self.control = self.callback_handler.on_epoch_begin(self.args, self.state, self.control)
 
-            for step, inputs in tqdm(enumerate(epoch_iterator),total=steps_in_epoch,desc='Step'):
+            for step, inputs in tqdm(enumerate(epoch_iterator),total=self.steps_in_epoch,desc='Step'):
 
                 # Skip past any already trained steps if resuming training
                 if steps_trained_in_current_epoch > 0:
@@ -565,8 +565,8 @@ class Trainer:
 
                 if ((step + 1) % self.args.gradient_accumulation_steps == 0) or (
                     # last step in epoch but step is always smaller than gradient_accumulation_steps
-                    steps_in_epoch <= self.args.gradient_accumulation_steps
-                    and (step + 1) == steps_in_epoch
+                    self.steps_in_epoch <= self.args.gradient_accumulation_steps
+                    and (step + 1) == self.steps_in_epoch
                 ):
                     if self.args.fp16 and _use_native_amp:
                         self.scaler.unscale_(self.optimizer)
@@ -587,7 +587,7 @@ class Trainer:
                     self.lr_scheduler.step()
                     model.zero_grad()
                     self.state.global_step += 1
-                    self.state.epoch = epoch + (step + 1) / steps_in_epoch
+                    self.state.epoch = epoch + (step + 1) / self.steps_in_epoch
                     # self.control = self.callback_handler.on_step_end(self.args, self.state, self.control)
 
                     loss_dict = self.log_save_evaluate(loss_dict, model)
@@ -629,7 +629,7 @@ class Trainer:
         return TrainOutput(self.state.global_step, self.process_loss_dict(loss_dict,accumulate=True)['loss'])
 
     def log_save_evaluate(self, loss_dict, model):
-        if self.state.global_step % self.args.logging_steps == 0:
+        if self.state.global_step % (self.steps_in_epoch//self.args.num_log_per_epoch) == 0:
             tr_dict = self.process_loss_dict(loss_dict, accumulate=True)
             if tr_dict is not None:
                 tr_dict['lr'] = (
@@ -640,12 +640,12 @@ class Trainer:
                 wandb.log(tr_dict)
                 loss_dict = dict()
                 #logger.info("log done")
-        if (self.state.global_step % self.args.eval_steps == 0) and self.args.evaluate_during_training:
+        if (self.state.global_step % (self.steps_in_epoch//self.args.num_eval_per_epoch) == 0) and self.args.evaluate_during_training:
             metrics = self.evaluate()
             logger.info("eval done")
         else:
             metrics = None
-        if self.state.global_step % self.args.save_steps == 0:
+        if self.state.global_step % (self.steps_in_epoch//self.args.num_save_per_epoch) == 0:
             self._save_checkpoint(model, metrics=metrics)
 
         return loss_dict
@@ -774,9 +774,16 @@ class Trainer:
 
         if self.args.fp16 and _use_native_amp:
             with autocast():
-                loss, loss_dict = self.compute_loss(model, inputs)
+                outputs = model(**inputs)
         else:
-            loss, loss_dict = self.compute_loss(model, inputs)
+            outputs = model(**inputs)
+
+        loss = outputs.loss
+        loss_dict = outputs.loss_dict
+        if self.task == 'binary_retrieval':
+            score = torch.max(outputs.cross_relationship_score,dim=1)[-1].tolist()
+            gt = inputs['label'].tolist()
+            loss_dict['Acc'] = accuracy_score(gt,score)
 
         if self.args.n_gpu > 1:
             loss = loss.mean()  # mean() to average on multi-gpu parallel training
@@ -805,15 +812,15 @@ class Trainer:
                 loss_dict[k].append(step_loss_dict[k])
             return loss_dict
 
-    def compute_loss(self, model, inputs):
-        """
-        How the loss is computed by Trainer. By default, all models return the loss in the first element.
-        Subclass and override for custom behavior.
-        """
-        outputs = model(**inputs)
-
-        # We don't use .loss here since the model may return tuples instead of ModelOutput.
-        return outputs.loss, outputs.loss_dict
+    # def compute_loss(self, model, inputs):
+    #     """
+    #     How the loss is computed by Trainer. By default, all models return the loss in the first element.
+    #     Subclass and override for custom behavior.
+    #     """
+    #     outputs = model(**inputs)
+    #
+    #     # We don't use .loss here since the model may return tuples instead of ModelOutput.
+    #     return outputs.loss, outputs.loss_dict
 
     def is_local_master(self) -> bool:
         """
@@ -1053,8 +1060,8 @@ class Trainer:
         preds = list()
         self.predicted = [('loss',[])]
         if self.task == 'pretrain':
-            self.predicted += [(k,[]) for k in ['kg, lang']]
-            self.predicted += [('gt_'+k, []) for k in ['kg, lang']]
+            self.predicted += [(k,[]) for k in ['kg', 'lang']]
+            self.predicted += [('gt_'+k, []) for k in ['kg', 'lang']]
         elif self.task == 'binary_retrieval':
             self.predicted += [('score',[])]
             self.predicted += [('label', [])]
@@ -1140,7 +1147,7 @@ class Trainer:
                     return outputs.cross_relationship_score.detach().numpy()
 
                 if not prediction_loss_only:
-                    self.predicted['score'] += (outputs.cross_relationship_score>0.5).long().tolist()
+                    self.predicted['score'] += torch.max(outputs.cross_relationship_score,dim=1)[-1].tolist()
                     self.predicted['label'] += inputs['label'].tolist()
 
             ## prediction for triplet retreival

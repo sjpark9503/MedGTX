@@ -668,12 +668,15 @@ class LxmertPooler(nn.Module):
                                     nn.Tanh(),
                                     nn.Linear(config.hidden_size, 1),
                                     nn.Sigmoid())
+        self.ce_pooler = nn.Sequential(nn.Linear(config.hidden_size, config.hidden_size),
+                                    nn.Tanh(),
+                                    nn.Linear(config.hidden_size, 2))
 
     def forward(self, hidden_states):
         # We "pool" the model by simply taking the hidden state corresponding
         # to the first token.
         first_token_tensor = hidden_states[:, 0]
-        pooled_output = self.pooler(first_token_tensor)
+        pooled_output = self.ce_pooler(first_token_tensor)
         return pooled_output
 
 
@@ -1156,7 +1159,7 @@ class LxmertForRanking(LxmertPreTrainedModel):
 
         # Loss functions
         self.loss_fcts = {
-            "bce": nn.BCELoss(),
+            "ce": nn.CrossEntropyLoss(),
             "ranking": nn.TripletMarginLoss(),
         }
 
@@ -1223,7 +1226,7 @@ class LxmertForRanking(LxmertPreTrainedModel):
         )
 
         cross_relationship_score = pooled_output.squeeze()
-        total_loss = self.loss_fcts["bce"](cross_relationship_score, label)
+        total_loss = self.loss_fcts["ce"](cross_relationship_score, label)
 
         loss_dict['loss']=total_loss.mean().item()
 

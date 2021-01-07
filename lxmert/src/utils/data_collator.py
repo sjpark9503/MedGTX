@@ -187,8 +187,8 @@ class NegativeSampling_DataCollator:
                 batch['negative_kg_input_ids'] = batch['kg_input_ids'].detach().clone()[shuffled_idx]
                 batch['label'] = None
             else:
-                batch['label'] = torch.cat([torch.ones(batch_size, dtype=torch.float),
-                                             torch.zeros(batch_size*self.n_negatives, dtype=torch.float)],dim=0)
+                batch['label'] = torch.cat([torch.ones(batch_size, dtype=torch.long),
+                                             torch.zeros(batch_size*self.n_negatives, dtype=torch.long)],dim=0)
         else:
             return NotImplementedError("Not Support Yet")
 
