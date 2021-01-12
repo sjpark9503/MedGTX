@@ -32,7 +32,7 @@ import torch
 from packaging import version
 
 #from utils.compute_metrics import get_accuracy
-from sklearn.metrics import accuracy_score, f1_score
+from sklearn.metrics import accuracy_score, f1_score, label_ranking_average_precision_score
 #from utils.metrics import MRR, Hits_at_k
 
 from torch import nn
@@ -263,7 +263,7 @@ class Trainer:
         if self.train_dataset is None:
             raise ValueError("Trainer: training requires a train_dataset.")
         train_sampler = self._get_train_sampler()
-
+        self.data_collator.n_negatives = self.args.n_negatives
         return DataLoader(
             self.train_dataset,
             batch_size=self.args.train_batch_size,
@@ -299,6 +299,7 @@ class Trainer:
             self._remove_unused_columns(eval_dataset, description="evaluation")
         eval_dataset = eval_dataset if eval_dataset is not None else self.eval_dataset
         eval_sampler = self._get_eval_sampler(eval_dataset)
+        self.data_collator.n_negatives = 0
 
         return DataLoader(
             eval_dataset,
@@ -325,6 +326,7 @@ class Trainer:
             self._remove_unused_columns(test_dataset, description="test")
         test_  = self._get_eval_sampler(test_dataset)
 
+        self.data_collator.n_negatives = 0
         # We use the same batch_size as for eval.
         return DataLoader(
             test_dataset,
@@ -640,12 +642,12 @@ class Trainer:
                 wandb.log(tr_dict)
                 loss_dict = dict()
                 #logger.info("log done")
-        if (self.state.global_step % (self.steps_in_epoch//self.args.num_eval_per_epoch) == 0) and self.args.evaluate_during_training:
+        if (self.state.global_step % (self.steps_in_epoch//self.args.num_eval_per_epoch) == 0) and (self.args.num_eval_per_epoch>0):
             metrics = self.evaluate()
             logger.info("eval done")
         else:
             metrics = None
-        if self.state.global_step % (self.steps_in_epoch//self.args.num_save_per_epoch) == 0:
+        if (self.state.global_step % (self.steps_in_epoch//self.args.num_save_per_epoch) == 0) and (self.args.num_save_per_epoch>0):
             self._save_checkpoint(model, metrics=metrics)
 
         return loss_dict
@@ -1089,9 +1091,10 @@ class Trainer:
         for key in self.predicted:
             if key=='loss':
                 self.metrics[f"eval_{key}"] = sum(self.predicted[key])/len(self.predicted[key])
-            if (self.task == 'pretrain') and (key in ['lang','kg']):
-                self.metrics[f"eval_{key}_Acc"] = accuracy_score(self.predicted[f'gt_{key}'],self.predicted[key])
-                self.metrics[f"eval_{key}_MacroF1"] = f1_score(self.predicted[f'gt_{key}'], self.predicted[key],average='macro')
+            if self.task == 'pretrain':
+                if key in ['lang','kg']:
+                    self.metrics[f"eval_{key}_Acc"] = accuracy_score(self.predicted[f'gt_{key}'],self.predicted[key])
+                    self.metrics[f"eval_{key}_MacroF1"] = f1_score(self.predicted[f'gt_{key}'], self.predicted[key],average='macro')
             if (self.task == 'binary_retrieval') and (key in ['score']):
                 self.metrics["eval_align_Acc"] = accuracy_score(self.predicted['label'],self.predicted['score'])
         return PredictionOutput(predictions=numpy_preds, label_ids=None, metrics=self.metrics)

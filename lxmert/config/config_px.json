@@ -24,7 +24,7 @@
   "vocab_size": {"lang": 30522, "kg": 3015345},
   "type_vocab_size": {"lang": 2,"kg": 0},
   "num_kg_labels": 9291,
-  "num_relations": 6,
+  "num_relations": 8,
   "kg_special_token_ids":{"PAD":0,"MASK":1, "CLS":2},
   "pretrained_kg_embedding": "",
   "pretrained_lang_model": {"use_weight": true, "model_name": "prajjwal1/bert-tiny"}

@@ -45,6 +45,7 @@ class InputFeatures:
     kg_attention_mask: Optional[List[int]] = None
     kg_label_mask: Optional[List[int]] = None
     kg_label: Optional[List[int]] = None
+    rc_indeces: Optional[List[int]] = None
     token_type_ids: Optional[List[int]] = None
 
     def to_json_string(self):
@@ -55,33 +56,57 @@ class HeadOnlyDataset(Dataset):
     """
     This will be superseded by a framework-agnostic approach soon.
     """
-    def __init__(self, tokenizer: PreTrainedTokenizer, file_path: str, block_size: int, kg_pad: int):
+    def __init__(self, tokenizer: PreTrainedTokenizer, file_path: str, block_size: int, token_type_vocab: dict = None):
         assert os.path.isdir(file_path), f"Input file path {file_path} not found"
         # Here, we do not cache the features, operating under the assumption
         # that we will soon use fast multithreaded tokenizers from the
         # `tokenizers` repo everywhere =)
+        self.token_type_vocab = token_type_vocab
+        self.tokenizer = tokenizer
+        self.features = list()
         if not os.path.isfile(os.path.join(file_path,'cached_feature')):
             logger.info("Creating features from dataset file at %s", file_path)
             # Loading preprocessed data
             self.batch_encoding = torch.load(os.path.join(file_path,'db'))
-            self.batch_encoding['text'] = tokenizer(self.batch_encoding['text'] , add_special_tokens=True, padding='max_length', truncation=True, max_length=block_size)
-            self.features = list()
-            self.batch2feature(kg_pad)
+            self.batch_encoding['lang'] = dict()
+            for text in tqdm(self.batch_encoding['text']):
+                sections, notes = list(text.keys()), list(text.values())
+                sample = tokenizer(f' {tokenizer.sep_token} '.join([x.strip() for x in notes]) , add_special_tokens=True, padding='max_length', truncation=True, max_length=block_size, return_token_type_ids=False)
+                if token_type_vocab:
+                    sample['token_type_ids'] = self.generate_type_ids(sections, sample['input_ids'])
+                for k, v in sample.items():
+                    if k not in self.batch_encoding['lang']:
+                        self.batch_encoding['lang'][k] = list()
+                    self.batch_encoding['lang'][k].append(v)
+            self.batch2feature()
             logger.info("Saving features...")
             torch.save(self.features,os.path.join(file_path,'cached_feature'))
         else:
             logger.info("Loading features from dataset file at %s", file_path)
             self.features = torch.load(os.path.join(file_path,'cached_feature'))
 
-    def batch2feature(self,kg_pad):
+    def generate_type_ids(self, sections, tokens):
+        idx = 0
+        type_ids = list()
+        for token in tokens:
+            type_ids.append(self.token_type_vocab[sections[idx]])
+            if token == self.tokenizer.sep_token_id:
+                idx += 1
+                if idx >= len(sections):
+                    idx = len(sections)-1
+        return type_ids
+
+    def batch2feature(self):
         for idx in tqdm(range(len(self.batch_encoding['input']))):
-            inputs = dict([('lang_'+k,self.batch_encoding['text'][k][idx]) if 'token_type' not in k else (k, self.batch_encoding['text'][k][idx]) for k in self.batch_encoding['text']])
+            inputs = dict([('lang_'+k,self.batch_encoding['lang'][k][idx]) if 'token_type' not in k else (k, self.batch_encoding['lang'][k][idx]) for k in self.batch_encoding['lang']])
             inputs['kg_input_ids'] = self.batch_encoding['input'][idx]
             if 'mask' in self.batch_encoding:
                 inputs['kg_attention_mask'] = self.batch_encoding['mask'][idx]
             if 'label' in self.batch_encoding:
                 inputs['kg_label'] = self.batch_encoding['label'][idx]
             inputs['kg_label_mask'] = self.batch_encoding['label_mask'][idx]
+            inputs['rc_indeces'] = self.batch_encoding['rc_index'][idx]
+
             feature = InputFeatures(**inputs)
             self.features.append(feature)
 
@@ -96,10 +121,10 @@ def get_dataset(
     tokenizer: PreTrainedTokenizer,
     evaluate: bool = False,
     test: bool = False,
-    kg_pad: int = 0,
+    token_type_vocab: dict = None
 ):
     def _dataset(file_path):
-        return HeadOnlyDataset(tokenizer=tokenizer, file_path=file_path, block_size=args.block_size, kg_pad=kg_pad)
+        return HeadOnlyDataset(tokenizer=tokenizer, file_path=file_path, block_size=args.block_size, token_type_vocab=token_type_vocab)
 
     if evaluate:
         return _dataset(args.eval_data_file)

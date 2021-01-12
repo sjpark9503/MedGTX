@@ -35,6 +35,9 @@ class NodeClassification_DataCollator:
     tokenizer: PreTrainedTokenizerBase
     kg_special_token_ids: dict
     kg_size: int
+    align: bool = False
+    n_negatives = 1 
+    edge_cls: bool = False
     mlm: bool = True
     mlm_probability: float = 0.15
     contrastive: bool = False
@@ -46,7 +49,9 @@ class NodeClassification_DataCollator:
         batch = self._tensorize_batch(features)
 
         if not self.prediction:
+            # Construct batch for Masked LM
             masked_texts, lm_label = self.mask_tokens(batch['lang_input_ids'])
+            # Construct batch for Masekd LP
             if not self.contrastive:
                 masked_subs, kg_label_mask, kg_padding_mask = self.mask_kg(batch['kg_input_ids'], batch['kg_label_mask'])
                 batch['kg_input_ids'] = masked_subs
@@ -54,10 +59,11 @@ class NodeClassification_DataCollator:
                 batch['kg_padding_mask'] = kg_padding_mask
             else:
                 batch['kg_label_mask'] = None
-
-            # Define batch and return
             batch['lang_input_ids'] = masked_texts
             batch['lm_label'] = lm_label
+            # Construct batch for Alignment loss
+            if self.align:
+                batch = self.negative_sampling(batch, len(features))
         else:
             batch['lang_input_ids'] = batch['lang_input_ids']
             batch['lm_label'] = None
@@ -75,6 +81,10 @@ class NodeClassification_DataCollator:
         batch = {}
 
         for k, v in first.items():
+            if 'rc' in k:
+                if self.edge_cls:
+                    batch[k] = [f[k] for f in features]
+                continue
             if v is not None:
                 if (k == "kg_attention_mask") and not isinstance(v, str):
                     if isinstance(v, torch.Tensor):
@@ -89,6 +99,20 @@ class NodeClassification_DataCollator:
                         batch[k] = torch.stack([f[k] for f in features])
                     else:
                         batch[k] = torch.tensor([f[k] for f in features])
+
+        return batch
+
+    def negative_sampling(self,batch, batch_size) -> Dict[str, torch.Tensor]:
+        batch['cross_label'] = torch.cat([torch.ones(batch_size, dtype=torch.long),
+                                             torch.zeros(batch_size*self.n_negatives, dtype=torch.long)],dim=0)
+        for k, v in batch.items():
+            if v is not None:
+                if 'kg' not in k:
+                    batch[k] = torch.cat([batch[k].detach().clone()[(torch.arange(batch_size) + idx) % batch_size] for idx in range(self.n_negatives+1)],dim=0)
+                elif 'rc' in k:
+                    batch[k] = batch[k] * self.n_negatives
+                else:
+                    batch[k] = torch.cat([batch[k].detach().clone() for _ in range(self.n_negatives + 1)],dim=0)
 
         return batch
 
@@ -178,7 +202,7 @@ class NegativeSampling_DataCollator:
     def __call__(self,features: List[InputDataClass]) -> Dict[str, torch.Tensor]:
         if not isinstance(features[0], (dict, BatchEncoding)):
             features = [vars(f) for f in features]
-        batch = self._tensorize_batch(features, self.n_negatives, self.NCE)
+        batch = self._tensorize_batch(features, self.NCE)
         batch_size = len(features)
 
         if not self.prediction:
@@ -194,7 +218,7 @@ class NegativeSampling_DataCollator:
 
         return batch
 
-    def _tensorize_batch(self,features: List[Dict], n_negatives, NCE) -> Dict[str, torch.Tensor]:
+    def _tensorize_batch(self,features: List[Dict], NCE) -> Dict[str, torch.Tensor]:
         # In this function we'll make the assumption that all `features` in the batch
         # have the same attributes.
         # So we will look at the first element as a proxy for what attributes exist
@@ -203,7 +227,7 @@ class NegativeSampling_DataCollator:
         batch = {}
 
         for k, v in first.items():
-            if 'label' in k:
+            if ('label' in k) or ('rc' in k):
                 continue
             if (v is not None) and (not isinstance(v, str)):
                 if (k == "kg_attention_mask"):
@@ -226,10 +250,10 @@ class NegativeSampling_DataCollator:
                 if not NCE:
                     if 'lang' in k:
                         batch_size = len(features)
-                        batch[k] = torch.cat([batch[k].detach().clone()[(torch.arange(batch_size) + idx) % batch_size] for idx in range(n_negatives+1)],dim=0)
+                        batch[k] = torch.cat([batch[k].detach().clone()[(torch.arange(batch_size) + idx) % batch_size] for idx in range(self.n_negatives+1)],dim=0)
                     else:
-                        batch[k] = torch.cat([batch[k].detach().clone() for _ in range(n_negatives + 1)],dim=0)
+                        batch[k] = torch.cat([batch[k].detach().clone() for _ in range(self.n_negatives + 1)],dim=0)
                         if (k == "kg_input_ids"):
-                            batch['kg_padding_mask'] = torch.cat([batch['kg_padding_mask'].detach().clone() for _ in range(n_negatives + 1)],dim=0)
+                            batch['kg_padding_mask'] = torch.cat([batch['kg_padding_mask'].detach().clone() for _ in range(self.n_negatives + 1)],dim=0)
 
         return batch

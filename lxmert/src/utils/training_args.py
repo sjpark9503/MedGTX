@@ -196,6 +196,8 @@ class TrainingArguments:
         default="no",
         metadata={"help": "Run evaluation during training at each logging step."},
     )
+    align: bool = field(default=False, metadata={"help": "Use X modal alignment loss"})
+    edge_cls: bool = field(default=False, metadata={"help": "Use Edge Classification loss"})
     prediction_loss_only: bool = field(
         default=False,
         metadata={"help": "When performing evaluation and predictions, only returns the loss."},
@@ -250,6 +252,9 @@ class TrainingArguments:
 
     logging_dir: Optional[str] = field(default_factory=default_logdir, metadata={"help": "Tensorboard log dir."})
     logging_first_step: bool = field(default=False, metadata={"help": "Log the first global_step"})
+    n_negatives: int = field(
+        default=1, metadata={"help": "Number of negative samples"}
+    )
     num_log_per_epoch: int = field(default=100, metadata={"help": "Log every X updates steps."})
     num_save_per_epoch: int = field(default=1, metadata={"help": "Save checkpoint every X updates steps."})
     save_total_limit: Optional[int] = field(

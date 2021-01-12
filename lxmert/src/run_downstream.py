@@ -144,13 +144,11 @@ def main():
     if training_args.task == 'binary_retrieval':
         data_collator = NegativeSampling_DataCollator(tokenizer=tokenizer,
                                                       kg_special_token_ids=config.kg_special_token_ids,
-                                                          NCE=False,
-                                                          n_negatives=1)
+                                                          NCE=False)
     elif training_args.task == 'triplet_retrieval':
         data_collator = NegativeSampling_DataCollator(tokenizer=tokenizer,
                                                       kg_special_token_ids=config.kg_special_token_ids,
-                                                          NCE=True,
-                                                          n_negatives=1)
+                                                          NCE=True)
     else:
         raise NotImplementedError("Not implemented task")
     # Initialize our Trainer

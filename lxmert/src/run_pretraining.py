@@ -111,7 +111,7 @@ def main():
     else:
         logger.info("Training new model from scratch")
         model = LxmertForKGTokPredAndMaskedLM(config)
-
+    model.training_args = training_args
     #model.resize_token_embeddings(len(tokenizer))
 
     if config.model_type in ["bert", "roberta", "distilbert", "camembert"] and not data_args.mlm:
@@ -128,21 +128,19 @@ def main():
 
     # Get datasets
 
-    train_dataset = (
-        get_dataset(data_args, tokenizer=tokenizer, kg_pad=config.kg_special_token_ids["PAD"]) if training_args.do_train else None
-    )
-    eval_dataset = (
-        get_dataset(data_args, tokenizer=tokenizer, kg_pad=config.kg_special_token_ids["PAD"], evaluate=True)
-        if training_args.do_eval
-        else None
-    )
-    # test_dataset = (
-    #     get_dataset(data_args, tokenizer=tokenizer, kg_pad=config.kg_special_token_ids["PAD"], test=True)
-    #     if training_args.do_eval
-    #     else None
-    # )
+    train_dataset = get_dataset(data_args,
+                    tokenizer=tokenizer,
+                    token_type_vocab=config.token_type_vocab,
+                    )
+    eval_dataset = get_dataset(data_args,
+                               tokenizer=tokenizer,
+                               token_type_vocab = config.token_type_vocab,
+                               evaluate=True)
+
     if config.task_mask_lm and config.task_mask_kg:
         data_collator = NodeClassification_DataCollator(tokenizer=tokenizer,
+                                                        align=training_args.align,
+                                                        edge_cls=training_args.edge_cls,
                                                         kg_special_token_ids=config.kg_special_token_ids,
                                                         kg_size=config.vocab_size['kg'])
     elif config.task_mask_lm and not config.task_mask_kg:

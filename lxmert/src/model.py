@@ -890,21 +890,13 @@ class LxmertModel(LxmertPreTrainedModel):
             raise ValueError("You cannot specify both input_ids and inputs_embeds at the same time")
         elif kg_input_ids is not None and kg_inputs_embeds is not None:
             raise ValueError("You cannot specify both input_ids and inputs_embeds at the same time")
-        
+
         # We create a 3D attention mask from a 2D tensor mask.
         # Sizes are [batch_size, 1, 1, to_seq_length]
         # So we can broadcast to [batch_size, num_heads, from_seq_length, to_seq_length]
         # this attention mask is more simple than the triangular masking of causal attention
         # used in OpenAI GPT, we just need to prepare the broadcast dimension here.
-        if lang_attention_mask is not None:
-            if len(lang_attention_mask.shape)==2:
-                extended_lang_attention_mask = lang_attention_mask.unsqueeze(1).unsqueeze(2)
-            elif len(lang_attention_mask.shape)==3:
-                extended_lang_attention_mask = lang_attention_mask.unsqueeze(1)
-            else:
-                raise ValueError("Only supports (batch_size, seq_length) or (batch_size, seq_length, seq_length)")    
-        else:
-            raise ValueError("there is no attention mask for langauge part")
+        extended_lang_attention_mask = lang_attention_mask.unsqueeze(1).unsqueeze(2)
 
         # Since attention_mask is 1.0 for positions we want to attend and 0.0 for
         # masked positions, this operation will create a tensor which is 0.0 for
@@ -1000,13 +992,13 @@ class LxmertForKGTokPredAndMaskedLM(LxmertPreTrainedModel):
         self.config = config
         self.num_kg_labels = config.num_kg_labels
 
-        # Use of pre-training tasks
-        self.task_mask_lm = config.task_mask_lm
-
         # Lxmert backbone
         self.lxmert = LxmertModel(config)
         self.dropout = nn.Dropout(config.hidden_dropout_prob)
         self.classifier = nn.Linear(config.hidden_size, config.num_kg_labels)
+        self.edge_classifier = nn.Sequential(nn.Linear(config.hidden_size*2, config.hidden_size*2),
+                                            nn.Tanh(),
+                                            nn.Linear(config.hidden_size*2, config.num_relations))
 
         # Pre-training heads
         self.lm_head = LxmertPreTrainingHeads(config, self.lxmert.lang_embeddings.word_embeddings.weight)
@@ -1031,6 +1023,7 @@ class LxmertForKGTokPredAndMaskedLM(LxmertPreTrainedModel):
             "l2": SmoothL1Loss(reduction="none"),
             "mse": MSELoss(reduction="none"),
             "ce": CrossEntropyLoss(),
+            "tri": nn.TripletMarginLoss()#(margin=config.margin)
         }
 
     #@add_start_docstrings_to_callable(LXMERT_INPUTS_DOCSTRING.format("batch_size, sequence_length"))
@@ -1047,7 +1040,9 @@ class LxmertForKGTokPredAndMaskedLM(LxmertPreTrainedModel):
         kg_label_mask=None,
         lm_label=None,
         kg_label=None,
+        cross_label=None,
         token_type_ids=None,
+        rc_indeces=None,
         output_attentions=None,
         output_hidden_states=None,
         return_dict=True,
@@ -1102,14 +1097,14 @@ class LxmertForKGTokPredAndMaskedLM(LxmertPreTrainedModel):
             else torch.tensor(0.0, device=device)
         )
         loss_dict = dict()
-        if lm_label is not None and self.config.task_mask_lm:
+        if lm_label is not None:
             masked_lm_loss = self.loss_fcts["ce"](
                 lang_prediction_scores.view(-1, self.config.vocab_size['lang']),
                 lm_label.view(-1),
             )
             total_loss += masked_lm_loss
             loss_dict['lm_loss']=masked_lm_loss.mean().item()
-        if kg_label is not None and self.config.task_mask_kg:
+        if kg_label is not None:
             if self.num_kg_labels == 1:
                 #  We are doing regression
                 kg_intm_loss = self.loss_fcts['mse'](kg_prediction_scores.view(-1), kg_label.view(-1))
@@ -1127,14 +1122,29 @@ class LxmertForKGTokPredAndMaskedLM(LxmertPreTrainedModel):
                     kg_loss = self.loss_fcts['ce'](kg_prediction_scores.view(-1, self.num_kg_labels), kg_label.view(-1))
             total_loss += kg_loss
             loss_dict['kg_loss']=kg_loss.mean().item()
-
+        if cross_label is not None:
+            cross_loss = self.loss_fcts["ce"](cross_relationship_score.squeeze(), cross_label)
+            total_loss += cross_loss
+            loss_dict['align_loss']=cross_loss.mean().item()
+        if rc_indeces is not None:
+            rc_labels = list()
+            rc_inputs = list()
+            for idx, sample_rc_indeces in enumerate(rc_indeces):
+                for rc_idx in sample_rc_indeces:
+                    rc_inputs.append(torch.cat([lang_output[idx, rc_idx[0]],lang_output[idx, rc_idx[1]]],dim=-1))
+                    rc_labels.append(rc_idx[2])
+            rc_outputs = self.edge_classifier(torch.stack(rc_inputs,dim=0))
+            rc_loss = self.loss_fcts['ce'](rc_outputs,torch.tensor(rc_labels,dtype=torch.long, device=device))
+            total_loss += rc_loss
+            loss_dict['rc_loss']=rc_loss.mean().item()
+            
         loss_dict['loss'] = total_loss.mean().item()
         if not return_dict:
             output = (
                 loss_dict,
                 lang_prediction_scores,
                 kg_prediction_scores,
-                cross_relationship_score,
+                cross_relationship_score.squeeze(),
 
             ) + lxmert_output[3:]
             return ((total_loss,) + output) if total_loss is not None else output
@@ -1144,7 +1154,7 @@ class LxmertForKGTokPredAndMaskedLM(LxmertPreTrainedModel):
             loss_dict=loss_dict,
             lang_prediction_logits=lang_prediction_scores,
             kg_prediction_logits=kg_prediction_scores,
-            cross_relationship_score=cross_relationship_score,
+            cross_relationship_score=cross_relationship_score.squeeze(),
             language_hidden_states=lxmert_output.language_hidden_states,
             kg_hidden_states=lxmert_output.kg_hidden_states,
             language_attentions=lxmert_output.language_attentions,
@@ -1168,7 +1178,7 @@ class LxmertForRanking(LxmertPreTrainedModel):
         # Loss functions
         self.loss_fcts = {
             "ce": nn.CrossEntropyLoss(),
-            "ranking": nn.TripletMarginLoss(),
+            "tri": nn.TripletMarginLoss(),
         }
 
     #@add_start_docstrings_to_callable(LXMERT_INPUTS_DOCSTRING.format("batch_size, sequence_length"))
