@@ -1067,6 +1067,9 @@ class Trainer:
         elif self.task == 'binary_retrieval':
             self.predicted += [('score',[])]
             self.predicted += [('label', [])]
+        elif self.task == 'generation':
+            self.predicted += [(k,[]) for k in ['lang']]
+            self.predicted += [('gt_'+k, []) for k in ['lang']]
         else:
             raise NotImplementedError("Other tasks are not implemented yet")
         self.predicted = dict(self.predicted)
@@ -1097,6 +1100,9 @@ class Trainer:
                     self.metrics[f"eval_{key}_MacroF1"] = f1_score(self.predicted[f'gt_{key}'], self.predicted[key],average='macro')
             if (self.task == 'binary_retrieval') and (key in ['score']):
                 self.metrics["eval_align_Acc"] = accuracy_score(self.predicted['label'],self.predicted['score'])
+            if (self.task == 'generation') and (key in ['lang']):
+                self.metrics[f"eval_{key}_Acc"] = accuracy_score(self.predicted[f'gt_{key}'],self.predicted[key])
+                self.metrics[f"eval_{key}_MacroF1"] = f1_score(self.predicted[f'gt_{key}'], self.predicted[key],average='macro')
         return PredictionOutput(predictions=numpy_preds, label_ids=None, metrics=self.metrics)
 
     def prediction_step(
@@ -1156,6 +1162,14 @@ class Trainer:
             ## prediction for triplet retreival
 
             ## prediction for generation
+            elif self.task == 'generation':
+                if not prediction_loss_only:
+                    self.predicted['lang'] += torch.max(outputs.lang_prediction_logits, dim=2)[-1][~inputs['lm_label'].eq(-100)].view(
+                        -1).long().tolist()
+                    self.predicted['gt_lang'] += inputs['lm_label'][~inputs['lm_label'].eq(-100)].view(
+                        -1).long().tolist()
+                else:
+                    raise NotImplementedError("This task is not implemented yet")
 
         return None
 

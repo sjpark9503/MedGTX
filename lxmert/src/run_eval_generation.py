@@ -8,13 +8,19 @@ import os
 from dataclasses import dataclass, field
 from glob import glob
 from typing import Optional
+from tqdm import tqdm
+
+import torch
 from torch.utils.data import ConcatDataset
+from torch.utils.data.sampler import SequentialSampler
+from torch.utils.data.dataloader import DataLoader
 
 # Own implementation
 from utils.parameters import parser
 from utils.dataset import get_dataset
 from utils.data_collator import NegativeSampling_DataCollator
-from model import LxmertForRanking
+# from model import LxmertForRanking
+from model import LxmertForKGTokPredAndMaskedLM
 from trainer import Trainer
 
 # From Huggingface transformers package
@@ -102,15 +108,16 @@ def main():
         )
 
     if model_args.model_name_or_path:
-        model = LxmertForRanking.from_pretrained(
+        from model import LxmertForGeneration
+        model = LxmertForGeneration.from_pretrained(
             model_args.model_name_or_path,
             from_tf=bool(".ckpt" in model_args.model_name_or_path),
             config=config,
             cache_dir=model_args.cache_dir,
+            tokenizer=tokenizer
         )
     else:
-        logger.info("Training new model from scratch")
-        model = LxmertForRanking(config)
+        raise ValueError("Cannot Scratch Training")
 
     #model.resize_token_embeddings(len(tokenizer))
 
@@ -141,47 +148,103 @@ def main():
     #     if training_args.do_eval
     #     else None
     # )
-    if training_args.task == 'binary_retrieval':
-        data_collator = NegativeSampling_DataCollator(tokenizer=tokenizer,
-                                                      kg_special_token_ids=config.kg_special_token_ids,
-                                                      NCE=False)
-    elif training_args.task == 'triplet_retrieval':
-        data_collator = NegativeSampling_DataCollator(tokenizer=tokenizer,
-                                                      kg_special_token_ids=config.kg_special_token_ids,
-                                                      NCE=True)
-    elif training_args.task == 'generation':
+    
+    
+    if training_args.task == 'generation':
         from utils.data_collator import UniLM_DataCollator
         data_collator = UniLM_DataCollator(tokenizer=tokenizer,
-                                           kg_special_token_ids=config.kg_special_token_ids)
+                                           kg_special_token_ids=config.kg_special_token_ids,
+                                           kg_size=config.vocab_size['kg'],
+                                           prediction=True) # for generation
     else:
         raise NotImplementedError("Not implemented task")
-    # Initialize our Trainer
-    trainer = Trainer(
-        model=model,
-        args=training_args,
-        data_collator=data_collator,
-        train_dataset=train_dataset,
-        eval_dataset=eval_dataset
-    )
 
-    # Training
-    if training_args.do_train:
-        model_path = (
-            model_args.model_name_or_path
-            if model_args.model_name_or_path is not None and os.path.isdir(model_args.model_name_or_path)
-            else None
-        )
-        trainer.train(model_path=model_path)
-        trainer.save_model()
-        # For convenience, we also re-save the tokenizer to the same directory,
-        # so that you can share your model easily on huggingface.co/models =)
-        if trainer.is_world_master():
-            tokenizer.save_pretrained(training_args.output_dir)
+    # train dataset
+    if training_args.do_train and data_args.train_data_file:
+        train_dataloader = DataLoader(train_dataset, 
+                                      sampler=SequentialSampler(train_dataset),
+                                    #   batch_size=training_args.per_device_train_batch_size,
+                                      batch_size=64,
+                                      collate_fn=data_collator,
+                                      drop_last=training_args.dataloader_drop_last,
+                                      num_workers=training_args.dataloader_num_workers,
+                                      pin_memory=True
+                                      )
+        model.to(training_args.device)
+        
+        results = {}
+        for idx, inputs in tqdm(enumerate(train_dataloader), total=len(train_dataloader), desc='Step'):
+            # from nltk.translate.bleu_score import sentence_bleu, corpus_bleu
+            
+            for k, v in inputs.items():
+                if isinstance(v, torch.Tensor):
+                    inputs[k] = v.to(training_args.device)
+            
+            with torch.no_grad():
+                prd_text = model(**inputs).cpu().numpy()
+                org_text_ids = inputs['lang_input_ids'].cpu().numpy()
+                org_kg_ids = inputs['kg_input_ids'].cpu().numpy()
+                
+                items = {'prd_text': prd_text,
+                            'org_text_ids': org_text_ids,
+                            'org_kg_ids': org_kg_ids}
+                
+            results[idx] = items
+            
+            
+    # eval dataset
+    if training_args.do_eval and data_args.eval_data_file:
+        eval_dataloader = DataLoader(eval_dataset, 
+                                      sampler=SequentialSampler(eval_dataset),
+                                    #   batch_size=training_args.per_device_train_batch_size,
+                                      batch_size=64,
+                                      collate_fn=data_collator,
+                                      drop_last=training_args.dataloader_drop_last,
+                                      num_workers=training_args.dataloader_num_workers,
+                                      pin_memory=True
+                                      )
+        model.to(training_args.device)
+        
+        results = {}
+        for idx, inputs in tqdm(enumerate(eval_dataloader), total=len(eval_dataloader), desc='Step'):
+            # from nltk.translate.bleu_score import sentence_bleu, corpus_bleu
+            
+            for k, v in inputs.items():
+                if isinstance(v, torch.Tensor):
+                    inputs[k] = v.to(training_args.device)
+            
+            with torch.no_grad():
+                prd_text = model(**inputs).cpu().numpy()
+                org_text_ids = inputs['lang_input_ids'].cpu().numpy()
+                org_kg_ids = inputs['kg_input_ids'].cpu().numpy()
+                
+                items = {'prd_text': prd_text,
+                         'org_text_ids': org_text_ids,
+                         'org_kg_ids': org_kg_ids}
+                
+            results[idx] = items
+        
 
-def _mp_fn(index):
-    # For xla_spawn (TPUs)
-    main()
-
-
+    
+                
+    # metric
+    
+    
+    # save
+    torch.save(results, os.path.join(training_args.output_dir, 'train_dataset.pt'))
+    logger.info("Output results %s", training_args.output_dir)
+                
+                
+    # if training_args.do_eval and data_args.eval_data_file:
+    #     eval_dataloader = DataLoader(eval_dataset, 
+    #                                  sampler=SequentialSampler(eval_dataset),
+    #                                  batch_size=training_args.per_device_eval_batch_size,
+    #                                  collate_fn=data_collator,
+    #                                  drop_last=training_args.dataloader_drop_last,
+    #                                  num_workers=training_args.dataloader_num_workers,
+    #                                  pin_memory=True
+    #                                  )
+        
+    
 if __name__ == "__main__":
     main()
