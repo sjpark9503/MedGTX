@@ -102,12 +102,23 @@ def main():
         )
 
     if model_args.model_name_or_path:
-        model = LxmertForRanking.from_pretrained(
-            model_args.model_name_or_path,
-            from_tf=bool(".ckpt" in model_args.model_name_or_path),
-            config=config,
-            cache_dir=model_args.cache_dir,
-        )
+        if training_args.task in ['binary_retrieval', 'triplet_retrieval']:
+            model = LxmertForRanking.from_pretrained(
+                model_args.model_name_or_path,
+                from_tf=bool(".ckpt" in model_args.model_name_or_path),
+                config=config,
+                cache_dir=model_args.cache_dir,
+            )
+        elif training_args.task in ['generation']:
+            from model import LxmertForKGTokPredAndMaskedLM
+            model = LxmertForKGTokPredAndMaskedLM.from_pretrained(
+                model_args.model_name_or_path,
+                from_tf=bool(".ckpt" in model_args.model_name_or_path),
+                config=config,
+                cache_dir=model_args.cache_dir,
+            )
+        else:
+            raise NotImplementedError("Not implemented task: %s", training_args.task)
     else:
         logger.info("Training new model from scratch")
         model = LxmertForRanking(config)
