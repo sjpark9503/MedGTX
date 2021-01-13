@@ -814,6 +814,16 @@ class Trainer:
                 loss_dict[k].append(step_loss_dict[k])
             return loss_dict
 
+    # def compute_loss(self, model, inputs):
+    #     """
+    #     How the loss is computed by Trainer. By default, all models return the loss in the first element.
+    #     Subclass and override for custom behavior.
+    #     """
+    #     outputs = model(**inputs)
+    #
+    #     # We don't use .loss here since the model may return tuples instead of ModelOutput.
+    #     return outputs.loss, outputs.loss_dict
+
     def is_local_master(self) -> bool:
         """
         Whether or not this process is the local (e.g., on one machine if training in a distributed fashion on several
