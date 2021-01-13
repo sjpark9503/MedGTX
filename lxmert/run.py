@@ -78,10 +78,8 @@ if (TASK_NAME == 'pretrain') or Scratch_Downstream:
     TRAINING_CONFIG['config_name'] = os.path.join(EXP_PATH, f"config/config_H{Dim_Hidden}_L{NUM_Layers['lang']},{NUM_Layers['kg']},{NUM_Layers['cross']}_{MODEL_TYPE}_{Var_Unified}{DB}.json")
     with open(os.path.join(EXP_PATH, f"config/config_{Var_Unified}{DB}.json")) as f:
         Config = json.load(f)
-    if MODEL_TYPE in ['both', 'kg']:
-        Config['gcn'] = True
-    if MODEL_TYPE in ['both', 'lm']:
-        Config['pretrained_lang_model']['use_weight'] = True
+    Config['gcn'] = MODEL_TYPE in ['both', 'kg']
+    Config['pretrained_lang_model']['use_weight'] = MODEL_TYPE in ['both', 'lm']
     Config['hidden_size'] = Dim_Hidden
     Config['intermediate_size'] = 4*Dim_Hidden
     Config['pretrained_lang_model']['model_name'] = "prajjwal1/bert-{}".format('tiny' if Dim_Hidden==128 else 'mini')
