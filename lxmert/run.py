@@ -3,12 +3,13 @@ import json
 import os
 # ======================= CONFIG ==================== #
 ## GPU setting
-os.environ["CUDA_VISIBLE_DEVICES"] = '3'
+os.environ["CUDA_VISIBLE_DEVICES"] = '7'
 ## TASK & DB
 TASK_NAME = 'pretrain'
 DB = 'dx,prx'
-MODEL_TYPE = 'rand'
-Unified = True
+DB_size = 1000
+MODEL_TYPE = 'both'
+Unified = False
 Align = False
 Relation_Classification = True
 Scratch_Downstream = False
@@ -35,7 +36,7 @@ if Scratch_Downstream is True:
 ## <LMinit & KGenc> : both, <LMinit only> : lm, <KGenc only> : kg, <RandomInit> : rand
 ## Unified(Placeholder) for Abstract Node : True or False
 MODEL_NAME = f'{DB}_{Var_Unified}{"Uni" if MODEL_TYPE in ["both","kg"] else "No"}KGenc'
-RUN_NAME = f'{Var_MODEL[MODEL_TYPE]}_H{Dim_Hidden}_L{NUM_Layers["lang"]},{NUM_Layers["kg"]},{NUM_Layers["cross"]}_{Var_Align}{Var_RC}{Var_Unified}{DB}'
+RUN_NAME = f'{Var_MODEL[MODEL_TYPE]}_H{Dim_Hidden}_L{NUM_Layers["lang"]},{NUM_Layers["kg"]},{NUM_Layers["cross"]}_{Var_Align}{Var_RC}{Var_Unified}{DB}{DB_size}'
 
 # Paths
 EXP_PATH = os.getcwd()
@@ -61,8 +62,8 @@ TRAINING_CONFIG = {
     "num_save_per_epoch": 1,
     "num_eval_per_epoch": 1,
     "task" : TASK_NAME,
-    "train_data_file":os.path.join(EXP_PATH,"data/{}/train".format(MODEL_NAME)),
-    "eval_data_file": os.path.join(EXP_PATH,"data/{}/valid".format(MODEL_NAME)),
+    "train_data_file":os.path.join(EXP_PATH,f"data/{DB}_{DB_size}/{MODEL_NAME}/train"),
+    "eval_data_file": os.path.join(EXP_PATH,f"data/{DB}_{DB_size}/{MODEL_NAME}/valid"),
     #"test_data_file": os.path.join(EXP_PATH, "data/{}/test".format(MODEL_NAME)),
     "run_name":f"{TASK_NAME}_{RUN_NAME}"
 }
