@@ -57,7 +57,7 @@ TRAINING_CONFIG = {
     "per_device_train_batch_size": 16,
     "per_device_eval_batch_size": 4,
     "learning_rate": 5e-6,
-    "num_train_epochs": 1,
+    "num_train_epochs": 20,
     "num_log_per_epoch": 20,
     "num_save_per_epoch": -1,
     "num_eval_per_epoch": 5,
