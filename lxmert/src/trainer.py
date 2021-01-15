@@ -1134,7 +1134,7 @@ class Trainer:
             for k, v in outputs.loss_dict.items():
                 if k not in self.predicted:
                     self.predicted[k]=list()
-                self.predicted[k].append(v.mean().item())
+                self.predicted[k].append(v)
             ## prediction for pretraining
             if self.task in ['pretrain', 'single_pretrain']:
                 if prediction:
