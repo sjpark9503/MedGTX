@@ -471,6 +471,7 @@ class LxmertXLayer(nn.Module):
         super().__init__()
         # The cross-attention Layer
         self.cross_attention = LxmertCrossAttentionLayer(config)
+        self.task_name = config.task_name
 
         # Self-attention Layers
         self.lang_self_att = LxmertSelfAttentionLayer(config)
@@ -490,19 +491,36 @@ class LxmertXLayer(nn.Module):
         visual_attention_mask,
         output_x_attentions=False,
     ):
-        # Cross Attention
-        lang_att_output = self.cross_attention(
-            lang_input,
-            visual_input,
-            ctx_att_mask=visual_attention_mask,
-            output_attentions=output_x_attentions,
-        )
-        visual_att_output = self.cross_attention(
-            visual_input,
-            lang_input,
-            ctx_att_mask=lang_attention_mask,
-            output_attentions=output_x_attentions,
-        )
+        if self.task_name in ['pretrain', 'binary_retrieval', 'generation']:
+            # Cross Attention
+            lang_att_output = self.cross_attention(
+                lang_input,
+                visual_input,
+                ctx_att_mask=visual_attention_mask,
+                output_attentions=output_x_attentions,
+            )
+            visual_att_output = self.cross_attention(
+                visual_input,
+                lang_input,
+                ctx_att_mask=lang_attention_mask,
+                output_attentions=output_x_attentions,
+            )
+        elif self.task_name in ['single_pretrain', 'single_binary_retrieval', 'single_generation']:
+            lang_att_output = self.cross_attention(
+                lang_input,
+                lang_input,
+                ctx_att_mask=lang_attention_mask,
+                output_attentions=output_x_attentions,
+            )
+            visual_att_output = self.cross_attention(
+                visual_input,
+                visual_input,
+                ctx_att_mask=visual_attention_mask,
+                output_attentions=output_x_attentions,
+            )
+        else:
+            logger.info("Invalid task name")
+            return
         return lang_att_output, visual_att_output
 
     # fine-tuning for generation 
@@ -696,7 +714,7 @@ class LxmertPooler(nn.Module):
         # We "pool" the model by simply taking the hidden state corresponding
         # to the first token.
         first_token_tensors = torch.cat([kg_hidden_states[:, 0],lang_hidden_states[:, 0]],dim=1)
-        pooled_output = self.ce_pooler(first_token_tensor)
+        pooled_output = self.ce_pooler(first_token_tensors)
         return pooled_output
 
 

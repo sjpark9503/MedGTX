@@ -3,14 +3,14 @@ import json
 import os
 # ======================= CONFIG ==================== #
 ## GPU setting
-os.environ["CUDA_VISIBLE_DEVICES"] = '3'
+os.environ["CUDA_VISIBLE_DEVICES"] = '5'
 ## TASK & DB
-TASK_NAME = 'binary_retrieval'
+TASK_NAME = 'pretrain'
 DB = 'dx,prx'
 DB_size = 2000
-MODEL_TYPE = 'kg'
+MODEL_TYPE = 'lm'
 Unified = True
-Align = False
+Align = True
 Relation_Classification = False
 Scratch_Downstream = False
 ## Important Model Config
@@ -28,7 +28,7 @@ Var_Align = 'Align_' if Align else ''
 Var_RC = 'RC_' if Relation_Classification else ''
 assert MODEL_TYPE in Var_MODEL, "Model not supported"
 assert DB in ['px','dx,prx'], "DB not supported"
-assert TASK_NAME in ['pretrain','binary_retrieval'], "Task not supported"
+assert TASK_NAME in ['pretrain', 'binary_retrieval', 'generation', 'single_pretrain', 'single_binary_retrieval', 'single_generation'], "Task not supported"
 if Scratch_Downstream is True:
     assert Align is False and Relation_Classification is False, "Scratch start downstream task must turn off alignment prediction & relation classification"
 
@@ -36,7 +36,7 @@ if Scratch_Downstream is True:
 ## <LMinit & KGenc> : both, <LMinit only> : lm, <KGenc only> : kg, <RandomInit> : rand
 ## Unified(Placeholder) for Abstract Node : True or False
 MODEL_NAME = f'{DB}_{Var_Unified}{"Uni" if MODEL_TYPE in ["both","kg"] else "No"}KGenc'
-RUN_NAME = f'{Var_MODEL[MODEL_TYPE]}_H{Dim_Hidden}_L{NUM_Layers["lang"]},{NUM_Layers["kg"]},{NUM_Layers["cross"]}_{Var_Align}{Var_RC}{Var_Unified}{DB}{DB_size}'
+RUN_NAME = f'{DB}/{Var_MODEL[MODEL_TYPE]}_H{Dim_Hidden}_L{NUM_Layers["lang"]},{NUM_Layers["kg"]},{NUM_Layers["cross"]}_{Var_Align}{Var_RC}{Var_Unified}{DB_size}'
 
 # Paths
 EXP_PATH = os.getcwd()
@@ -57,7 +57,7 @@ TRAINING_CONFIG = {
     "per_device_train_batch_size": 16,
     "per_device_eval_batch_size": 4,
     "learning_rate": 5e-6,
-    "num_train_epochs": 20,
+    "num_train_epochs": 1,
     "num_log_per_epoch": 20,
     "num_save_per_epoch": -1,
     "num_eval_per_epoch": 5,
@@ -68,13 +68,13 @@ TRAINING_CONFIG = {
     "run_name":f"{TASK_NAME}_{RUN_NAME}"
 }
 
-if (TASK_NAME == 'pretrain') or Scratch_Downstream:
+if (TASK_NAME in ['pretrain', 'single_pretrain']) or Scratch_Downstream:
     if Scratch_Downstream:
         SRC_PATH = os.path.join(EXP_PATH, 'src/run_downstream.py')
-        TRAINING_CONFIG['output_dir'] = os.path.join(EXP_PATH,f"pretrained_models/scratch_{TASK_NAME}_{RUN_NAME}")
+        TRAINING_CONFIG['output_dir'] = os.path.join(EXP_PATH,f"pretrained_models/scratch_{TASK_NAME}/{RUN_NAME}")
     else:
         SRC_PATH = os.path.join(EXP_PATH, 'src/run_pretraining.py')
-        TRAINING_CONFIG['output_dir'] = os.path.join(EXP_PATH,f"pretrained_models/{TASK_NAME}_{RUN_NAME}")
+        TRAINING_CONFIG['output_dir'] = os.path.join(EXP_PATH,f"pretrained_models/{TASK_NAME}/{RUN_NAME}")
     TRAINING_CONFIG['tokenizer_name'] = "bert-base-uncased"
     TRAINING_CONFIG['config_name'] = os.path.join(EXP_PATH, f"config/config_H{Dim_Hidden}_L{NUM_Layers['lang']},{NUM_Layers['kg']},{NUM_Layers['cross']}_{MODEL_TYPE}_{Var_Unified}{DB}.json")
     with open(os.path.join(EXP_PATH, f"config/config_{Var_Unified}{DB}.json")) as f:
@@ -90,20 +90,22 @@ if (TASK_NAME == 'pretrain') or Scratch_Downstream:
     Config['margin'] = Margin
     Config['attention_probs_dropout_prob'] = Dropout
     Config['hidden_dropout_prob'] = Dropout
+    Config['task_name'] = TASK_NAME
     with open(TRAINING_CONFIG['config_name'],'w') as g:
         json.dump(Config,g)
 
 else:
     SRC_PATH = os.path.join(EXP_PATH, 'src/run_downstream.py')
-    TRAINING_CONFIG['model_name_or_path'] = os.path.join(EXP_PATH, f'pretrained_models/pretrain_{RUN_NAME}')
+    TRAINING_CONFIG['model_name_or_path'] = os.path.join(EXP_PATH, f'pretrained_models/pretrain/{RUN_NAME}')
     with open(f"{TRAINING_CONFIG['model_name_or_path']}/config.json") as f:
         Config = json.load(f)
     Config['margin'] = Margin
     Config['attention_probs_dropout_prob'] = Dropout
     Config['hidden_dropout_prob'] = Dropout
+    Config['task_name'] = TASK_NAME
     with open(f"{TRAINING_CONFIG['model_name_or_path']}/config.json",'w') as g:
         json.dump(Config,g)
-    TRAINING_CONFIG['output_dir'] = os.path.join(EXP_PATH,f"pretrained_models/{TASK_NAME}_{RUN_NAME}")
+    TRAINING_CONFIG['output_dir'] = os.path.join(EXP_PATH,f"pretrained_models/{TASK_NAME}/{RUN_NAME}")
 
 
 

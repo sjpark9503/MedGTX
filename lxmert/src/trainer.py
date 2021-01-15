@@ -597,7 +597,7 @@ class Trainer:
                     # self.control = self.callback_handler.on_step_end(self.args, self.state, self.control)
 
                     loss_dict = self.log_save_evaluate(loss_dict, model)
-
+                    break
             if self.args.tpu_metrics_debug or self.args.debug:
                 if is_torch_tpu_available():
                     # tpu-comment: Logging debug metrics for PyTorch/XLA (compile, execute times, ops, etc.)
