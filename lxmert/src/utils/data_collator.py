@@ -105,10 +105,11 @@ class NodeClassification_DataCollator:
     def negative_sampling(self,batch, batch_size) -> Dict[str, torch.Tensor]:
         for k, v in batch.items():
             if v is not None:
-                if 'kg' not in k:
-                    batch[k] = torch.cat([batch[k].detach().clone()[(torch.arange(batch_size) + idx) % batch_size] for idx in range(self.n_negatives+1)],dim=0)
-                elif 'rc' in k:
+                if 'rc' in k:
                     batch[k] = batch[k] * self.n_negatives
+                elif 'kg' not in k:
+                    batch[k] = torch.cat([batch[k].detach().clone()[(torch.arange(batch_size) + idx) % batch_size] for idx in range(self.n_negatives+1)],dim=0)
+
                 else:
                     batch[k] = torch.cat([batch[k].detach().clone() for _ in range(self.n_negatives + 1)],dim=0)
 

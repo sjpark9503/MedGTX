@@ -599,7 +599,7 @@ class Trainer:
                     loss_dict = self.log_save_evaluate(loss_dict, model)
 
             if (epoch+1) % self.args.save_per_run:
-                self._save_checkpoint(model, metrics=metrics)
+                self._save_checkpoint(model)
 
             if self.args.tpu_metrics_debug or self.args.debug:
                 if is_torch_tpu_available():
