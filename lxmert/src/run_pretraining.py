@@ -136,13 +136,20 @@ def main():
                                tokenizer=tokenizer,
                                token_type_vocab = config.token_type_vocab,
                                evaluate=True)
-
+    test_dataset = get_dataset(data_args, tokenizer=tokenizer, token_type_vocab = config.token_type_vocab, test=True) if training_args.do_eval else None
+    eval_data_collator = None
     if config.task_mask_lm and config.task_mask_kg:
         data_collator = NodeClassification_DataCollator(tokenizer=tokenizer,
                                                         align=training_args.align,
+                                                        n_negatives = training_args.n_negatives,
                                                         edge_cls=training_args.edge_cls,
                                                         kg_special_token_ids=config.kg_special_token_ids,
                                                         kg_size=config.vocab_size['kg'])
+        eval_data_collator = NodeClassification_DataCollator(tokenizer=tokenizer,
+                                                align=training_args.align,
+                                                edge_cls=training_args.edge_cls,
+                                                kg_special_token_ids=config.kg_special_token_ids,
+                                                kg_size=config.vocab_size['kg'])
     elif config.task_mask_lm and not config.task_mask_kg:
         data_collator = UnimodalLM_DataCollator(tokenizer=tokenizer,
                                                         kg_special_token_ids=config.kg_special_token_ids,
@@ -160,6 +167,7 @@ def main():
         model=model,
         args=training_args,
         data_collator=data_collator,
+        eval_data_collator=eval_data_collator,
         train_dataset=train_dataset,
         eval_dataset=eval_dataset
     )

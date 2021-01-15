@@ -156,6 +156,7 @@ class Trainer:
         model: Union[PreTrainedModel, torch.nn.Module] = None,
         args: TrainingArguments = None,
         data_collator: Optional[DataCollator] = None,
+         eval_data_collator: Optional[DataCollator] = None,
         train_dataset: Optional[Dataset] = None,
         eval_dataset: Optional[Dataset] = None,
         test_dataset: Optional[Dataset] = None,
@@ -183,8 +184,9 @@ class Trainer:
         ), "You must provide a model to use `Trainer`, either by using the `model` argument or the `model_init` argument."
         self.model_init = model_init
         self.model = model.to(args.device) if model is not None else None
-        default_collator = default_data_collator if tokenizer is None else DataCollatorWithPadding(tokenizer)
-        self.data_collator = data_collator if data_collator is not None else default_collator
+        #default_collator = default_data_collator if tokenizer is None else DataCollatorWithPadding(tokenizer)
+        self.data_collator = data_collator #if data_collator is not None else default_collator
+        self.eval_data_collator = eval_data_collator
         self.train_dataset = train_dataset
         self.eval_dataset = eval_dataset
         self.tokenizer = tokenizer
@@ -208,15 +210,15 @@ class Trainer:
             # Set an xla_device flag on the model's config.
             # We'll find a more elegant and not need to do this in the future.
             self.model.config.xla_device = True
-        if not callable(self.data_collator) and callable(getattr(self.data_collator, "collate_batch", None)):
-            self.data_collator = self.data_collator.collate_batch
-            warnings.warn(
-                (
-                    "The `data_collator` should now be a simple callable (function, class with `__call__`), classes "
-                    + "with a `collate_batch` are deprecated and won't be supported in a future version."
-                ),
-                FutureWarning,
-            )
+        # if not callable(self.data_collator) and callable(getattr(self.data_collator, "collate_batch", None)):
+        #     self.data_collator = self.data_collator.collate_batch
+        #     warnings.warn(
+        #         (
+        #             "The `data_collator` should now be a simple callable (function, class with `__call__`), classes "
+        #             + "with a `collate_batch` are deprecated and won't be supported in a future version."
+        #         ),
+        #         FutureWarning,
+        #     )
 
         if args.max_steps > 0:
             logger.info("max_steps is given, it will override any value given in num_train_epochs")
@@ -264,7 +266,7 @@ class Trainer:
         if self.train_dataset is None:
             raise ValueError("Trainer: training requires a train_dataset.")
         train_sampler = self._get_train_sampler()
-        self.data_collator.n_negatives = self.args.n_negatives
+        
         return DataLoader(
             self.train_dataset,
             batch_size=self.args.train_batch_size,
@@ -300,13 +302,12 @@ class Trainer:
             self._remove_unused_columns(eval_dataset, description="evaluation")
         eval_dataset = eval_dataset if eval_dataset is not None else self.eval_dataset
         eval_sampler = self._get_eval_sampler(eval_dataset)
-        self.data_collator.n_negatives = 0
 
         return DataLoader(
             eval_dataset,
             sampler=eval_sampler,
             batch_size=self.args.eval_batch_size,
-            collate_fn=self.data_collator,
+            collate_fn=self.eval_data_collator if self.eval_data_collator is not None else self.data_collator,
             drop_last=self.args.dataloader_drop_last,
             num_workers=self.args.dataloader_num_workers,
             pin_memory=True,
@@ -329,13 +330,12 @@ class Trainer:
             self._remove_unused_columns(test_dataset, description="evaluation")
         test_dataset = test_dataset if test_dataset is not None else self.test_dataset
         test_sampler = self._get_eval_sampler(test_dataset)
-        self.data_collator.n_negatives = 0
 
         return DataLoader(
             eval_dataset,
             sampler=eval_sampler,
             batch_size=self.args.eval_batch_size,
-            collate_fn=self.data_collator,
+            collate_fn=self.eval_data_collator if self.eval_data_collator is not None else self.data_collator,
             drop_last=self.args.dataloader_drop_last,
             num_workers=self.args.dataloader_num_workers,
             pin_memory=True,

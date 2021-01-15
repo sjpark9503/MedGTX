@@ -36,7 +36,7 @@ class NodeClassification_DataCollator:
     kg_special_token_ids: dict
     kg_size: int
     align: bool = False
-    n_negatives = 1 
+    n_negatives: int = 1
     edge_cls: bool = False
     mlm: bool = True
     mlm_probability: float = 0.15
@@ -103,8 +103,6 @@ class NodeClassification_DataCollator:
         return batch
 
     def negative_sampling(self,batch, batch_size) -> Dict[str, torch.Tensor]:
-        batch['cross_label'] = torch.cat([torch.ones(batch_size, dtype=torch.long),
-                                             torch.zeros(batch_size*self.n_negatives, dtype=torch.long)],dim=0)
         for k, v in batch.items():
             if v is not None:
                 if 'kg' not in k:
@@ -114,6 +112,8 @@ class NodeClassification_DataCollator:
                 else:
                     batch[k] = torch.cat([batch[k].detach().clone() for _ in range(self.n_negatives + 1)],dim=0)
 
+        batch['cross_label'] = torch.cat([torch.ones(batch_size, dtype=torch.long),
+                                             torch.zeros(batch_size*self.n_negatives, dtype=torch.long)],dim=0)
         return batch
 
     def mask_tokens(self, inputs: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:

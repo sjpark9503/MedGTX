@@ -160,10 +160,16 @@ def main():
     train_dataset = get_dataset(data_args, tokenizer=tokenizer)
     eval_dataset = get_dataset(data_args, tokenizer=tokenizer, evaluate=True)
     test_dataset = get_dataset(data_args, tokenizer=tokenizer, test=True) if training_args.do_eval else None
+    eval_data_collator = None
     if training_args.task == 'binary_retrieval':
         data_collator = NegativeSampling_DataCollator(tokenizer=tokenizer,
                                                       kg_special_token_ids=config.kg_special_token_ids,
+                                                      n_negatives=training_args.n_negatives,
                                                       NCE=False)
+        eval_data_collator = NegativeSampling_DataCollator(tokenizer=tokenizer,
+                                                      kg_special_token_ids=config.kg_special_token_ids,
+                                                      NCE=False)
+
     elif training_args.task == 'triplet_retrieval':
         data_collator = NegativeSampling_DataCollator(tokenizer=tokenizer,
                                                       kg_special_token_ids=config.kg_special_token_ids,
@@ -179,6 +185,7 @@ def main():
         model=model,
         args=training_args,
         data_collator=data_collator,
+        eval_data_collator=eval_data_collator,
         train_dataset=train_dataset,
         eval_dataset=eval_dataset,
         test_dataset=test_dataset
