@@ -598,6 +598,9 @@ class Trainer:
 
                     loss_dict = self.log_save_evaluate(loss_dict, model)
 
+            if (epoch+1) % self.args.save_per_run:
+                self._save_checkpoint(model, metrics=metrics)
+
             if self.args.tpu_metrics_debug or self.args.debug:
                 if is_torch_tpu_available():
                     # tpu-comment: Logging debug metrics for PyTorch/XLA (compile, execute times, ops, etc.)
@@ -651,8 +654,8 @@ class Trainer:
             logger.info("eval done")
         else:
             metrics = None
-        if (self.state.global_step % (self.steps_in_epoch//self.args.num_save_per_epoch) == 0) and (self.args.num_save_per_epoch>0):
-            self._save_checkpoint(model, metrics=metrics)
+        # if (self.state.global_step % (self.steps_in_epoch//self.args.num_save_per_epoch) == 0) and (self.args.num_save_per_epoch>0):
+        #     self._save_checkpoint(model, metrics=metrics)
 
         return loss_dict
 
@@ -1054,7 +1057,7 @@ class Trainer:
 
         # Initialzie
         preds = list()
-        self.predicted = [('loss',[])]
+        self.predicted = []
         if self.task in ['pretrain', 'single_pretrain']:
             self.predicted += [(k,[]) for k in ['kg', 'lang']]
             self.predicted += [('gt_'+k, []) for k in ['kg', 'lang']]
@@ -1086,7 +1089,7 @@ class Trainer:
 
         # Prefix all keys with eval_
         for key in self.predicted:
-            if key=='loss':
+            if 'loss' in key:
                 self.metrics[f"eval_{key}"] = sum(self.predicted[key])/len(self.predicted[key])
             if self.task in ['pretrain', 'single_pretrain']:
                 if key in ['lang','kg']:
@@ -1128,7 +1131,10 @@ class Trainer:
             else:
                 outputs = model(**inputs)
 
-            self.predicted['loss'].append(outputs.loss.mean().item())
+            for k, v in outputs.loss_dict.items():
+                if k not in self.predicted:
+                    self.predicted[k]=list()
+                self.predicted[k].append(v.mean().item())
             ## prediction for pretraining
             if self.task in ['pretrain', 'single_pretrain']:
                 if prediction:

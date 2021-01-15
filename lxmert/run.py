@@ -5,12 +5,12 @@ import os
 ## GPU setting
 os.environ["CUDA_VISIBLE_DEVICES"] = '7'
 ## TASK & DB
-TASK_NAME = 'single_pretrain'
+TASK_NAME = 'pretrain'
 DB = 'dx,prx'
 DB_size = 1500
 MODEL_TYPE = 'lm'
 Unified = True
-Align = True
+Align = False
 Relation_Classification = False
 Scratch_Downstream = False
 ## Important Model Config
@@ -59,7 +59,7 @@ TRAINING_CONFIG = {
     "learning_rate": 1e-4,
     "num_train_epochs": 40,
     "num_log_per_epoch": 20,
-    "num_save_per_epoch": -1,
+    "save_per_run": 2,
     "num_eval_per_epoch": 2,
     "task" : TASK_NAME,
     "train_data_file":os.path.join(EXP_PATH,f"data/{DB}_{DB_size}/{MODEL_NAME}/train"),

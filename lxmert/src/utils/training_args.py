@@ -256,7 +256,7 @@ class TrainingArguments:
         default=1, metadata={"help": "Number of negative samples"}
     )
     num_log_per_epoch: int = field(default=100, metadata={"help": "Log every X updates steps."})
-    num_save_per_epoch: int = field(default=1, metadata={"help": "Save checkpoint every X updates steps."})
+    save_per_run: int = field(default=1, metadata={"help": "Save checkpoint every X updates steps."})
     save_total_limit: Optional[int] = field(
         default=None,
         metadata={
