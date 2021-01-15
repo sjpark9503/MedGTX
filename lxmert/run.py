@@ -5,13 +5,13 @@ import os
 ## GPU setting
 os.environ["CUDA_VISIBLE_DEVICES"] = '5'
 ## TASK & DB
-TASK_NAME = 'pretrain'
+TASK_NAME = 'single_pretrain'
 DB = 'dx,prx'
 DB_size = 2000
 MODEL_TYPE = 'lm'
 Unified = True
-Align = True
-Relation_Classification = False
+Align = False
+Relation_Classification = True
 Scratch_Downstream = False
 ## Important Model Config
 Dim_Hidden = 128

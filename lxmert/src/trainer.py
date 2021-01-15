@@ -786,7 +786,7 @@ class Trainer:
 
         loss = outputs.loss
         loss_dict = outputs.loss_dict
-        if self.task == 'binary_retrieval':
+        if self.task in ['binary_retrieval', 'single_binary_retrieval']:
             score = torch.max(outputs.cross_relationship_score,dim=1)[-1].tolist()
             gt = inputs['label'].tolist()
             loss_dict['Acc'] = accuracy_score(gt,score)
@@ -1055,13 +1055,13 @@ class Trainer:
         # Initialzie
         preds = list()
         self.predicted = [('loss',[])]
-        if self.task == 'pretrain':
+        if self.task in ['pretrain', 'single_pretrain']:
             self.predicted += [(k,[]) for k in ['kg', 'lang']]
             self.predicted += [('gt_'+k, []) for k in ['kg', 'lang']]
-        elif self.task == 'binary_retrieval':
+        elif self.task in ['binary_retrieval', 'single_binary_retrieval']:
             self.predicted += [('score',[])]
             self.predicted += [('label', [])]
-        elif self.task == 'generation':
+        elif self.task in ['generation', 'single_generation']:
             self.predicted += [(k,[]) for k in ['lang']]
             self.predicted += [('gt_'+k, []) for k in ['lang']]
         else:
@@ -1088,13 +1088,13 @@ class Trainer:
         for key in self.predicted:
             if key=='loss':
                 self.metrics[f"eval_{key}"] = sum(self.predicted[key])/len(self.predicted[key])
-            if self.task == 'pretrain':
+            if self.task in ['pretrain', 'single_pretrain']:
                 if key in ['lang','kg']:
                     self.metrics[f"eval_{key}_Acc"] = accuracy_score(self.predicted[f'gt_{key}'],self.predicted[key])
                     self.metrics[f"eval_{key}_MacroF1"] = f1_score(self.predicted[f'gt_{key}'], self.predicted[key],average='macro')
-            if (self.task == 'binary_retrieval') and (key in ['score']):
+            if (self.task in ['binary_retrieval', 'single_binary_retrieval']) and (key in ['score']):
                 self.metrics["eval_align_Acc"] = accuracy_score(self.predicted['label'],self.predicted['score'])
-            if (self.task == 'generation') and (key in ['lang']):
+            if (self.task in ['generation', 'single_generation']) and (key in ['lang']):
                 self.metrics[f"eval_{key}_Acc"] = accuracy_score(self.predicted[f'gt_{key}'],self.predicted[key])
                 self.metrics[f"eval_{key}_MacroF1"] = f1_score(self.predicted[f'gt_{key}'], self.predicted[key],average='macro')
         return PredictionOutput(predictions=numpy_preds, label_ids=None, metrics=self.metrics)
@@ -1130,7 +1130,7 @@ class Trainer:
 
             self.predicted['loss'].append(outputs.loss.mean().item())
             ## prediction for pretraining
-            if self.task == 'pretrain':
+            if self.task in ['pretrain', 'single_pretrain']:
                 if prediction:
                     return (outputs.lang_prediction_logits.detach().numpy(), outputs.kg_prediction_logits.detach().numpy())
 
@@ -1145,7 +1145,7 @@ class Trainer:
                         -1).long().tolist()
 
             ## prediction for binary retreival
-            elif self.task == 'binary_retrieval':
+            elif self.task in ['binary_retrieval', 'single_binary_retrieval']:
                 if prediction:
                     return outputs.cross_relationship_score.detach().numpy()
 
@@ -1156,7 +1156,7 @@ class Trainer:
             ## prediction for triplet retreival
 
             ## prediction for generation
-            elif self.task == 'generation':
+            elif self.task in ['generation', 'single_generation']:
                 if not prediction_loss_only:
                     self.predicted['lang'] += torch.max(outputs.lang_prediction_logits, dim=2)[-1][~inputs['lm_label'].eq(-100)].view(
                         -1).long().tolist()
