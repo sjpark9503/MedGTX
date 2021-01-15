@@ -469,9 +469,11 @@ class LxmertLayer(nn.Module):
 class LxmertXLayer(nn.Module):
     def __init__(self, config):
         super().__init__()
+        
+        self.cross_att_type = config.cross_att_type if 'cross_att_type' in config.keys() else 'cross'
+
         # The cross-attention Layer
         self.cross_attention = LxmertCrossAttentionLayer(config)
-        self.task_name = config.task_name
 
         # Self-attention Layers
         self.lang_self_att = LxmertSelfAttentionLayer(config)
@@ -491,40 +493,21 @@ class LxmertXLayer(nn.Module):
         visual_attention_mask,
         output_x_attentions=False,
     ):
-        if self.task_name in ['pretrain', 'binary_retrieval', 'generation']:
-            # Cross Attention
-            lang_att_output = self.cross_attention(
-                lang_input,
-                visual_input,
-                ctx_att_mask=visual_attention_mask,
-                output_attentions=output_x_attentions,
-            )
-            visual_att_output = self.cross_attention(
-                visual_input,
-                lang_input,
-                ctx_att_mask=lang_attention_mask,
-                output_attentions=output_x_attentions,
-            )
-        elif self.task_name in ['single_pretrain', 'single_binary_retrieval', 'single_generation']:
-            lang_att_output = self.cross_attention(
-                lang_input,
-                lang_input,
-                ctx_att_mask=lang_attention_mask,
-                output_attentions=output_x_attentions,
-            )
-            visual_att_output = self.cross_attention(
-                visual_input,
-                visual_input,
-                ctx_att_mask=visual_attention_mask,
-                output_attentions=output_x_attentions,
-            )
-        else:
-            logger.info("Invalid task name")
-            return
+        lang_att_output = self.cross_attention(
+            lang_input,
+            visual_input,
+            ctx_att_mask=visual_attention_mask,
+            output_attentions=output_x_attentions,
+        )
+        visual_att_output = self.cross_attention(
+            visual_input,
+            lang_input,
+            ctx_att_mask=lang_attention_mask,
+            output_attentions=output_x_attentions,
+        )
         return lang_att_output, visual_att_output
-
-    # fine-tuning for generation 
-    def cross_att_unilm(
+    
+    def no_cross_att(
         self,
         lang_input,
         lang_attention_mask,
@@ -532,7 +515,28 @@ class LxmertXLayer(nn.Module):
         visual_attention_mask,
         output_x_attentions=False,
     ):
-        # UniLM-style Attention
+        lang_att_output = self.cross_attention(
+            lang_input,
+            lang_input,
+            ctx_att_mask=lang_attention_mask,
+            output_attentions=output_x_attentions,
+        )
+        visual_att_output = self.cross_attention(
+            visual_input,
+            visual_input,
+            ctx_att_mask=visual_attention_mask,
+            output_attentions=output_x_attentions,
+        )
+        return lang_att_output, visual_att_output
+    
+    def unilm_cross_att(
+        self,
+        lang_input,
+        lang_attention_mask,
+        visual_input,
+        visual_attention_mask,
+        output_x_attentions=False,
+    ):
         lang_att_output = self.cross_attention(
             lang_input,
             visual_input,
@@ -568,16 +572,33 @@ class LxmertXLayer(nn.Module):
         visual_padding_mask,
         output_attentions=False,
     ):
-
-        lang_att_output, visual_att_output = self.cross_att(
-            lang_input=lang_feats,
-            lang_attention_mask=lang_attention_mask,
-            visual_input=visual_feats,
-            visual_attention_mask=visual_padding_mask,
-            output_x_attentions=output_attentions,
-        )
+        if self.cross_att_type == 'single':
+            lang_att_output, visual_att_output = self.no_cross_att(
+                lang_input=lang_feats,
+                lang_attention_mask=lang_attention_mask,
+                visual_input=visual_feats,
+                visual_attention_mask=visual_padding_mask,
+                output_x_attentions=output_attentions,
+            )
+        elif self.cross_att_type == 'unilm':
+            lang_att_output, visual_att_output = self.unilm_cross_att(
+                lang_input=lang_feats,
+                lang_attention_mask=lang_attention_mask,
+                visual_input=visual_feats,
+                visual_attention_mask=visual_padding_mask,
+                output_x_attentions=output_attentions,
+            )
+        else: # original cross attention
+            lang_att_output, visual_att_output = self.cross_att(
+                lang_input=lang_feats,
+                lang_attention_mask=lang_attention_mask,
+                visual_input=visual_feats,
+                visual_attention_mask=visual_padding_mask,
+                output_x_attentions=output_attentions,
+            )
         attention_probs = {'txt->kg':lang_att_output[-1],
                            'kg->txt':visual_att_output[-1]}
+        
         lang_att_output, visual_att_output = self.self_att(
             lang_att_output[0],
             lang_attention_mask,
