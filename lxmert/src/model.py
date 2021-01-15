@@ -1180,7 +1180,7 @@ class LxmertForKGTokPredAndMaskedLM(LxmertPreTrainedModel):
             rc_inputs = list()
             for idx, sample_rc_indeces in enumerate(rc_indeces):
                 for rc_idx in sample_rc_indeces:
-                    rc_inputs.append(torch.cat([lang_output[idx, rc_idx[0]],lang_output[idx, rc_idx[1]]],dim=-1))
+                    rc_inputs.append(torch.cat([kg_output[idx, rc_idx[0]],kg_output[idx, rc_idx[1]]],dim=-1))
                     rc_labels.append(rc_idx[2])
             rc_outputs = self.edge_classifier(torch.stack(rc_inputs,dim=0))
             rc_loss = self.loss_fcts['ce'](rc_outputs,torch.tensor(rc_labels,dtype=torch.long, device=device))

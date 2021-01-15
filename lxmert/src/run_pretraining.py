@@ -183,8 +183,7 @@ def main():
         trainer.save_model()
         # For convenience, we also re-save the tokenizer to the same directory,
         # so that you can share your model easily on huggingface.co/models =)
-        if trainer.is_world_master():
-            tokenizer.save_pretrained(training_args.output_dir)
+        tokenizer.save_pretrained(training_args.output_dir)
 
     # Evaluation
     # if training_args.do_eval:
