@@ -470,7 +470,7 @@ class LxmertXLayer(nn.Module):
     def __init__(self, config):
         super().__init__()
         
-        self.cross_att_type = config.cross_att_type if 'cross_att_type' in config.keys() else 'cross'
+        self.cross_att_type = config.cross_att_type if 'cross_att_type' in vars(config).keys() else 'cross'
 
         # The cross-attention Layer
         self.cross_attention = LxmertCrossAttentionLayer(config)
