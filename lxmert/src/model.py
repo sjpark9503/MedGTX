@@ -683,18 +683,19 @@ class LxmertEncoder(nn.Module):
 class LxmertPooler(nn.Module):
     def __init__(self, config):
         super(LxmertPooler, self).__init__()
-        self.pooler = nn.Sequential(nn.Linear(config.hidden_size, config.hidden_size),
+        self.pooler = nn.Sequential(nn.Linear(config.hidden_size*2, config.hidden_size*2),
                                     nn.Tanh(),
-                                    nn.Linear(config.hidden_size, 1),
+                                    nn.Linear(config.hidden_size*2, 1),
                                     nn.Sigmoid())
-        self.ce_pooler = nn.Sequential(nn.Linear(config.hidden_size, config.hidden_size),
+        self.ce_pooler = nn.Sequential(nn.Linear(config.hidden_size*2, config.hidden_size*2),
                                     nn.Tanh(),
-                                    nn.Linear(config.hidden_size, 2))
+                                    nn.Linear(config.hidden_size*2, 2))
 
-    def forward(self, hidden_states):
+    #def forward(self, hidden_states):
+    def forward(self, kg_hidden_states, lang_hidden_states):
         # We "pool" the model by simply taking the hidden state corresponding
         # to the first token.
-        first_token_tensor = hidden_states[:, 0]
+        first_token_tensors = torch.cat([kg_hidden_states[:, 0],lang_hidden_states[:, 0]],dim=1)
         pooled_output = self.ce_pooler(first_token_tensor)
         return pooled_output
 
@@ -998,7 +999,8 @@ class LxmertModel(LxmertPreTrainedModel):
 
         kg_output = kg_hidden_states[-1]
         lang_output = language_hidden_states[-1]
-        pooled_output = self.pooler(lang_output)
+        #pooled_output = self.pooler(lang_output)
+        pooled_output = self.pooler(kg_output, lang_output)
 
         if not return_dict:
             return (lang_output, kg_output, pooled_output) + hidden_states + all_attentions

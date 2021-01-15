@@ -32,7 +32,7 @@ import torch
 from packaging import version
 
 #from utils.compute_metrics import get_accuracy
-from sklearn.metrics import accuracy_score, f1_score, label_ranking_average_precision_score
+from sklearn.metrics import accuracy_score, f1_score, label_ranking_average_precision_score, top_k_accuracy_score
 #from utils.metrics import MRR, Hits_at_k
 
 from torch import nn
@@ -158,6 +158,7 @@ class Trainer:
         data_collator: Optional[DataCollator] = None,
         train_dataset: Optional[Dataset] = None,
         eval_dataset: Optional[Dataset] = None,
+        test_dataset: Optional[Dataset] = None,
         tokenizer: Optional["PreTrainedTokenizerBase"] = None,
         model_init: Callable[[], PreTrainedModel] = None,
         optimizers: Tuple[torch.optim.Optimizer, torch.optim.lr_scheduler.LambdaLR] = (None, None),
@@ -320,20 +321,23 @@ class Trainer:
                 The test dataset to use. If it is an :obj:`datasets.Dataset`, columns not accepted by the
                 ``model.forward()`` method are automatically removed. It must implement :obj:`__len__`.
         """
-        if not isinstance(test_dataset, collections.abc.Sized):
+        if test_dataset is None and self.test_dataset is None:
+            raise ValueError("Trainer: evaluation requires an test_dataset.")
+        elif test_dataset is not None and not isinstance(test_dataset, collections.abc.Sized):
             raise ValueError("test_dataset must implement __len__")
         elif is_datasets_available() and isinstance(test_dataset, datasets.Dataset):
-            self._remove_unused_columns(test_dataset, description="test")
-        test_  = self._get_eval_sampler(test_dataset)
-
+            self._remove_unused_columns(test_dataset, description="evaluation")
+        test_dataset = test_dataset if test_dataset is not None else self.test_dataset
+        test_sampler = self._get_eval_sampler(test_dataset)
         self.data_collator.n_negatives = 0
-        # We use the same batch_size as for eval.
+
         return DataLoader(
-            test_dataset,
-            sampler=test_sampler,
+            eval_dataset,
+            sampler=eval_sampler,
             batch_size=self.args.eval_batch_size,
             collate_fn=self.data_collator,
             drop_last=self.args.dataloader_drop_last,
+            num_workers=self.args.dataloader_num_workers,
             pin_memory=True,
         )
 
@@ -441,7 +445,7 @@ class Trainer:
         self.state.is_hyper_param_search = trial is not None
 
         # Check if saved optimizer or scheduler states exist
-        self._load_optimizer_and_scheduler(model_path)
+        #self._load_optimizer_and_scheduler(model_path)
 
         # Mixed precision training with apex (torch < 1.6)
         model = self.model
@@ -498,15 +502,15 @@ class Trainer:
         steps_trained_in_current_epoch = 0
 
         # Check if continuing training from a checkpoint
-        if model_path and os.path.isfile(os.path.join(model_path, "trainer_state.json")):
-            self.state = TrainerState.load_from_json(os.path.join(model_path, "trainer_state.json"))
-            epochs_trained = self.state.global_step // num_update_steps_per_epoch
-            steps_trained_in_current_epoch = self.state.global_step % (num_update_steps_per_epoch)
+        # if model_path and os.path.isfile(os.path.join(model_path, "trainer_state.json")):
+        #     self.state = TrainerState.load_from_json(os.path.join(model_path, "trainer_state.json"))
+        #     epochs_trained = self.state.global_step // num_update_steps_per_epoch
+        #     steps_trained_in_current_epoch = self.state.global_step % (num_update_steps_per_epoch)
 
-            logger.info("  Continuing training from checkpoint, will skip to saved global_step")
-            logger.info("  Continuing training from epoch %d", epochs_trained)
-            logger.info("  Continuing training from global step %d", self.state.global_step)
-            logger.info("  Will skip the first %d steps in the first epoch", steps_trained_in_current_epoch)
+        #     logger.info("  Continuing training from checkpoint, will skip to saved global_step")
+        #     logger.info("  Continuing training from epoch %d", epochs_trained)
+        #     logger.info("  Continuing training from global step %d", self.state.global_step)
+        #     logger.info("  Will skip the first %d steps in the first epoch", steps_trained_in_current_epoch)
 
         # Update the references
 

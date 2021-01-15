@@ -3,15 +3,15 @@ import json
 import os
 # ======================= CONFIG ==================== #
 ## GPU setting
-os.environ["CUDA_VISIBLE_DEVICES"] = '7'
+os.environ["CUDA_VISIBLE_DEVICES"] = '3'
 ## TASK & DB
-TASK_NAME = 'pretrain'
+TASK_NAME = 'binary_retrieval'
 DB = 'dx,prx'
-DB_size = 1000
-MODEL_TYPE = 'both'
-Unified = False
+DB_size = 2000
+MODEL_TYPE = 'kg'
+Unified = True
 Align = False
-Relation_Classification = True
+Relation_Classification = False
 Scratch_Downstream = False
 ## Important Model Config
 Dim_Hidden = 128
@@ -56,15 +56,15 @@ TRAINING_CONFIG = {
     "block_size": 512,
     "per_device_train_batch_size": 16,
     "per_device_eval_batch_size": 4,
-    "learning_rate": 1e-4,
-    "num_train_epochs": 50,
+    "learning_rate": 5e-6,
+    "num_train_epochs": 20,
     "num_log_per_epoch": 20,
-    "num_save_per_epoch": 1,
-    "num_eval_per_epoch": 1,
+    "num_save_per_epoch": -1,
+    "num_eval_per_epoch": 5,
     "task" : TASK_NAME,
     "train_data_file":os.path.join(EXP_PATH,f"data/{DB}_{DB_size}/{MODEL_NAME}/train"),
     "eval_data_file": os.path.join(EXP_PATH,f"data/{DB}_{DB_size}/{MODEL_NAME}/valid"),
-    #"test_data_file": os.path.join(EXP_PATH, "data/{}/test".format(MODEL_NAME)),
+    "test_data_file": os.path.join(EXP_PATH,f"data/{DB}_{DB_size}/{MODEL_NAME}/test"),
     "run_name":f"{TASK_NAME}_{RUN_NAME}"
 }
 

@@ -9,6 +9,7 @@ from dataclasses import dataclass, field
 from glob import glob
 from typing import Optional
 from torch.utils.data import ConcatDataset
+import torch
 
 # Own implementation
 from utils.parameters import parser
@@ -103,12 +104,29 @@ def main():
 
     if model_args.model_name_or_path:
         if training_args.task in ['binary_retrieval', 'triplet_retrieval']:
-            model = LxmertForRanking.from_pretrained(
-                model_args.model_name_or_path,
-                from_tf=bool(".ckpt" in model_args.model_name_or_path),
-                config=config,
-                cache_dir=model_args.cache_dir,
-            )
+            try:
+                model = LxmertForRanking.from_pretrained(
+                    model_args.model_name_or_path,
+                    from_tf=bool(".ckpt" in model_args.model_name_or_path),
+                    config=config,
+                    cache_dir=model_args.cache_dir,
+                )
+            except:
+                ckpt_path = os.path.join(model_args.model_name_or_path, 'pytorch_model.bin')
+                load_model_dict = torch.load(ckpt_path)
+                modified_model_dict = load_model_dict.copy()
+                for param in load_model_dict:
+                    if 'pooler' in param:
+                        modified_model_dict.pop(param)
+                torch.save(modified_model_dict, ckpt_path)
+
+                model = LxmertForRanking.from_pretrained(
+                    model_args.model_name_or_path,
+                    from_tf=bool(".ckpt" in model_args.model_name_or_path),
+                    config=config,
+                    cache_dir=model_args.cache_dir,
+                )
+
         elif training_args.task in ['generation']:
             from model import LxmertForKGTokPredAndMaskedLM
             model = LxmertForKGTokPredAndMaskedLM.from_pretrained(
@@ -139,19 +157,9 @@ def main():
 
     # Get datasets
 
-    train_dataset = (
-        get_dataset(data_args, tokenizer=tokenizer, kg_pad=config.kg_special_token_ids["PAD"]) if training_args.do_train else None
-    )
-    eval_dataset = (
-        get_dataset(data_args, tokenizer=tokenizer, kg_pad=config.kg_special_token_ids["PAD"], evaluate=True)
-        if training_args.do_eval
-        else None
-    )
-    # test_dataset = (
-    #     get_dataset(data_args, tokenizer=tokenizer, kg_pad=config.kg_special_token_ids["PAD"], test=True)
-    #     if training_args.do_eval
-    #     else None
-    # )
+    train_dataset = get_dataset(data_args, tokenizer=tokenizer)
+    eval_dataset = get_dataset(data_args, tokenizer=tokenizer, evaluate=True)
+    test_dataset = get_dataset(data_args, tokenizer=tokenizer, test=True) if training_args.do_eval else None
     if training_args.task == 'binary_retrieval':
         data_collator = NegativeSampling_DataCollator(tokenizer=tokenizer,
                                                       kg_special_token_ids=config.kg_special_token_ids,
@@ -172,7 +180,8 @@ def main():
         args=training_args,
         data_collator=data_collator,
         train_dataset=train_dataset,
-        eval_dataset=eval_dataset
+        eval_dataset=eval_dataset,
+        test_dataset=test_dataset
     )
 
     # Training
@@ -189,6 +198,8 @@ def main():
         if trainer.is_world_master():
             tokenizer.save_pretrained(training_args.output_dir)
 
+    #if training_args.do_eval:
+        
 def _mp_fn(index):
     # For xla_spawn (TPUs)
     main()

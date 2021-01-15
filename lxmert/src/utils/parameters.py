@@ -48,16 +48,19 @@ class DataTrainingArguments:
     train_data_file: Optional[str] = field(
         default=None, metadata={"help": "The input training data file (a text file)."}
     )
+    eval_data_file: Optional[str] = field(
+        default=None,
+        metadata={"help": "An optional input evaluation data file to evaluate the perplexity on (a text file)."},
+    )
+    test_data_file: Optional[str] = field(
+        default=None, metadata={"help": "The input training data file (a text file)."}
+    )
     train_data_files: Optional[str] = field(
         default=None,
         metadata={
             "help": "The input training data files (multiple files in glob format). "
             "Very often splitting large files to smaller files can prevent tokenizer going out of memory"
         },
-    )
-    eval_data_file: Optional[str] = field(
-        default=None,
-        metadata={"help": "An optional input evaluation data file to evaluate the perplexity on (a text file)."},
     )
     chinese_ref_file: Optional[str] = field(
         default=None,
