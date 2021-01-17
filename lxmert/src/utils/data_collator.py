@@ -105,8 +105,8 @@ class NodeClassification_DataCollator:
     def negative_sampling(self,batch, batch_size) -> Dict[str, torch.Tensor]:
         for k, v in batch.items():
             if v is not None:
-                if 'rc' in k:
-                    batch[k] = batch[k] * self.n_negatives
+                if ('rc' in k) or ('label' in k):
+                    continue
                 elif 'kg' not in k:
                     batch[k] = torch.cat([batch[k].detach().clone()[(torch.arange(batch_size) + idx) % batch_size] for idx in range(self.n_negatives+1)],dim=0)
 
@@ -249,7 +249,7 @@ class NegativeSampling_DataCollator:
                         batch['kg_padding_mask'] = ~batch[k].detach().clone().eq(self.kg_special_token_ids['PAD'])
 
                 if not NCE:
-                    if 'lang' in k:
+                    if 'kg' not in k:
                         batch_size = len(features)
                         batch[k] = torch.cat([batch[k].detach().clone()[(torch.arange(batch_size) + idx) % batch_size] for idx in range(self.n_negatives+1)],dim=0)
                     else:
@@ -422,3 +422,53 @@ class UniLM_DataCollator:
         elif batch['lang_attention_mask'].dim() == 3:
             text_a2 = torch.max(torch.sum(batch['lang_attention_mask'], axis=2), axis=1)[0]
         assert text_a1 == text_a2
+
+@dataclass
+class Evaluation_DataCollator:
+    """
+    Data collator used for language modeling.
+    - collates batches of tensors, honoring their tokenizer's pad_token
+    - preprocesses batches for masked language modeling
+    """
+    tokenizer: PreTrainedTokenizerBase
+    task : str
+    kg_special_token_ids: dict
+
+    def __call__(self,features: List[InputDataClass]) -> Dict[str, torch.Tensor]:
+        if not isinstance(features[0], (dict, BatchEncoding)):
+            features = [vars(f) for f in features]
+        batch = self._tensorize_batch(features, self.NCE)
+        batch_size = len(features)
+
+        return batch
+
+    def _tensorize_batch(self,features: List[Dict], NCE) -> Dict[str, torch.Tensor]:
+        # In this function we'll make the assumption that all `features` in the batch
+        # have the same attributes.
+        # So we will look at the first element as a proxy for what attributes exist
+        # on the whole batch.
+        first = features[0]
+        batch = {}
+
+        for k, v in first.items():
+            if ('label' in k) or ('rc' in k):
+                continue
+            if (v is not None) and (not isinstance(v, str)):
+                if (k == "kg_attention_mask"):
+                    if isinstance(v, torch.Tensor):
+                        if (len(v.shape) == 3):
+                            batch[k] = torch.stack([f[k] for f in features]).permute(0,3,1,2)
+                        else:
+                            batch[k] = torch.stack([f[k] for f in features])
+                    else:
+                        batch[k] = torch.tensor([f[k] for f in features])
+                else:
+                    if isinstance(v, torch.Tensor):
+                        batch[k] = torch.stack([f[k] for f in features])
+                    else:
+                        batch[k] = torch.tensor([f[k] for f in features])
+
+                    if (k == "kg_input_ids"):
+                        batch['kg_padding_mask'] = ~batch[k].detach().clone().eq(self.kg_special_token_ids['PAD'])
+
+        return batch

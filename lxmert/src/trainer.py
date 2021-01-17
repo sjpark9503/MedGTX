@@ -192,6 +192,8 @@ class Trainer:
         self.tokenizer = tokenizer
         self.task = args.task
         self.optimizer, self.lr_scheduler = optimizers
+        self.best_eval_loss = 1e10
+        self.early_stop_queue = 0
         if model_init is not None and (self.optimizer is not None or self.lr_scheduler is not None):
             raise RuntimeError(
                 "Passing a `model_init` is incompatible with providing the `optimizers` argument."
@@ -596,7 +598,9 @@ class Trainer:
                     self.state.epoch = epoch + (step + 1) / self.steps_in_epoch
                     # self.control = self.callback_handler.on_step_end(self.args, self.state, self.control)
 
-                    loss_dict = self.log_save_evaluate(loss_dict, model)
+                    loss_dict, FLAG_EarlyStop = self.log_save_evaluate(loss_dict, model)
+            if FLAG_EarlyStop:
+                break
 
             if (epoch+1) % self.args.save_per_run:
                 self._save_checkpoint(model)
@@ -638,6 +642,7 @@ class Trainer:
         return TrainOutput(self.state.global_step, self.process_loss_dict(loss_dict,accumulate=True)['loss'])
 
     def log_save_evaluate(self, loss_dict, model):
+        FLAG_EarlyStop = False
         if self.state.global_step % (self.steps_in_epoch//self.args.num_log_per_epoch) == 0:
             tr_dict = self.process_loss_dict(loss_dict, accumulate=True)
             if tr_dict is not None:
@@ -651,13 +656,20 @@ class Trainer:
                 #logger.info("log done")
         if (self.state.global_step % (self.steps_in_epoch//self.args.num_eval_per_epoch) == 0) and (self.args.num_eval_per_epoch>0):
             metrics = self.evaluate()
+            if metrics['eval_loss'] < self.best_eval_loss:
+                self.best_eval_loss = metrics['eval_loss']
+            else:
+                self.early_stop_queue +=1
+                if self.early_stop_queue > 2:
+                    FLAG_EarlyStop = True
+                    logger.info("No progress on Evaluation loss. Early stop the training loop")
             logger.info("eval done")
         else:
             metrics = None
         # if (self.state.global_step % (self.steps_in_epoch//self.args.num_save_per_epoch) == 0) and (self.args.num_save_per_epoch>0):
         #     self._save_checkpoint(model, metrics=metrics)
 
-        return loss_dict
+        return loss_dict, FLAG_EarlyStop
 
     def _save_checkpoint(self, model, trial=None, metrics=None):
         # In all cases (even distributed/parallel), self.model is always a reference

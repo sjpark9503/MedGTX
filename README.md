@@ -100,5 +100,23 @@ __v2.1__ : Support attention mask for homogeneous graph\
 __v2.2__ : Reorganize preprocessing code, fully support experiments until 20201219\
 __v2.3__ : Supports Downstream task. Debugging & Full-featured downstream task will be supported at v3.0\
 __v3.0__ : Now supports Downstream task (Debugging done)\
-__v3.0.1__ : Fix run.py, easier configuration via run.py
+__v3.0.1__ : Fix run.py, easier configuration via run.py\
+__v3.1-v3.3__ : Support 2 downstream tasks (Retrieval, Generation), Major bug fix (preprocessing, data_collator and obejctive in model.py)\
+__v4.0__ : 
++ Re-order file structure
+```
+│   └── src
+│       ├── utils
+│       ├── model.py
+│       ├── trainer.py
+│       ├── pretrain.py <- run_pretraining.py
+│       ├── finetune.py <- run_downstream.py
+│       ├── evaluation.py <- Run evaluation only (no training process, just predict & eval)
+│       └── qualitative_evaulation.ipynb <- Evaluation.ipynb, only for qualitative evaluation
+```
++ Add __Hits@k__ and __MRR__ to evaluation.py.
++ __Remove structured_cross attetion option__ from config & model.
++ __Early stopping__ based on evaluation loss, wait 2 evaluation step before stop.
++ __Ignore__ signal from negative samples in Masked LM, Masked Literal prediction
+
 

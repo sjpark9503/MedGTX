@@ -696,7 +696,7 @@ class LxmertEncoder(nn.Module):
                 lang_feats,
                 lang_attention_mask,
                 kg_feats,
-                kg_attention_mask if self.config.structured_cross else kg_padding_mask,
+                kg_padding_mask,
                 kg_padding_mask,
                 output_attentions=output_attentions,
             )
@@ -1168,32 +1168,35 @@ class LxmertForKGTokPredAndMaskedLM(LxmertPreTrainedModel):
         )
         loss_dict = dict()
         if lm_label is not None:
+            _lm_label = lm_label.view(-1)
+            positive_batch_size = _lm_label.size(0)
             masked_lm_loss = self.loss_fcts["ce"](
-                lang_prediction_scores.view(-1, self.config.vocab_size['lang']),
-                lm_label.view(-1),
+                lang_prediction_scores.view(-1, self.config.vocab_size['lang'])[:positive_batch_size],
+                _lm_label,
             )
             total_loss += masked_lm_loss
             loss_dict['lm_loss']=masked_lm_loss.mean().item()
         if kg_label is not None:
-            if self.num_kg_labels == 1:
-                #  We are doing regression
-                kg_intm_loss = self.loss_fcts['mse'](kg_prediction_scores.view(-1), kg_label.view(-1))
-                if kg_label_mask is not None:
-                    kg_intm_loss = torch.where(kg_label_mask.view(-1),kg_intm_loss,0.0)
-                kg_loss = kg_intm_loss.mean()
+            # if self.num_kg_labels == 1:
+            #     #  We are doing regression
+            #     kg_intm_loss = self.loss_fcts['mse'](kg_prediction_scores.view(-1), kg_label.view(-1))
+            #     if kg_label_mask is not None:
+            #         kg_intm_loss = torch.where(kg_label_mask.view(-1),kg_intm_loss,0.0)
+            #     kg_loss = kg_intm_loss.mean()
+            # else:
+            if kg_label_mask is not None:
+                active_logits = kg_prediction_scores.view(-1, self.num_kg_labels)
+                active_labels = torch.where(
+                    kg_label_mask.view(-1), kg_label.view(-1), torch.tensor(self.loss_fcts['ce'].ignore_index).type_as(kg_label)
+                )
+                positive_batch_size = active_labels.size(0)
+                kg_loss = self.loss_fcts['ce'](active_logits[:positive_batch_size], active_labels)
             else:
-                if kg_label_mask is not None:
-                    active_logits = kg_prediction_scores.view(-1, self.num_kg_labels)
-                    active_labels = torch.where(
-                        kg_label_mask.view(-1), kg_label.view(-1), torch.tensor(self.loss_fcts['ce'].ignore_index).type_as(kg_label)
-                    )
-                    kg_loss = self.loss_fcts['ce'](active_logits, active_labels)
-                else:
-                    kg_loss = self.loss_fcts['ce'](kg_prediction_scores.view(-1, self.num_kg_labels), kg_label.view(-1))
+                kg_loss = self.loss_fcts['ce'](kg_prediction_scores.view(-1, self.num_kg_labels), kg_label.view(-1))
             total_loss += kg_loss
             loss_dict['kg_loss']=kg_loss.mean().item()
         if cross_label is not None:
-            cross_loss = self.loss_fcts["ce"](cross_relationship_score.squeeze(), cross_label)
+            cross_loss = self.loss_fcts["ce"](cross_relationship_score, cross_label)
             total_loss += cross_loss
             loss_dict['align_loss']=cross_loss.mean().item()
         if rc_indeces is not None:
@@ -1214,7 +1217,7 @@ class LxmertForKGTokPredAndMaskedLM(LxmertPreTrainedModel):
                 loss_dict,
                 lang_prediction_scores,
                 kg_prediction_scores,
-                cross_relationship_score.squeeze(),
+                cross_relationship_score,
 
             ) + lxmert_output[3:]
             return ((total_loss,) + output) if total_loss is not None else output
@@ -1224,7 +1227,7 @@ class LxmertForKGTokPredAndMaskedLM(LxmertPreTrainedModel):
             loss_dict=loss_dict,
             lang_prediction_logits=lang_prediction_scores,
             kg_prediction_logits=kg_prediction_scores,
-            cross_relationship_score=cross_relationship_score.squeeze(),
+            cross_relationship_score=cross_relationship_score,
             language_hidden_states=lxmert_output.language_hidden_states,
             kg_hidden_states=lxmert_output.kg_hidden_states,
             language_attentions=lxmert_output.language_attentions,

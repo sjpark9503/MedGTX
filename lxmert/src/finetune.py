@@ -1,6 +1,3 @@
-"""
-Ver 0.3 for KG-LXMERT
-"""
 # Base packages
 import logging
 import math
@@ -9,12 +6,13 @@ from dataclasses import dataclass, field
 from glob import glob
 from typing import Optional
 from torch.utils.data import ConcatDataset
+import torch
 
 # Own implementation
 from utils.parameters import parser
 from utils.dataset import get_dataset
-from utils.data_collator import NodeClassification_DataCollator #, UnimodalLM_DataCollator, UnimodalKG_DataCollator
-from model import LxmertForKGTokPredAndMaskedLM
+from utils.data_collator import NegativeSampling_DataCollator
+from model import LxmertForRanking, LxmertForKGTokPredAndMaskedLM
 from trainer import Trainer
 
 # From Huggingface transformers package
@@ -102,16 +100,43 @@ def main():
         )
 
     if model_args.model_name_or_path:
-        model = LxmertForKGTokPredAndMaskedLM.from_pretrained(
-            model_args.model_name_or_path,
-            from_tf=bool(".ckpt" in model_args.model_name_or_path),
-            config=config,
-            cache_dir=model_args.cache_dir,
-        )
+        if training_args.task in ['binary_retrieval', 'triplet_retrieval']:
+            # try:
+            model = LxmertForRanking.from_pretrained(
+                model_args.model_name_or_path,
+                from_tf=bool(".ckpt" in model_args.model_name_or_path),
+                config=config,
+                cache_dir=model_args.cache_dir,
+            )
+            # except:
+            #     ckpt_path = os.path.join(model_args.model_name_or_path, 'pytorch_model.bin')
+            #     load_model_dict = torch.load(ckpt_path)
+            #     modified_model_dict = load_model_dict.copy()
+            #     for param in load_model_dict:
+            #         if 'pooler' in param:
+            #             modified_model_dict.pop(param)
+            #     torch.save(modified_model_dict, ckpt_path)
+
+            #     model = LxmertForRanking.from_pretrained(
+            #         model_args.model_name_or_path,
+            #         from_tf=bool(".ckpt" in model_args.model_name_or_path),
+            #         config=config,
+            #         cache_dir=model_args.cache_dir,
+            #     )
+
+        elif training_args.task in ['generation']: 
+            model = LxmertForKGTokPredAndMaskedLM.from_pretrained(
+                model_args.model_name_or_path,
+                from_tf=bool(".ckpt" in model_args.model_name_or_path),
+                config=config,
+                cache_dir=model_args.cache_dir,
+            )
+        else:
+            raise NotImplementedError("Not implemented task: %s", training_args.task)
     else:
         logger.info("Training new model from scratch")
-        model = LxmertForKGTokPredAndMaskedLM(config)
-    model.training_args = training_args
+        model = LxmertForRanking(config)
+
     #model.resize_token_embeddings(len(tokenizer))
 
     if config.model_type in ["bert", "roberta", "distilbert", "camembert"] and not data_args.mlm:
@@ -138,30 +163,25 @@ def main():
                                evaluate=True)
     test_dataset = get_dataset(data_args, tokenizer=tokenizer, token_type_vocab = config.token_type_vocab, test=True) if training_args.do_eval else None
     eval_data_collator = None
-    if config.task_mask_lm and config.task_mask_kg:
-        data_collator = NodeClassification_DataCollator(tokenizer=tokenizer,
-                                                        align=training_args.align,
-                                                        n_negatives = training_args.n_negatives,
-                                                        edge_cls=training_args.edge_cls,
-                                                        kg_special_token_ids=config.kg_special_token_ids,
-                                                        kg_size=config.vocab_size['kg'])
-        eval_data_collator = NodeClassification_DataCollator(tokenizer=tokenizer,
-                                                align=training_args.align,
-                                                edge_cls=training_args.edge_cls,
-                                                kg_special_token_ids=config.kg_special_token_ids,
-                                                kg_size=config.vocab_size['kg'])
-    elif config.task_mask_lm and not config.task_mask_kg:
-        data_collator = UnimodalLM_DataCollator(tokenizer=tokenizer,
-                                                        kg_special_token_ids=config.kg_special_token_ids,
-                                                        kg_size=config.vocab_size['kg'])
+    if training_args.task == 'binary_retrieval':
+        data_collator = NegativeSampling_DataCollator(tokenizer=tokenizer,
+                                                      kg_special_token_ids=config.kg_special_token_ids,
+                                                      n_negatives=training_args.n_negatives,
+                                                      NCE=False)
+        eval_data_collator = NegativeSampling_DataCollator(tokenizer=tokenizer,
+                                                      kg_special_token_ids=config.kg_special_token_ids,
+                                                      NCE=False)
 
-    elif not config.task_mask_lm and config.task_mask_kg:
-        data_collator = UnimodalKG_DataCollator(tokenizer=tokenizer,
-                                                        kg_special_token_ids=config.kg_special_token_ids,
-                                                        kg_size=config.vocab_size['kg'])
-
+    elif training_args.task == 'triplet_retrieval':
+        data_collator = NegativeSampling_DataCollator(tokenizer=tokenizer,
+                                                      kg_special_token_ids=config.kg_special_token_ids,
+                                                      NCE=True)
+    elif training_args.task == 'generation':
+        from utils.data_collator import UniLM_DataCollator
+        data_collator = UniLM_DataCollator(tokenizer=tokenizer,
+                                           kg_special_token_ids=config.kg_special_token_ids)
     else:
-        raise ValueError("You can turn off one of modality, but not both.")
+        raise NotImplementedError("Not implemented task")
     # Initialize our Trainer
     trainer = Trainer(
         model=model,
@@ -169,7 +189,8 @@ def main():
         data_collator=data_collator,
         eval_data_collator=eval_data_collator,
         train_dataset=train_dataset,
-        eval_dataset=eval_dataset
+        eval_dataset=eval_dataset,
+        test_dataset=test_dataset
     )
 
     # Training
@@ -183,22 +204,11 @@ def main():
         trainer.save_model()
         # For convenience, we also re-save the tokenizer to the same directory,
         # so that you can share your model easily on huggingface.co/models =)
-        tokenizer.save_pretrained(training_args.output_dir)
+        if trainer.is_world_master():
+            tokenizer.save_pretrained(training_args.output_dir)
 
-    # Evaluation
-    # if training_args.do_eval:
-    #     model_path = (
-    #         model_args.model_name_or_path
-    #         if model_args.model_name_or_path is not None and os.path.isdir(model_args.model_name_or_path)
-    #         else None
-    #     )
-    #     trainer.evaluate()
-    #     trainer.save_model()
-    #     # For convenience, we also re-save the tokenizer to the same directory,
-    #     # so that you can share your model easily on huggingface.co/models =)
-    #     if trainer.is_world_master():
-    #         tokenizer.save_pretrained(training_args.output_dir)
-
+    #if training_args.do_eval:
+        
 def _mp_fn(index):
     # For xla_spawn (TPUs)
     main()

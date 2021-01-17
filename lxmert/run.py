@@ -3,12 +3,12 @@ import json
 import os
 # ======================= CONFIG ==================== #
 ## GPU setting
-os.environ["CUDA_VISIBLE_DEVICES"] = '7'
+os.environ["CUDA_VISIBLE_DEVICES"] = '5'
 ## TASK & DB
-TASK_NAME = 'pretrain'
+TASK_NAME = 'binary_retrieval'
 DB = 'dx,prx'
-DB_size = 1500
-MODEL_TYPE = 'lm'
+DB_size = 2000
+MODEL_TYPE = 'kg'
 Unified = True
 Align = False
 Relation_Classification = False
@@ -54,13 +54,13 @@ TRAINING_CONFIG = {
     "overwrite_output_dir":False,
     "mlm_probability": 0.15,
     "block_size": 512,
-    "per_device_train_batch_size": 16,
+    "per_device_train_batch_size": 24,
     "per_device_eval_batch_size": 4,
-    "learning_rate": 1e-4,
-    "num_train_epochs": 40,
+    "learning_rate": 1e-5,
+    "num_train_epochs": 20,
     "num_log_per_epoch": 20,
-    "save_per_run": 2,
-    "num_eval_per_epoch": 2,
+    "save_per_run": 5,
+    "num_eval_per_epoch": 5,
     "task" : TASK_NAME,
     "train_data_file":os.path.join(EXP_PATH,f"data/{DB}_{DB_size}/{MODEL_NAME}/train"),
     "eval_data_file": os.path.join(EXP_PATH,f"data/{DB}_{DB_size}/{MODEL_NAME}/valid"),
@@ -70,10 +70,10 @@ TRAINING_CONFIG = {
 
 if (TASK_NAME in ['pretrain', 'single_pretrain']) or Scratch_Downstream:
     if Scratch_Downstream:
-        SRC_PATH = os.path.join(EXP_PATH, 'src/run_downstream.py')
+        SRC_PATH = os.path.join(EXP_PATH, 'src/finetune.py')
         TRAINING_CONFIG['output_dir'] = os.path.join(EXP_PATH,f"pretrained_models/scratch_{TASK_NAME}/{RUN_NAME}")
     else:
-        SRC_PATH = os.path.join(EXP_PATH, 'src/run_pretraining.py')
+        SRC_PATH = os.path.join(EXP_PATH, 'src/pretrain.py')
         TRAINING_CONFIG['output_dir'] = os.path.join(EXP_PATH,f"pretrained_models/{TASK_NAME}/{RUN_NAME}")
     TRAINING_CONFIG['tokenizer_name'] = "bert-base-uncased"
     TRAINING_CONFIG['config_name'] = os.path.join(EXP_PATH, f"config/config_H{Dim_Hidden}_L{NUM_Layers['lang']},{NUM_Layers['kg']},{NUM_Layers['cross']}_{MODEL_TYPE}_{Var_Unified}{DB}.json")
@@ -95,7 +95,7 @@ if (TASK_NAME in ['pretrain', 'single_pretrain']) or Scratch_Downstream:
         json.dump(Config,g)
         
 elif TASK_NAME in ['generation']:
-    SRC_PATH = os.path.join(EXP_PATH, 'src/run_downstream.py')
+    SRC_PATH = os.path.join(EXP_PATH, 'src/finetune.py')
     TRAINING_CONFIG['model_name_or_path'] = os.path.join(EXP_PATH, f'pretrained_models/pretrain/{RUN_NAME}')
     # load config
     with open(f"{TRAINING_CONFIG['model_name_or_path']}/config.json") as f:
@@ -111,7 +111,7 @@ elif TASK_NAME in ['generation']:
     TRAINING_CONFIG['output_dir'] = os.path.join(EXP_PATH,f"pretrained_models/{TASK_NAME}/{RUN_NAME}")
 
 else:
-    SRC_PATH = os.path.join(EXP_PATH, 'src/run_downstream.py')
+    SRC_PATH = os.path.join(EXP_PATH, 'src/finetune.py')
     TRAINING_CONFIG['model_name_or_path'] = os.path.join(EXP_PATH, f'pretrained_models/pretrain/{RUN_NAME}')
     with open(f"{TRAINING_CONFIG['model_name_or_path']}/config.json") as f:
         Config = json.load(f)
