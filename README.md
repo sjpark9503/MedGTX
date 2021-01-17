@@ -91,7 +91,8 @@ __v4.0__ :
 + __Early stopping__ based on evaluation loss, wait 2 evaluation step before stop.
 + __Ignore__ signal from negative samples in Masked LM, Masked Literal prediction\
 __v4.0.1__ : Add evaluation only option on run.py\
-__v4.0.2__ : Fix generation part for being compatible and prepare evaluation on model.py\
+__v4.0.2__ : Fix generation part for being compatible and prepare evaluation on model.py   
 
+__v4.1__ : Evolve generation model and add ån evaluation file for generation part
 
 
