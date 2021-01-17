@@ -118,5 +118,6 @@ __v4.0__ :
 + __Remove structured_cross attetion option__ from config & model.
 + __Early stopping__ based on evaluation loss, wait 2 evaluation step before stop.
 + __Ignore__ signal from negative samples in Masked LM, Masked Literal prediction
+__v4.0.1__ : Add evaluation only option on run.py\
 
 

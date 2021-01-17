@@ -169,7 +169,7 @@ class TrainingArguments:
             - :obj:`False` if :obj:`metric_for_best_model` is not set, or set to :obj:`"loss"` or :obj:`"eval_loss"`.
     """
 
-    output_dir: str = field(
+    output_dir: Optional[str] = field(
         metadata={"help": "The output directory where the model predictions and checkpoints will be written."}
     )
     task: str = field(

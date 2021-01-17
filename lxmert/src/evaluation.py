@@ -99,7 +99,7 @@ def main():
         )
     else:
         raise NotImplementedError("Not implemented task: %s", training_args.task)
-
+    model.eval()
 
     if data_args.block_size <= 0:
         data_args.block_size = tokenizer.max_len
@@ -134,23 +134,24 @@ def main():
         )
         sample_hits = list()
         sample_rank = list()
-        for positive_idx in tqdm(range(len(test_dataset)), total=len(test_dataset)):
-            scores = list()
-            positive_sample = data_collator([test_dataset[positive_idx],]*training_args.eval_batch_size)
-            for inputs in data_loader:
-                for k, v in inputs:
-                    if 'kg' not in k:
-                        inputs[k] = positive_sample[k]
-                    inputs[k] = inputs[k].to(training_args.device)
-                with torch.no_grad():
-                    outputs = model(**inputs)
-                scores.append((outputs.cross_relationship_score)[:,1].tolist())
-            ranks = sorted(range(len(scores)), key=lambda k: scores[k], reverse=True)
-            if positive_idx in ranks[:top_k]:
-                sample_hits.append(1)
-            else:
-                sample_hits.append(0)
-            sample_rank = 1/ranks[positive_idx]
+        with torch.no_grad():
+            for positive_idx in tqdm(range(len(test_dataset)), total=len(test_dataset)):
+                scores = list()
+                positive_sample = data_collator([test_dataset[positive_idx],]*training_args.eval_batch_size)
+                for inputs in data_loader:
+                    for k, v in inputs:
+                        if 'kg' not in k:
+                            inputs[k] = positive_sample[k]
+                        inputs[k] = inputs[k].to(training_args.device)
+                    with torch.no_grad():
+                        outputs = model(**inputs)
+                    scores.append((outputs.cross_relationship_score)[:,1].tolist())
+                ranks = sorted(range(len(scores)), key=lambda k: scores[k], reverse=True)
+                if positive_idx in ranks[:top_k]:
+                    sample_hits.append(1)
+                else:
+                    sample_hits.append(0)
+                sample_rank = 1/ranks[positive_idx]
         logger.info("Evaluation on Test set is done!")
         logger.info("*"*20)
         logger.info(f"Hits@{tok_k} = {sum(sample_hits)/len(sample_hits)}\tMRR = {sum(sample_rank)/len(sample_rank)}")

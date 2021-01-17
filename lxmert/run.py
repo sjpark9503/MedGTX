@@ -5,15 +5,17 @@ import os
 ## GPU setting
 os.environ["CUDA_VISIBLE_DEVICES"] = '5'
 ## TASK & DB
+Evaluation = False
 TASK_NAME = 'binary_retrieval'
 DB = 'dx,prx'
 DB_size = 2000
+## Pretraining Configs
 MODEL_TYPE = 'kg'
 Unified = True
 Align = False
 Relation_Classification = False
 Scratch_Downstream = False
-## Important Model Config
+## Important Hyperparameters
 Dim_Hidden = 128
 NUM_Layers = {'lang':2, 'kg':2, 'cross':4}
 Dropout = 0.1
@@ -94,34 +96,30 @@ if (TASK_NAME in ['pretrain', 'single_pretrain']) or Scratch_Downstream:
     with open(TRAINING_CONFIG['config_name'],'w') as g:
         json.dump(Config,g)
         
-elif TASK_NAME in ['generation']:
-    SRC_PATH = os.path.join(EXP_PATH, 'src/finetune.py')
-    TRAINING_CONFIG['model_name_or_path'] = os.path.join(EXP_PATH, f'pretrained_models/pretrain/{RUN_NAME}')
-    # load config
-    with open(f"{TRAINING_CONFIG['model_name_or_path']}/config.json") as f:
-        Config = json.load(f)
-    # add features
-    Config['margin'] = Margin
-    Config['attention_probs_dropout_prob'] = Dropout
-    Config['hidden_dropout_prob'] = Dropout
-    Config['cross_att_type'] = 'unilm'
-    # overwrite config
-    with open(f"{TRAINING_CONFIG['model_name_or_path']}/config.json",'w') as g:
-        json.dump(Config,g)
-    TRAINING_CONFIG['output_dir'] = os.path.join(EXP_PATH,f"pretrained_models/{TASK_NAME}/{RUN_NAME}")
-
 else:
-    SRC_PATH = os.path.join(EXP_PATH, 'src/finetune.py')
-    TRAINING_CONFIG['model_name_or_path'] = os.path.join(EXP_PATH, f'pretrained_models/pretrain/{RUN_NAME}')
-    with open(f"{TRAINING_CONFIG['model_name_or_path']}/config.json") as f:
-        Config = json.load(f)
-    Config['margin'] = Margin
-    Config['attention_probs_dropout_prob'] = Dropout
-    Config['hidden_dropout_prob'] = Dropout
-    Config['cross_att_type'] = 'single' if TASK_NAME.split('_')[0] == 'single' else 'cross'
-    with open(f"{TRAINING_CONFIG['model_name_or_path']}/config.json",'w') as g:
-        json.dump(Config,g)
-    TRAINING_CONFIG['output_dir'] = os.path.join(EXP_PATH,f"pretrained_models/{TASK_NAME}/{RUN_NAME}")
+    if Evaluation:
+        SRC_PATH = os.path.join(EXP_PATH, 'src/evaluation.py')
+        TRAINING_CONFIG['model_name_or_path'] = os.path.join(EXP_PATH, f'pretrained_models/{TASK_NAME}/{RUN_NAME}')
+    else:
+        SRC_PATH = os.path.join(EXP_PATH, 'src/finetune.py')
+        TRAINING_CONFIG['model_name_or_path'] = os.path.join(EXP_PATH, f'pretrained_models/pretrain/{RUN_NAME}')
+        TRAINING_CONFIG['output_dir'] = os.path.join(EXP_PATH,f"pretrained_models/{TASK_NAME}/{RUN_NAME}")
+        # load config
+        with open(f"{TRAINING_CONFIG['model_name_or_path']}/config.json") as f:
+            Config = json.load(f)
+        # add features
+        Config['margin'] = Margin
+        Config['attention_probs_dropout_prob'] = Dropout
+        Config['hidden_dropout_prob'] = Dropout
+        if TASK_NAME in ['generation']:
+            Config['cross_att_type'] = 'unilm'
+        else:
+            Config['cross_att_type'] = 'single' if TASK_NAME.split('_')[0] == 'single' else 'cross'
+        # overwrite config
+        with open(f"{TRAINING_CONFIG['model_name_or_path']}/config.json",'w') as g:
+            json.dump(Config,g)
+    
+
 
 
 
