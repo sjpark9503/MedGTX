@@ -119,10 +119,6 @@ else:
         with open(f"{TRAINING_CONFIG['model_name_or_path']}/config.json",'w') as g:
             json.dump(Config,g)
     
-
-
-
-
 TRAINING_CONFIG_LIST = list()
 for (k,v) in list(TRAINING_CONFIG.items()):
     if (isinstance(v, bool)):
