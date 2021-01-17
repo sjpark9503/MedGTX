@@ -3,14 +3,14 @@ import json
 import os
 # ======================= CONFIG ==================== #
 ## GPU setting
-os.environ["CUDA_VISIBLE_DEVICES"] = '5'
+os.environ["CUDA_VISIBLE_DEVICES"] = '4'
 ## TASK & DB
 Evaluation = False
-TASK_NAME = 'binary_retrieval'
-DB = 'dx,prx'
-DB_size = 2000
+TASK_NAME = 'pretrain'
+DB = 'px'
+DB_size = 1000
 ## Pretraining Configs
-MODEL_TYPE = 'kg'
+MODEL_TYPE = 'rand'
 Unified = True
 Align = False
 Relation_Classification = False
@@ -56,10 +56,10 @@ TRAINING_CONFIG = {
     "overwrite_output_dir":False,
     "mlm_probability": 0.15,
     "block_size": 512,
-    "per_device_train_batch_size": 24,
+    "per_device_train_batch_size": 16,
     "per_device_eval_batch_size": 4,
     "learning_rate": 1e-5,
-    "num_train_epochs": 20,
+    "num_train_epochs": 40,
     "num_log_per_epoch": 20,
     "save_per_run": 5,
     "num_eval_per_epoch": 5,
@@ -100,7 +100,12 @@ else:
     if Evaluation:
         SRC_PATH = os.path.join(EXP_PATH, 'src/evaluation.py')
         TRAINING_CONFIG['model_name_or_path'] = os.path.join(EXP_PATH, f'pretrained_models/{TASK_NAME}/{RUN_NAME}')
-        TRAINING_CONFIG['output_dir'] = os.path.join(EXP_PATH,f"eval_output/{TASK_NAME}/{RUN_NAME}")
+        if TASK_NAME in ['generation']:
+            SRC_PATH = os.path.join(EXP_PATH, 'src/evaluation_generation.py')
+            TRAINING_CONFIG['output_dir'] = os.path.join(EXP_PATH,f"eval_output/{TASK_NAME}/{RUN_NAME}")
+            TRAINING_CONFIG['decode_option'] = {"perturb_type" : 'pad_all', # init_all, pad_all, None
+                                                "given_lang_tokens": 1, # 1,5,25
+                                                "clean_outputs": True}
     else:
         SRC_PATH = os.path.join(EXP_PATH, 'src/finetune.py')
         TRAINING_CONFIG['model_name_or_path'] = os.path.join(EXP_PATH, f'pretrained_models/pretrain/{RUN_NAME}')

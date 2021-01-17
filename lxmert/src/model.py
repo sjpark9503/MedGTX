@@ -1360,6 +1360,7 @@ class LxmertForGeneration(LxmertPreTrainedModel):
         
         # Tokenizer
         self.tokenizer = tokenizer
+        self.sep_token_id = tokenizer.sep_token_id
         
         # Weight initialization
         self.init_weights()
@@ -1398,6 +1399,8 @@ class LxmertForGeneration(LxmertPreTrainedModel):
                                         kg_attention_mask=kg_attention_mask,
                                         kg_padding_mask=kg_padding_mask,
                                         perturb_type=perturb_type)
+        # num_db: dx,prx(2) / px(1)
+        num_db = len(torch.bincount(token_type_ids.flatten()))
         
         assert len(lang_input_ids.shape) == 2
         batch_size, max_length = lang_input_ids.shape
@@ -1420,6 +1423,10 @@ class LxmertForGeneration(LxmertPreTrainedModel):
             curr_attention_mask = lang_attention_mask[:, :curr_length+1, :curr_length+1]
             curr_token_type_ids = token_type_ids[:, :curr_length+1]
             assert curr_ids.shape[-1] == curr_attention_mask.shape[-1]
+            
+            # when dx, prx case, we should consider token_type_ids
+            if num_db == 2:
+                curr_token_type_ids = self.convert_token_type_ids(curr_ids, curr_token_type_ids)
             
             lxmert_output = self.lxmert(
                 # lang_input_ids=lang_input_ids,
@@ -1456,21 +1463,29 @@ class LxmertForGeneration(LxmertPreTrainedModel):
         # assert output_length == len(output_ids[0])
             
         output_ids = torch.cat(output_ids, dim=1)
-        output_ids = self.clean_output_ids(output_ids=output_ids, gt_length=gt_length) if clean_outputs \
+        
+        output_ids = self.clean_output_ids(output_ids=output_ids, gt_length=gt_length, num_sep_id=num_db) if clean_outputs \
             else output_ids
         
         outputs = (output_ids, kg_input_ids, lang_input_ids) if perturb_type is None \
             else (output_ids, org_kg_input_ids, lang_input_ids, kg_input_ids)
         return outputs
     
-    def clean_output_ids(self, output_ids, gt_length):
-        sep_token_id = self.tokenizer.sep_token_id
+    def clean_output_ids(self, output_ids, gt_length, num_sep_id):
         c_output_ids = []
         for i, o in enumerate(output_ids):
             l_gt = gt_length[i]
-            l_sep = torch.nonzero(o.eq(sep_token_id))[0] if sep_token_id in o else 512
+            sep_idx = o.eq(self.sep_token_id)
+            l_sep = torch.nonzero(sep_idx)[num_sep_id-1] if sep_idx.sum() >= num_sep_id else 512
             c_output_ids.append(o[:min(l_gt, l_sep)])
         return c_output_ids
+    
+    def convert_token_type_ids(self, curr_ids, curr_token_type_ids):
+        for idx in range(len(curr_ids)):
+            if self.sep_token_id in curr_ids[idx][-2]:
+                first_sep_idx = torch.nonzero(curr_ids[idx].eq(self.sep_token_id))[0]
+                curr_token_type_ids[idx][first_sep_idx+1:] = 1        
+        return curr_token_type_ids
         
     def perturb_graph_part(self,
                            kg_input_ids,
