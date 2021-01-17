@@ -40,34 +40,6 @@ pip install transformers wandb
 ### Utilities
 + Save & Load pretrained models
 
-### :file_folder: Directory (Briefly)
-
-```
-.
-├── eda
-├── knowemb
-│   ├── openke
-│   ├── optimization
-│   ├── wandb
-│   └── train.py
-├── lxmert
-│   ├── data
-│   ├── config
-│   └── src
-│       ├── utils
-│       ├── model.py
-│       ├── run_pretraining.py
-│       └── trainer.py
-│   ├── debugging.ipynb
-│   └── run.py
-├── preprocessing
-│   ├── utils
-│   ├── extract_text.ipynb
-│   ├── table2triple.ipynb
-│   ├── triple2subgraph.ipynb
-│   └── README.md
-└── README.md
-```
 
 ## Waiting for implementation
 + GCN based KG encoder __(In Progress)__
@@ -118,6 +90,8 @@ __v4.0__ :
 + __Remove structured_cross attetion option__ from config & model.
 + __Early stopping__ based on evaluation loss, wait 2 evaluation step before stop.
 + __Ignore__ signal from negative samples in Masked LM, Masked Literal prediction\
-__v4.0.1__ : Add evaluation only option on run.py
+__v4.0.1__ : Add evaluation only option on run.py\
+__v4.0.2__ : Fix generation part for being compatible and prepare evaluation on model.py\
+
 
 
