@@ -318,6 +318,9 @@ class UniLM_DataCollator:
         batch = {}
 
         for k, v in first.items():
+            if 'rc' in k:
+                # we don't need to use graph part
+                continue
             if v is not None:
                 if (k == "kg_attention_mask") and not isinstance(v, str):
                     if isinstance(v, torch.Tensor):

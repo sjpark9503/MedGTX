@@ -100,6 +100,7 @@ else:
     if Evaluation:
         SRC_PATH = os.path.join(EXP_PATH, 'src/evaluation.py')
         TRAINING_CONFIG['model_name_or_path'] = os.path.join(EXP_PATH, f'pretrained_models/{TASK_NAME}/{RUN_NAME}')
+        TRAINING_CONFIG['output_dir'] = os.path.join(EXP_PATH,f"eval_output/{TASK_NAME}/{RUN_NAME}")
     else:
         SRC_PATH = os.path.join(EXP_PATH, 'src/finetune.py')
         TRAINING_CONFIG['model_name_or_path'] = os.path.join(EXP_PATH, f'pretrained_models/pretrain/{RUN_NAME}')

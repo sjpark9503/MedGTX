@@ -154,14 +154,19 @@ def main():
     # Get datasets
 
     train_dataset = get_dataset(data_args,
-                    tokenizer=tokenizer,
-                    token_type_vocab=config.token_type_vocab,
-                    )
+                                tokenizer=tokenizer,
+                                token_type_vocab=config.token_type_vocab,
+                                )
     eval_dataset = get_dataset(data_args,
                                tokenizer=tokenizer,
-                               token_type_vocab = config.token_type_vocab,
-                               evaluate=True)
-    test_dataset = get_dataset(data_args, tokenizer=tokenizer, token_type_vocab = config.token_type_vocab, test=True) if training_args.do_eval else None
+                               token_type_vocab=config.token_type_vocab,
+                               evaluate=True
+                               )
+    test_dataset = get_dataset(data_args,
+                               tokenizer=tokenizer,
+                               token_type_vocab=config.token_type_vocab,
+                               test=True
+                               ) if training_args.do_eval else None
     eval_data_collator = None
     if training_args.task == 'binary_retrieval':
         data_collator = NegativeSampling_DataCollator(tokenizer=tokenizer,
