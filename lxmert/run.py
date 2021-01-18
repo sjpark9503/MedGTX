@@ -108,7 +108,10 @@ else:
                                                 "clean_outputs": True}
     else:
         SRC_PATH = os.path.join(EXP_PATH, 'src/finetune.py')
-        TRAINING_CONFIG['model_name_or_path'] = os.path.join(EXP_PATH, f'pretrained_models/pretrain/{RUN_NAME}')
+        if TASK_NAME.split('_')[0] == 'single':
+            TRAINING_CONFIG['model_name_or_path'] = os.path.join(EXP_PATH, f'pretrained_models/single_pretrain/{RUN_NAME}')
+        else:
+            TRAINING_CONFIG['model_name_or_path'] = os.path.join(EXP_PATH, f'pretrained_models/pretrain/{RUN_NAME}')
         TRAINING_CONFIG['output_dir'] = os.path.join(EXP_PATH,f"pretrained_models/{TASK_NAME}/{RUN_NAME}")
         # load config
         with open(f"{TRAINING_CONFIG['model_name_or_path']}/config.json") as f:
