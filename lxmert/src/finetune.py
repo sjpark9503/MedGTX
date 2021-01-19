@@ -100,7 +100,7 @@ def main():
         )
 
     if model_args.model_name_or_path:
-        if training_args.task in ['binary_retrieval', 'triplet_retrieval']:
+        if training_args.task in ['binary_retrieval', 'triplet_retrieval', 'single_binary_retrieval']:
             # try:
             model = LxmertForRanking.from_pretrained(
                 model_args.model_name_or_path,
@@ -168,7 +168,7 @@ def main():
                                test=True
                                ) if training_args.do_eval else None
     eval_data_collator = None
-    if training_args.task == 'binary_retrieval':
+    if training_args.task in ['binary_retrieval', 'single_binary_retrieval']:
         data_collator = NegativeSampling_DataCollator(tokenizer=tokenizer,
                                                       kg_special_token_ids=config.kg_special_token_ids,
                                                       n_negatives=training_args.n_negatives,

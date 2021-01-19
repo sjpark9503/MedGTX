@@ -6,14 +6,14 @@ import os
 os.environ["CUDA_VISIBLE_DEVICES"] = '4'
 ## TASK & DB
 Evaluation = False
-TASK_NAME = 'pretrain'
-DB = 'px'
-DB_size = 1000
+TASK_NAME = 'single_binary_retrieval'
+DB = 'dx,prx'
+DB_size = 2000
 ## Pretraining Configs
-MODEL_TYPE = 'rand'
-Unified = True
+MODEL_TYPE = 'both'
+Unified = False
 Align = False
-Relation_Classification = False
+Relation_Classification = True
 Scratch_Downstream = False
 ## Important Hyperparameters
 Dim_Hidden = 128
@@ -59,7 +59,7 @@ TRAINING_CONFIG = {
     "per_device_train_batch_size": 16,
     "per_device_eval_batch_size": 4,
     "learning_rate": 1e-5,
-    "num_train_epochs": 40,
+    "num_train_epochs": 20,
     "num_log_per_epoch": 20,
     "save_per_run": 5,
     "num_eval_per_epoch": 5,

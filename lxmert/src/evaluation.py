@@ -80,7 +80,7 @@ def main():
 
     config = LxmertConfig.from_pretrained(model_args.model_name_or_path, cache_dir=model_args.cache_dir)
     tokenizer = LxmertTokenizer.from_pretrained(model_args.model_name_or_path, cache_dir=model_args.cache_dir)
-    if training_args.task in ['binary_retrieval', 'triplet_retrieval']:
+    if training_args.task in ['binary_retrieval', 'triplet_retrieval', 'single_binary_retrieval']:
         model = LxmertForRanking.from_pretrained(
             model_args.model_name_or_path,
             from_tf=bool(".ckpt" in model_args.model_name_or_path),
@@ -123,7 +123,7 @@ def main():
     # )
 
     # Evaluation
-    if training_args.task in ['binary_retrieval']:
+    if training_args.task in ['binary_retrieval', 'single_binary_retrieval']:
         tok_k = 10
         data_loader = DataLoader(
             test_dataset,
