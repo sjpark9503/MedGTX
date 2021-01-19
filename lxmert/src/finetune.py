@@ -157,6 +157,7 @@ def main():
                                 tokenizer=tokenizer,
                                 token_type_vocab=config.token_type_vocab,
                                 )
+    logger.info(train_dataset[0])
     eval_dataset = get_dataset(data_args,
                                tokenizer=tokenizer,
                                token_type_vocab=config.token_type_vocab,

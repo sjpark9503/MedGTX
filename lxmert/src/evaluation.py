@@ -2,17 +2,19 @@
 import logging
 import math
 import os
+from time import time
 from dataclasses import dataclass, field
 from glob import glob
 from typing import Optional
-from torch.utils.data import ConcatDataset
+from torch.utils.data import ConcatDataset, DataLoader
+from tqdm import tqdm
 import torch
 import numpy as np
 
 # Own implementation
 from utils.parameters import parser
 from utils.dataset import get_dataset
-from utils.data_collator import NegativeSampling_DataCollator
+from utils.data_collator import NegativeSampling_DataCollator, Evaluation_DataCollator
 from torch.utils.data.sampler import RandomSampler, SequentialSampler
 from model import LxmertForRanking
 from trainer import Trainer
@@ -89,7 +91,7 @@ def main():
         )
         data_collator = Evaluation_DataCollator(tokenizer=tokenizer,
                                                 kg_special_token_ids=config.kg_special_token_ids,
-                                                NCE=False)
+                                                task=training_args.task)
     elif training_args.task in ['generation']: 
         model = LxmertForKGTokPredAndMaskedLM.from_pretrained(
             model_args.model_name_or_path,
@@ -99,6 +101,7 @@ def main():
         )
     else:
         raise NotImplementedError("Not implemented task: %s", training_args.task)
+    model.to(training_args.device)
     model.eval()
 
     if data_args.block_size <= 0:
@@ -113,7 +116,7 @@ def main():
                             tokenizer=tokenizer, 
                             token_type_vocab = config.token_type_vocab, 
                             test=True)
-
+    logger.info(test_dataset[0])
     # Initialize our Trainer
     # trainer = Trainer(
     #     model=model,
@@ -132,29 +135,51 @@ def main():
             collate_fn=data_collator,
             pin_memory=True,
         )
+        db = dict()
+        datas = [data for data in data_loader]
+
+        for k in datas[0]:
+            db[k] = torch.cat([data[k] for data in datas]).to(training_args.device)
+
+        top_k = 10
         sample_hits = list()
         sample_rank = list()
+
         with torch.no_grad():
             for positive_idx in tqdm(range(len(test_dataset)), total=len(test_dataset)):
                 scores = list()
-                positive_sample = data_collator([test_dataset[positive_idx],]*training_args.eval_batch_size)
-                for inputs in data_loader:
-                    for k, v in inputs:
+                for idx in range(len(test_dataset)//training_args.per_device_eval_batch_size+1):
+                    start_idx = idx*training_args.per_device_eval_batch_size
+                    if idx < (len(test_dataset)//training_args.per_device_eval_batch_size):
+                        end_idx = (idx+1)*training_args.per_device_eval_batch_size
+                    else:
+                        end_idx = len(test_dataset)
+                    if start_idx == end_idx:
+                        continue
+
+                    inputs = dict()
+                    for k in db:
                         if 'kg' not in k:
-                            inputs[k] = positive_sample[k]
-                        inputs[k] = inputs[k].to(training_args.device)
-                    with torch.no_grad():
-                        outputs = model(**inputs)
-                    scores.append((outputs.cross_relationship_score)[:,1].tolist())
+                            inputs[k] = torch.stack([db[k][positive_idx]]*(end_idx-start_idx))
+                        else:
+                            inputs[k] = db[k][start_idx:end_idx]
+
+                    outputs = model(**inputs)
+
+                    scores+=outputs.cross_relationship_score[:,1].tolist()
+
                 ranks = sorted(range(len(scores)), key=lambda k: scores[k], reverse=True)
+
                 if positive_idx in ranks[:top_k]:
                     sample_hits.append(1)
                 else:
                     sample_hits.append(0)
-                sample_rank = 1/ranks[positive_idx]
+                sample_rank.append(1/(ranks[positive_idx]+1))
+
         logger.info("Evaluation on Test set is done!")
         logger.info("*"*20)
-        logger.info(f"Hits@{tok_k} = {sum(sample_hits)/len(sample_hits)}\tMRR = {sum(sample_rank)/len(sample_rank)}")
+        logger.info(f"Model : {training_args.output_dir.split('/')[-2]}_{training_args.output_dir.split('/')[-1]}")
+        logger.info(f"Hits@{top_k} = {sum(sample_hits)/len(sample_hits)}\tMRR = {sum(sample_rank)/len(sample_rank)}")
         logger.info("*"*20)
 
 

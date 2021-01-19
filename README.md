@@ -93,6 +93,6 @@ __v4.0__ :
 __v4.0.1__ : Add evaluation only option on run.py\
 __v4.0.2__ : Fix generation part for being compatible and prepare evaluation on model.py   
 
-__v4.1__ : Evolve generation model and add ån evaluation file for generation part
-
+__v4.1__ : Evolve generation model and add an evaluation file for generation part\
+__v4.1.1__ : Faster MRR, Hits@k evaluation, skip dataset saving, minor bug fix in model.py when ignoring signal from negative sample for Masked LP, Masked LM 
 

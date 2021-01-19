@@ -440,12 +440,12 @@ class Evaluation_DataCollator:
     def __call__(self,features: List[InputDataClass]) -> Dict[str, torch.Tensor]:
         if not isinstance(features[0], (dict, BatchEncoding)):
             features = [vars(f) for f in features]
-        batch = self._tensorize_batch(features, self.NCE)
+        batch = self._tensorize_batch(features)
         batch_size = len(features)
 
         return batch
 
-    def _tensorize_batch(self,features: List[Dict], NCE) -> Dict[str, torch.Tensor]:
+    def _tensorize_batch(self,features: List[Dict]) -> Dict[str, torch.Tensor]:
         # In this function we'll make the assumption that all `features` in the batch
         # have the same attributes.
         # So we will look at the first element as a proxy for what attributes exist

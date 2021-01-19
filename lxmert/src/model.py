@@ -1316,11 +1316,13 @@ class LxmertForRanking(LxmertPreTrainedModel):
             lxmert_output.kg_output,
             lxmert_output.pooled_output,
         )
-
         cross_relationship_score = pooled_output.squeeze()
-        total_loss = self.loss_fcts["ce"](cross_relationship_score, label)
-
-        loss_dict['loss']=total_loss.mean().item()
+        if label is not None:
+            total_loss = self.loss_fcts["ce"](cross_relationship_score, label)
+            loss_dict['loss']=total_loss.mean().item()
+        else:
+            total_loss = None
+        
 
         if not return_dict:
             output = (

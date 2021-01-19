@@ -3,15 +3,15 @@ import json
 import os
 # ======================= CONFIG ==================== #
 ## GPU setting
-os.environ["CUDA_VISIBLE_DEVICES"] = '4'
+os.environ["CUDA_VISIBLE_DEVICES"] = '5'
 ## TASK & DB
 Evaluation = False
-TASK_NAME = 'single_binary_retrieval'
+TASK_NAME = 'binary_retrieval'
 DB = 'dx,prx'
 DB_size = 2000
 ## Pretraining Configs
 MODEL_TYPE = 'both'
-Unified = False
+Unified = True
 Align = False
 Relation_Classification = True
 Scratch_Downstream = False
@@ -61,8 +61,8 @@ TRAINING_CONFIG = {
     "learning_rate": 1e-5,
     "num_train_epochs": 20,
     "num_log_per_epoch": 20,
-    "save_per_run": 5,
-    "num_eval_per_epoch": 5,
+    "save_per_run": 4,
+    "num_eval_per_epoch": 2,
     "task" : TASK_NAME,
     "train_data_file":os.path.join(EXP_PATH,f"data/{DB}_{DB_size}/{MODEL_NAME}/train"),
     "eval_data_file": os.path.join(EXP_PATH,f"data/{DB}_{DB_size}/{MODEL_NAME}/valid"),
@@ -102,10 +102,10 @@ else:
         TRAINING_CONFIG['model_name_or_path'] = os.path.join(EXP_PATH, f'pretrained_models/{TASK_NAME}/{RUN_NAME}')
         if TASK_NAME in ['generation']:
             SRC_PATH = os.path.join(EXP_PATH, 'src/evaluation_generation.py')
-            TRAINING_CONFIG['output_dir'] = os.path.join(EXP_PATH,f"eval_output/{TASK_NAME}/{RUN_NAME}")
             TRAINING_CONFIG['decode_option'] = {"perturb_type" : 'pad_all', # init_all, pad_all, None
                                                 "given_lang_tokens": 1, # 1,5,25
                                                 "clean_outputs": True}
+        TRAINING_CONFIG['output_dir'] = os.path.join(EXP_PATH,f"eval_output/{TASK_NAME}/{RUN_NAME}")
     else:
         SRC_PATH = os.path.join(EXP_PATH, 'src/finetune.py')
         if TASK_NAME.split('_')[0] == 'single':

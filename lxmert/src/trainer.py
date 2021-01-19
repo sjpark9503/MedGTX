@@ -660,7 +660,7 @@ class Trainer:
                 self.best_eval_loss = metrics['eval_loss']
             else:
                 self.early_stop_queue +=1
-                if self.early_stop_queue > 2:
+                if self.early_stop_queue > self.args.num_eval_per_epoch:
                     FLAG_EarlyStop = True
                     logger.info("No progress on Evaluation loss. Early stop the training loop")
             logger.info("eval done")
@@ -1153,11 +1153,11 @@ class Trainer:
                     return (outputs.lang_prediction_logits.detach().numpy(), outputs.kg_prediction_logits.detach().numpy())
 
                 if not prediction_loss_only:
-                    self.predicted['lang'] += torch.max(outputs.lang_prediction_logits, dim=2)[-1][~inputs['lm_label'].eq(-100)].view(
+                    self.predicted['lang'] += torch.max(outputs.lang_prediction_logits, dim=2)[-1][:inputs['lm_label'].size(0)][~inputs['lm_label'].eq(-100)].view(
                         -1).long().tolist()
                     self.predicted['gt_lang'] += inputs['lm_label'][~inputs['lm_label'].eq(-100)].view(
                         -1).long().tolist()
-                    self.predicted['kg'] += torch.max(outputs.kg_prediction_logits, dim=2)[-1][~inputs['kg_label'].eq(-100)].view(
+                    self.predicted['kg'] += torch.max(outputs.kg_prediction_logits, dim=2)[-1][:inputs['lm_label'].size(0)][~inputs['kg_label'].eq(-100)].view(
                         -1).long().tolist()
                     self.predicted['gt_kg'] += inputs['kg_label'][~inputs['kg_label'].eq(-100)].view(
                         -1).long().tolist()
