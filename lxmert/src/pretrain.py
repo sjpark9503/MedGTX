@@ -129,11 +129,15 @@ def main():
                     tokenizer=tokenizer,
                     token_type_vocab=config.token_type_vocab,
                     )
+    logger.info(train_dataset[0])
     eval_dataset = get_dataset(data_args,
                                tokenizer=tokenizer,
                                token_type_vocab = config.token_type_vocab,
                                evaluate=True)
-    test_dataset = get_dataset(data_args, tokenizer=tokenizer, token_type_vocab = config.token_type_vocab, test=True) if training_args.do_eval else None
+    test_dataset = get_dataset(data_args, 
+                    tokenizer=tokenizer, 
+                    token_type_vocab = config.token_type_vocab, 
+                    test=True) if training_args.do_eval else None
     eval_data_collator = None
     if config.task_mask_lm and config.task_mask_kg:
         data_collator = NodeClassification_DataCollator(tokenizer=tokenizer,

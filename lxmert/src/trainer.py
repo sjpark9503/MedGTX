@@ -1157,7 +1157,7 @@ class Trainer:
                         -1).long().tolist()
                     self.predicted['gt_lang'] += inputs['lm_label'][~inputs['lm_label'].eq(-100)].view(
                         -1).long().tolist()
-                    self.predicted['kg'] += torch.max(outputs.kg_prediction_logits, dim=2)[-1][~inputs['kg_label'].eq(-100)].view(
+                    self.predicted['kg'] += torch.max(outputs.kg_prediction_logits, dim=2)[-1][:inputs['lm_label'].size(0)][~inputs['kg_label'].eq(-100)].view(
                         -1).long().tolist()
                     self.predicted['gt_kg'] += inputs['kg_label'][~inputs['kg_label'].eq(-100)].view(
                         -1).long().tolist()

@@ -64,26 +64,26 @@ class HeadOnlyDataset(Dataset):
         self.token_type_vocab = token_type_vocab
         self.tokenizer = tokenizer
         self.features = list()
-        if not os.path.isfile(os.path.join(file_path,'cached_feature')):
-            logger.info("Creating features from dataset file at %s", file_path)
-            # Loading preprocessed data
-            self.batch_encoding = torch.load(os.path.join(file_path,'db'))
-            self.batch_encoding['lang'] = dict()
-            for text in tqdm(self.batch_encoding['text']):
-                sections, notes = list(text.keys()), list(text.values())
-                sample = tokenizer(f' {tokenizer.sep_token} '.join([x.strip() for x in notes]) , add_special_tokens=True, padding='max_length', truncation=True, max_length=block_size, return_token_type_ids=False)
-                if token_type_vocab:
-                    sample['token_type_ids'] = self.generate_type_ids(sections, sample['input_ids'])
-                for k, v in sample.items():
-                    if k not in self.batch_encoding['lang']:
-                        self.batch_encoding['lang'][k] = list()
-                    self.batch_encoding['lang'][k].append(v)
-            self.batch2feature()
-            logger.info("Saving features...")
-            torch.save(self.features,os.path.join(file_path,'cached_feature'))
-        else:
-            logger.info("Loading features from dataset file at %s", file_path)
-            self.features = torch.load(os.path.join(file_path,'cached_feature'))
+        # if not os.path.isfile(os.path.join(file_path,'cached_feature')):
+        logger.info("Creating features from dataset file at %s", file_path)
+        # Loading preprocessed data
+        self.batch_encoding = torch.load(os.path.join(file_path,'db'))
+        self.batch_encoding['lang'] = dict()
+        for text in tqdm(self.batch_encoding['text']):
+            sections, notes = list(text.keys()), list(text.values())
+            sample = tokenizer(f' {tokenizer.sep_token} '.join([x.strip() for x in notes]) , add_special_tokens=True, padding='max_length', truncation=True, max_length=block_size, return_token_type_ids=False)
+            if token_type_vocab:
+                sample['token_type_ids'] = self.generate_type_ids(sections, sample['input_ids'])
+            for k, v in sample.items():
+                if k not in self.batch_encoding['lang']:
+                    self.batch_encoding['lang'][k] = list()
+                self.batch_encoding['lang'][k].append(v)
+        self.batch2feature()
+        #     logger.info("Saving features...")
+        #     torch.save(self.features,os.path.join(file_path,'cached_feature'))
+        # else:
+        #     logger.info("Loading features from dataset file at %s", file_path)
+        #     self.features = torch.load(os.path.join(file_path,'cached_feature'))
 
     def generate_type_ids(self, sections, tokens):
         idx = 0
