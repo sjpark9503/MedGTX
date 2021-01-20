@@ -659,10 +659,10 @@ class Trainer:
             if metrics['eval_loss'] < self.best_eval_loss:
                 self.best_eval_loss = metrics['eval_loss']
             else:
-                self.early_stop_queue +=1
                 if self.early_stop_queue > self.args.num_eval_per_epoch:
                     FLAG_EarlyStop = True
                     logger.info("No progress on Evaluation loss. Early stop the training loop")
+                self.early_stop_queue +=1
             logger.info("eval done")
         else:
             metrics = None

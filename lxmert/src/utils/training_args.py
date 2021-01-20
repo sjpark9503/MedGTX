@@ -346,9 +346,6 @@ class TrainingArguments:
         self.evaluation_strategy = EvaluationStrategy(self.evaluation_strategy)
         if self.do_eval is False and self.evaluation_strategy != EvaluationStrategy.NO:
             self.do_eval = True
-        if self.num_eval_per_epoch is None:
-            self.num_eval_per_epoch = 1
-
         if self.load_best_model_at_end and self.metric_for_best_model is None:
             self.metric_for_best_model = "loss"
         if self.greater_is_better is None and self.metric_for_best_model is not None:
