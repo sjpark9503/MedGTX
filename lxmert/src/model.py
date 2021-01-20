@@ -23,6 +23,7 @@ from typing import Optional, Tuple
 import torch
 from torch import nn
 from torch.nn import CrossEntropyLoss, MSELoss, SmoothL1Loss
+import torch.nn.functional as F
 
 from transformers.activations import ACT2FN, gelu
 from transformers.configuration_lxmert import LxmertConfig
@@ -1346,23 +1347,20 @@ class LxmertForGeneration(LxmertPreTrainedModel):
         super().__init__(config)
         
         # Configuration
-        self.config = config        
+        self.config = config
         # self.num_kg_labels = config.num_kg_labels
         
         # Lxmert backbone
         self.lxmert = LxmertModel(config)
-        # self.dropout = nn.Dropout(config.hidden_dropout_prob)
-        # self.classifier = nn.Linear(config.hidden_size, config.num_kg_labels)
-        # self.edge_classifier = nn.Sequential(nn.Linear(config.hidden_size*2, config.hidden_size*2),
-                                            # nn.Tanh(),
-                                            # nn.Linear(config.hidden_size*2, config.num_relations))
 
         # Pre-training heads
         self.lm_head = LxmertPreTrainingHeads(config, self.lxmert.lang_embeddings.word_embeddings.weight)
         
         # Tokenizer
         self.tokenizer = tokenizer
+        self.pad_token_id = tokenizer.pad_token_id
         self.sep_token_id = tokenizer.sep_token_id
+        self.mask_token_id = tokenizer.mask_token_id
         
         # Weight initialization
         self.init_weights()
@@ -1388,6 +1386,7 @@ class LxmertForGeneration(LxmertPreTrainedModel):
         given_lang_tokens=1,
         perturb_type=None,
         clean_outputs=True,
+        given_gt_length=False,
         ):
         
         device = lang_input_ids.device if lang_input_ids is not None else lang_inputs_embeds.device
@@ -1407,14 +1406,14 @@ class LxmertForGeneration(LxmertPreTrainedModel):
         assert len(lang_input_ids.shape) == 2
         batch_size, max_length = lang_input_ids.shape
         # set output_length for max_length within a batch
-        gt_length = torch.sum(lang_input_ids.not_equal(self.tokenizer.pad_token_id), axis=1)
+        gt_length = torch.sum(lang_input_ids.not_equal(self.pad_token_id), axis=1)
         output_length = torch.max(gt_length).item()
         assert output_length <= max_length
         
         # construct initial point
         output_ids = []
         curr_ids = lang_input_ids[:, :given_lang_tokens]
-        mask_ids = lang_input_ids.new(batch_size, 1).fill_(self.tokenizer.mask_token_id)
+        mask_ids = lang_input_ids.new(batch_size, 1).fill_(self.mask_token_id)
         output_ids.append(curr_ids)
         
         next_pos = given_lang_tokens
@@ -1452,34 +1451,39 @@ class LxmertForGeneration(LxmertPreTrainedModel):
             
             # predict [MASK] by greedy infer.
             last_hidden = lang_output[:, -1, :]
-            lang_prediction_scores = self.lm_head(last_hidden)
-            _, max_ids = torch.max(lang_prediction_scores, dim=1)
+            prediction_scores = self.lm_head(last_hidden)
+            _, max_ids = torch.max(prediction_scores, dim=1)
             output_ids.append(max_ids.unsqueeze(1))
             
             # setup for next loop
             curr_ids[:, curr_length] = max_ids
             next_pos += 1
-        
-        # print(len(input_ids), batch_size)
-        # assert batch_size == len(output_ids)
-        # assert output_length == len(output_ids[0])
             
         output_ids = torch.cat(output_ids, dim=1)
         
-        output_ids = self.clean_output_ids(output_ids=output_ids, gt_length=gt_length, num_sep_id=num_db) if clean_outputs \
-            else output_ids
+        if clean_outputs:
+            output_ids = self.clean_output_ids(output_ids=output_ids,
+                                               gt_length=gt_length,
+                                               num_sep_id=num_db,
+                                               given_gt_length=given_gt_length)
         
         outputs = (output_ids, kg_input_ids, lang_input_ids) if perturb_type is None \
             else (output_ids, org_kg_input_ids, lang_input_ids, kg_input_ids)
         return outputs
     
-    def clean_output_ids(self, output_ids, gt_length, num_sep_id):
+    def clean_output_ids(self, output_ids, gt_length, num_sep_id, given_gt_length):
         c_output_ids = []
-        for i, o in enumerate(output_ids):
-            l_gt = gt_length[i]
-            sep_idx = o.eq(self.sep_token_id)
-            l_sep = torch.nonzero(sep_idx)[num_sep_id-1] if sep_idx.sum() >= num_sep_id else 512
-            c_output_ids.append(o[:min(l_gt, l_sep)])
+        if given_gt_length:
+            for i, o in enumerate(output_ids):
+                l_gt = gt_length[i]
+                sep_idx = o.eq(self.sep_token_id)
+                l_sep = torch.nonzero(sep_idx)[num_sep_id-1] if sep_idx.sum() >= num_sep_id else 512
+                c_output_ids.append(o[:min(l_gt, l_sep)])
+        else:
+            for i, o in enumerate(output_ids):
+                sep_idx = o.eq(self.sep_token_id)
+                l_sep = torch.nonzero(sep_idx)[num_sep_id-1] if sep_idx.sum() >= num_sep_id else 512
+                c_output_ids.append(o[:min(512, l_sep)])
         return c_output_ids
     
     def convert_token_type_ids(self, curr_ids, curr_token_type_ids):
@@ -1514,175 +1518,155 @@ class LxmertForGeneration(LxmertPreTrainedModel):
             kg_padding_mask
             )
             
-    
-    # def beam_search(
-    #     self,
-    #     lang_input_ids=None,
-    #     kg_input_ids=None,
-    #     lang_inputs_embeds=None,
-    #     kg_inputs_embeds=None,
-    #     lang_attention_mask=None,
-    #     kg_attention_mask=None,
-    #     kg_padding_mask=None,
-    #     kg_label_mask=None,
-    #     lm_label=None,
-    #     kg_label=None,
-    #     token_type_ids=None,
-    #     output_attentions=None,
-    #     output_hidden_states=None,
-    #     return_dict=True,
-    #     ):
+    def beam_search(
+        self,
+        lang_input_ids=None,
+        kg_input_ids=None,
+        lang_inputs_embeds=None,
+        kg_inputs_embeds=None,
+        lang_attention_mask=None,
+        kg_attention_mask=None,
+        kg_padding_mask=None,
+        kg_label_mask=None,
+        lm_label=None,
+        kg_label=None,
+        token_type_ids=None,
+        output_attentions=None,
+        output_hidden_states=None,
+        return_dict=True,
+        search_beam_size=5,
+        ):
         
-    #     input_shape = list(input_ids.size())
-    #     batch_size = input_shape[0]
-    #     input_length = input_shape[1]
-    #     output_shape = list(token_type_ids.size())
-    #     output_length = output_shape[1]
+        # num_db: dx,prx(2) / px(1)
+        num_db = len(torch.bincount(token_type_ids.flatten()))
+        
+        batch_size, max_length = lang_input_ids.shape
 
-    #     output_ids = []
-    #     prev_embedding = None
-    #     prev_encoded_layers = None
-    #     curr_ids = input_ids
-    #     mask_ids = input_ids.new(batch_size, 1).fill_(self.mask_word_id)
-    #     next_pos = input_length
-    #     # if self.pos_shift:
-    #     #     sos_ids = input_ids.new(batch_size, 1).fill_(self.sos_id)
+        # find maximum output_length
+        gt_length = torch.sum(lang_input_ids.not_equal(self.pad_token_id), axis=1)
+        output_length = torch.max(gt_length).item()
 
-    #     K = self.search_beam_size
+        # init settings
+        curr_ids = lang_input_ids[:, :1]
+        mask_ids = curr_ids.new(batch_size, 1).fill_(self.mask_token_id)
+        # output_ids = []
+        # output_ids.append(curr_ids)
 
-    #     total_scores = []
-    #     beam_masks = []
-    #     step_ids = []
-    #     step_back_ptrs = []
-    #     partial_seqs = []
-    #     forbid_word_mask = None
-    #     buf_matrix = None
+        next_pos = 1
+        K = search_beam_size
 
-    #     while next_pos < output_length:
-    #         curr_length = list(curr_ids.size())[1]
+        total_scores = []
+        beam_masks = []
+        step_ids = []
+        step_back_ptrs = []
+        partial_seqs = []
+        forbid_word_mask = None
+        buf_matrix = None
 
-    #         # if self.pos_shift:
-    #         #     if next_pos == input_length:
-    #         #         x_input_ids = torch.cat((curr_ids, sos_ids), dim=1)
-    #         #         start_pos = 0
-    #             # else:
-    #             #     x_input_ids = curr_ids
-    #             #     start_pos = next_pos
-    #         else:
-    #             start_pos = next_pos - curr_length
-    #             x_input_ids = torch.cat((curr_ids, mask_ids), dim=1)
+        output_length = 6 # for temp
 
-    #         curr_token_type_ids = token_type_ids[:, start_pos:next_pos + 1]
-    #         curr_attention_mask = attention_mask[:,
-    #                                              start_pos:next_pos + 1, :next_pos + 1]
-    #         curr_position_ids = position_ids[:, start_pos:next_pos + 1]
-    #         new_embedding, new_encoded_layers, _ = \
-    #             self.bert(x_input_ids, curr_token_type_ids, curr_position_ids, curr_attention_mask,
-    #                       output_all_encoded_layers=True, prev_embedding=prev_embedding, prev_encoded_layers=prev_encoded_layers, mask_qkv=mask_qkv)
+        while next_pos < output_length:
+            
+            # construct current inputs
+            curr_length = list(curr_ids.size())[1]
+            curr_ids = torch.cat([curr_ids, mask_ids], axis=1)    
+            curr_token_type_ids = token_type_ids[:, :curr_length+1]
+            curr_attention_mask = lang_attention_mask[:, :curr_length+1, :curr_length+1]
+            
+            # output for current inputs
+            lxmert_output = model.lxmert(
+                lang_input_ids=curr_ids,
+                kg_input_ids=kg_input_ids,
+                lang_attention_mask=curr_attention_mask,
+                kg_padding_mask=kg_padding_mask,
+                token_type_ids=curr_token_type_ids,
+                output_attentions=False,
+                output_hidden_states=False,
+                return_dict=True,
+            )
+            lang_output, _, _ = (
+                lxmert_output.language_output,
+                lxmert_output.kg_output,
+                lxmert_output.pooled_output,
+            )
+            last_hidden = lang_output[:, -1, :]
+            prediction_scores = model.lm_head(last_hidden)
+            log_scores = F.log_softmax(prediction_scores, dim=-1)
+            
+            # choose top-k logits and indices
+            kk_scores, kk_ids = torch.topk(log_scores, k=K) # (batch_size, beam_size) / (batch_size*beam_size, beam_size)
+            
+            def first_expand(x):
+                input_shape = list(x.size())
+                expanded_shape = input_shape[:1] + [1] + input_shape[1:]
+                x = torch.reshape(x, expanded_shape)
+                repeat_count = [1, K] + [1] * (len(input_shape) - 1)
+                x = x.repeat(*repeat_count)
+                x = torch.reshape(x, [input_shape[0] * K] + input_shape[1:])
+                return x
+            
+            def select_beam_items(x, ids):
+                id_shape = list(ids.size())
+                id_rank = len(id_shape)
+                assert len(id_shape) == 2
+                x_shape = list(x.size())
+                x = torch.reshape(x, [batch_size, K] + x_shape[1:])
+                x_rank = len(x_shape) + 1
+                assert x_rank >= 2
+                if id_rank < x_rank:
+                    ids = torch.reshape(
+                        ids, id_shape + [1] * (x_rank - id_rank))
+                    ids = ids.expand(id_shape + x_shape[1:])
+                y = torch.gather(x, 1, ids)
+                y = torch.reshape(y, x_shape)
+                return y
+            
+            if len(total_scores) == 0: # for the first time,
+                k_ids = torch.reshape(kk_ids, [batch_size, K])
+                back_ptrs = torch.zeros(batch_size, K, dtype=torch.long)
+                k_scores = torch.reshape(kk_scores, [batch_size, K])
+            else:
+                last_eos = torch.reshape(beam_masks[-1], [batch_size * K, 1])
+                last_seq_scores = torch.reshape(total_scores[-1], [batch_size * K, 1])
+                kk_scores += last_eos * (-10000.0) + last_seq_scores
+                kk_scores = torch.reshape(kk_scores, [batch_size, K * K])
+                k_scores, k_ids = torch.topk(kk_scores, k=K)
+                back_ptrs = torch.floor_divide(k_ids, K)
+                kk_ids = torch.reshape(kk_ids, [batch_size, K * K])
+                k_ids = torch.gather(kk_ids, 1, k_ids)
+                curr_ids = select_beam_items(curr_ids, back_ptrs.long())
+                
+            step_back_ptrs.append(back_ptrs)
+            step_ids.append(k_ids)
+            beam_masks.append(torch.eq(k_ids, self.sep_token_id).float())
+            total_scores.append(k_scores)
 
-    #         last_hidden = new_encoded_layers[-1][:, -1:, :]
-    #         prediction_scores, _ = self.cls(
-    #             last_hidden, None, task_idx=task_idx)
-    #         log_scores = torch.nn.functional.log_softmax(
-    #             prediction_scores, dim=-1)
-    #         # if forbid_word_mask is not None:
-    #         #     log_scores += (forbid_word_mask * -10000.0)
-    #         if self.min_len and (next_pos-input_length+1 <= self.min_len):
-    #             log_scores[:, :, self.eos_id].fill_(-10000.0)
-    #         # if self.not_predict_set:
-    #         #     for token_id in self.not_predict_set:
-    #         #         log_scores[:, :, token_id].fill_(-10000.0)
-    #         kk_scores, kk_ids = torch.topk(log_scores, k=K)
-    #         if len(total_scores) == 0:
-    #             k_ids = torch.reshape(kk_ids, [batch_size, K])
-    #             back_ptrs = torch.zeros(batch_size, K, dtype=torch.long)
-    #             k_scores = torch.reshape(kk_scores, [batch_size, K])
-    #         else:
-    #             last_eos = torch.reshape(
-    #                 beam_masks[-1], [batch_size * K, 1, 1])
-    #             last_seq_scores = torch.reshape(
-    #                 total_scores[-1], [batch_size * K, 1, 1])
-    #             kk_scores += last_eos * (-10000.0) + last_seq_scores
-    #             kk_scores = torch.reshape(kk_scores, [batch_size, K * K])
-    #             k_scores, k_ids = torch.topk(kk_scores, k=K)
-    #             back_ptrs = torch.div(k_ids, K)
-    #             kk_ids = torch.reshape(kk_ids, [batch_size, K * K])
-    #             k_ids = torch.gather(kk_ids, 1, k_ids)
-    #         step_back_ptrs.append(back_ptrs)
-    #         step_ids.append(k_ids)
-    #         beam_masks.append(torch.eq(k_ids, self.eos_id).float())
-    #         total_scores.append(k_scores)
-
-    #         def first_expand(x):
-    #             input_shape = list(x.size())
-    #             expanded_shape = input_shape[:1] + [1] + input_shape[1:]
-    #             x = torch.reshape(x, expanded_shape)
-    #             repeat_count = [1, K] + [1] * (len(input_shape) - 1)
-    #             x = x.repeat(*repeat_count)
-    #             x = torch.reshape(x, [input_shape[0] * K] + input_shape[1:])
-    #             return x
-
-    #         def select_beam_items(x, ids):
-    #             id_shape = list(ids.size())
-    #             id_rank = len(id_shape)
-    #             assert len(id_shape) == 2
-    #             x_shape = list(x.size())
-    #             x = torch.reshape(x, [batch_size, K] + x_shape[1:])
-    #             x_rank = len(x_shape) + 1
-    #             assert x_rank >= 2
-    #             if id_rank < x_rank:
-    #                 ids = torch.reshape(
-    #                     ids, id_shape + [1] * (x_rank - id_rank))
-    #                 ids = ids.expand(id_shape + x_shape[1:])
-    #             y = torch.gather(x, 1, ids)
-    #             y = torch.reshape(y, x_shape)
-    #             return y
-
-    #         is_first = (prev_embedding is None)
-
-    #         # if self.pos_shift:
-    #         #     if prev_embedding is None:
-    #         #         prev_embedding = first_expand(new_embedding)
-    #         #     else:
-    #         #         prev_embedding = torch.cat(
-    #         #             (prev_embedding, new_embedding), dim=1)
-    #         #         prev_embedding = select_beam_items(
-    #         #             prev_embedding, back_ptrs)
-    #         #     if prev_encoded_layers is None:
-    #         #         prev_encoded_layers = [first_expand(
-    #         #             x) for x in new_encoded_layers]
-    #         #     else:
-    #         #         prev_encoded_layers = [torch.cat((x[0], x[1]), dim=1) for x in zip(
-    #         #             prev_encoded_layers, new_encoded_layers)]
-    #         #         prev_encoded_layers = [select_beam_items(
-    #         #             x, back_ptrs) for x in prev_encoded_layers]
-    #         else:
-    #             if prev_embedding is None:
-    #                 prev_embedding = first_expand(new_embedding[:, :-1, :])
-    #             else:
-    #                 prev_embedding = torch.cat(
-    #                     (prev_embedding, new_embedding[:, :-1, :]), dim=1)
-    #                 prev_embedding = select_beam_items(
-    #                     prev_embedding, back_ptrs)
-    #             if prev_encoded_layers is None:
-    #                 prev_encoded_layers = [first_expand(
-    #                     x[:, :-1, :]) for x in new_encoded_layers]
-    #             else:
-    #                 prev_encoded_layers = [torch.cat((x[0], x[1][:, :-1, :]), dim=1)
-    #                                        for x in zip(prev_encoded_layers, new_encoded_layers)]
-    #                 prev_encoded_layers = [select_beam_items(
-    #                     x, back_ptrs) for x in prev_encoded_layers]
-
-    #         curr_ids = torch.reshape(k_ids, [batch_size * K, 1])
-
-    #         if is_first:
-    #             token_type_ids = first_expand(token_type_ids)
-    #             position_ids = first_expand(position_ids)
-    #             attention_mask = first_expand(attention_mask)
-    #             mask_ids = first_expand(mask_ids)
-    #             if mask_qkv is not None:
-    #                 mask_qkv = first_expand(mask_qkv)
-
+            if next_pos == 1: # for the first time,
+                curr_ids = first_expand(curr_ids)
+                kg_input_ids = first_expand(kg_input_ids)
+                token_type_ids = first_expand(token_type_ids)
+                lang_attention_mask = first_expand(lang_attention_mask)
+                kg_padding_mask = first_expand(kg_padding_mask)
+                mask_ids = first_expand(mask_ids)
+            
+            # fill out the [MASK]'s position with stretched ids
+            curr_ids[:, curr_length] = torch.reshape(k_ids, [batch_size * K])
+            next_pos += 1
+            
+        output_ids = curr_ids.reshape(batch_size, K, -1)
+            
+        return output_ids
+            
+            
+            
+            # if forbid_word_mask is not None:
+            #     log_scores += (forbid_word_mask * -10000.0)
+            # if self.min_len and (next_pos-input_length+1 <= self.min_len):
+            #     log_scores[:, :, self.eos_id].fill_(-10000.0)
+            # if self.not_predict_set:
+            #     for token_id in self.not_predict_set:
+            #         log_scores[:, :, token_id].fill_(-10000.0)    
+            
     #         if self.forbid_duplicate_ngrams:
     #             wids = step_ids[-1].tolist()
     #             ptrs = step_back_ptrs[-1].tolist()
