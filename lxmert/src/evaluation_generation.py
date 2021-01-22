@@ -8,8 +8,11 @@ import os
 from dataclasses import dataclass, field
 from glob import glob
 from typing import Optional
-from torch.utils.data import ConcatDataset
+from tqdm import tqdm
 import torch
+from torch.utils.data import ConcatDataset
+from torch.utils.data.sampler import SequentialSampler
+from torch.utils.data.dataloader import DataLoader
 
 # Own implementation
 from utils.parameters import parser
@@ -47,7 +50,9 @@ def main():
             decode_option = literal_eval(r_arg.split('=')[1])
         else:
             raise ValueError("You have to add decode_option")
-        assert set(decode_option.keys()) == set(['perturb_type', 'given_lang_tokens', 'clean_outputs'])
+        decode_option['given_lang_tokens'] = int(decode_option['given_lang_tokens'])
+        decode_option['search_beam_size'] = int(decode_option['search_beam_size'])
+        assert set(decode_option.keys()) == set(['perturb_type', 'given_lang_tokens', 'clean_outputs', 'given_gt_length', 'search_beam_size'])
         
     if data_args.eval_data_file is None and training_args.do_eval:
         raise ValueError(
@@ -143,11 +148,6 @@ def main():
         data_args.block_size = min(data_args.block_size, tokenizer.max_len)
 
     # Get datasets
-    if training_args.do_train and data_args.train_data_file:
-        train_dataset = get_dataset(data_args,
-                                    tokenizer=tokenizer,
-                                    token_type_vocab=config.token_type_vocab,
-                                    )
     if training_args.do_eval and data_args.eval_data_file:
         eval_dataset = get_dataset(data_args,
                                    tokenizer=tokenizer,
@@ -159,7 +159,6 @@ def main():
         #                            token_type_vocab=config.token_type_vocab,
         #                            test=True
         #                            ) if training_args.do_eval else None
-    eval_data_collator = None
     
     # Get data collator
     if training_args.task == 'generation':
@@ -171,11 +170,8 @@ def main():
         raise NotImplementedError("Not implemented task")
     
     
-    
-    # Evaluate
+    # Helper function for evaluation
     def _get_dataloader(args, dataset, data_collator):
-        from torch.utils.data.sampler import SequentialSampler
-        from torch.utils.data.dataloader import DataLoader
         sampler = SequentialSampler(dataset)
         return DataLoader(
             dataset,
@@ -193,47 +189,7 @@ def main():
                 if isinstance(v, torch.Tensor):
                     inputs[k] = v.to(device)
         return inputs
-        
-    
-    if training_args.do_train and data_args.train_data_file:
-        train_dataloader = _get_dataloader(args=training_args, dataset=train_dataset, data_collator=data_collator)
-    if training_args.do_eval and data_args.eval_data_file:
-        eval_dataloader = _get_dataloader(args=training_args, dataset=eval_dataset, data_collator=data_collator)
-    
-    # Generate (=Decoding)
-    device = training_args.device
-    model.to(device)
-    
-    train_outputs, eval_outputs = None, None
-    if training_args.do_eval and data_args.eval_data_file:
-        from tqdm import tqdm
-        
-        logger.info("start decoding...")
-        
-        model.eval()
-        eval_outputs = {}
-        eval_outputs['pred_text'] = []
-        eval_outputs['gt_text'] = []
-        eval_outputs['gt_graph'] = []
-        eval_outputs['ptb_graph'] = []
-        for idx, inputs in tqdm(enumerate(eval_dataloader), total=len(eval_dataloader), desc='Step'):
-            inputs = _prepare_inputs(inputs, device)
-            outputs = model(
-                **inputs,
-                given_lang_tokens=int(decode_option['given_lang_tokens']),
-                perturb_type=decode_option['perturb_type'],
-                clean_outputs=decode_option['clean_outputs']
-                )
             
-            # save outputs
-            eval_outputs['pred_text'] += outputs[0]
-            eval_outputs['gt_graph'] += list(outputs[1])
-            eval_outputs['gt_text'] += list(outputs[2])
-            
-            if len(outputs) == 4:
-                eval_outputs['ptb_graph'] += eval_outputs['gt_text']
-                
-    # Save output
     def _prepare_outputs(outputs):
         if isinstance(outputs, list):
             for i, o in enumerate(outputs):
@@ -241,6 +197,70 @@ def main():
                     outputs[i] = o.cpu()
         return outputs
     
+    if training_args.do_eval and data_args.eval_data_file:
+        eval_dataloader = _get_dataloader(args=training_args, dataset=eval_dataset, data_collator=data_collator)
+        # test_dataloader = _get_dataloader(args=training_args, dataset=test_dataset, data_collator=data_collator)
+    
+    
+    device = training_args.device
+    model.to(device)
+    model.eval()
+    
+    eval_outputs, test_outputs = None, None
+    if training_args.do_eval and data_args.eval_data_file:        
+        eval_outputs = {'prd_text': [],
+                        'gt_text': [],
+                        'gt_graph': [],
+                        'ptb_graph': [],
+                        'metric': {'bleu': [], 'rouge': [], 'ppl': []},
+        }
+        eval_dataset_size = len(eval_dataset)
+        
+        # 1. generate text(=decoding)
+        logger.info("start decoding...")
+        with torch.no_grad():
+            for idx, inputs in tqdm(enumerate(eval_dataloader), total=len(eval_dataloader), desc='Step'):
+                # if idx > 5:
+                #     continue
+                inputs = _prepare_inputs(inputs, device)
+                outputs = model(**inputs, **decode_option)
+                
+                eval_outputs['prd_text'] += outputs[0]
+                eval_outputs['gt_graph'] += list(outputs[1])
+                eval_outputs['gt_text'] += list(outputs[2])
+                if len(outputs) == 4:
+                    eval_outputs['ptb_graph'] += list(outputs[3])
+                    
+        # 2. evaluate metrics
+        logger.info("start evaluation...")
+        
+        from utils.metrics import bleu_all
+        K = decode_option['search_beam_size']
+        for idx in tqdm(range(eval_dataset_size)):
+            if K == 1:
+                ref = tokenizer.convert_ids_to_tokens(eval_outputs['prd_text'][idx], skip_special_tokens=True) # generated text
+                hyp = tokenizer.convert_ids_to_tokens(eval_outputs['gt_text'][idx], skip_special_tokens=True) # ground truth text
+                eval_outputs['metric']['bleu'] += bleu_all([ref], hyp)
+            else:
+                refs = [tokenizer.convert_ids_to_tokens(outputs[0][idx][k], skip_special_tokens=True) for k in range(K)] # generated text
+                hyp = tokenizer.convert_ids_to_tokens(outputs[2][idx], skip_special_tokens=True) # ground truth text
+                eval_outputs['metric']['bleu'] += bleu_all(refs, hyp)
+    
+        # 3. Summarize metrics
+        _keys = ['bleu-1', 'bleu-2', 'bleu-3', 'bleu-4', 'bleu-a', 'bleu-s']
+        bleu_scores = {k:0.0 for k in _keys}
+        for idx in tqdm(range(eval_dataset_size)):            
+            for k in _keys:
+                bleu_scores[k] += eval_outputs['metric']['bleu'][idx][k]
+                
+        print('bleu-1: ', bleu_scores['bleu-1']/eval_dataset_size)
+        print('bleu-2: ', bleu_scores['bleu-2']/eval_dataset_size)
+        print('bleu-3: ', bleu_scores['bleu-3']/eval_dataset_size)
+        print('bleu-4: ', bleu_scores['bleu-4']/eval_dataset_size)
+        print('bleu-a: ', bleu_scores['bleu-a']/eval_dataset_size)
+        print('bleu-s: ', bleu_scores['bleu-s']/eval_dataset_size)
+        
+    # 3. Save outputs
     if training_args.do_eval and data_args.eval_data_file:
         os.makedirs(training_args.output_dir, exist_ok=True)
         for k,v in eval_outputs.items():
@@ -250,37 +270,7 @@ def main():
         torch.save(eval_outputs, os.path.join(training_args.output_dir, f"eval_outputs_{file_suffix}.pt"))
     
     
-    # # Initialize our Trainer
-    # trainer = Trainer(
-    #     model=model,
-    #     args=training_args,
-    #     data_collator=data_collator,
-    #     eval_data_collator=eval_data_collator,
-    #     train_dataset=train_dataset,
-    #     eval_dataset=eval_dataset,
-    #     test_dataset=test_dataset
-    # )
-
-    # # Training
-    # if training_args.do_train:
-    #     model_path = (
-    #         model_args.model_name_or_path
-    #         if model_args.model_name_or_path is not None and os.path.isdir(model_args.model_name_or_path)
-    #         else None
-    #     )
-    #     trainer.train(model_path=model_path)
-    #     trainer.save_model()
-    #     # For convenience, we also re-save the tokenizer to the same directory,
-    #     # so that you can share your model easily on huggingface.co/models =)
-    #     if trainer.is_world_master():
-    #         tokenizer.save_pretrained(training_args.output_dir)
-
-    #if training_args.do_eval:
-        
-def _mp_fn(index):
-    # For xla_spawn (TPUs)
-    main()
-
+    
 
 if __name__ == "__main__":
     main()
