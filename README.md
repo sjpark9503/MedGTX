@@ -94,5 +94,5 @@ __v4.0.1__ : Add evaluation only option on run.py\
 __v4.0.2__ : Fix generation part for being compatible and prepare evaluation on model.py   
 
 __v4.1__ : Evolve generation model and add an evaluation file for generation part\
-__v4.1.1__ : Faster MRR, Hits@k evaluation, skip dataset saving, minor bug fix in model.py when ignoring signal from negative sample for Masked LP, Masked LM 
-
+__v4.1.1__ : Faster MRR, Hits@k evaluation, skip dataset saving, minor bug fix in model.py when ignoring signal from negative sample for Masked LP, Masked LM\
+__v4.1.2__ : add Evaluation file for generation (BLEU), add bleu_all on metrics.py, and ongoing... modify on model.py
