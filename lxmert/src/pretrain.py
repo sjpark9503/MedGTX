@@ -83,7 +83,8 @@ def main():
     else:
         config = CONFIG_MAPPING[model_args.model_type]()
         logger.warning("You are instantiating a new config instance from scratch.")
-
+    config.use_ce_pooler = True
+    logger.info(config)
     if model_args.tokenizer_name:
         tokenizer = LxmertTokenizer.from_pretrained(model_args.tokenizer_name, cache_dir=model_args.cache_dir)
     elif model_args.model_name_or_path:
@@ -136,7 +137,7 @@ def main():
                                evaluate=True)
     test_dataset = get_dataset(data_args, 
                     tokenizer=tokenizer, 
-                    token_type_vocab = config.token_type_vocab, 
+                    token_type_vocab = config.token_type_vocab,
                     test=True) if training_args.do_eval else None
     eval_data_collator = None
     if config.task_mask_lm and config.task_mask_kg:

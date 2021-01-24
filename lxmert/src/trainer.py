@@ -36,6 +36,7 @@ from sklearn.metrics import accuracy_score, f1_score, label_ranking_average_prec
 #from utils.metrics import MRR, Hits_at_k
 
 from torch import nn
+import torch.nn.functional as F
 from torch.utils.data.dataloader import DataLoader
 from torch.utils.data.dataset import Dataset
 from torch.utils.data.distributed import DistributedSampler
@@ -659,7 +660,7 @@ class Trainer:
             if metrics['eval_loss'] < self.best_eval_loss:
                 self.best_eval_loss = metrics['eval_loss']
             else:
-                if self.early_stop_queue > self.args.num_eval_per_epoch:
+                if (self.early_stop_queue > self.args.num_eval_per_epoch) and not self.task in ['pretrain','single_pretrain']:
                     FLAG_EarlyStop = True
                     logger.info("No progress on Evaluation loss. Early stop the training loop")
                 self.early_stop_queue +=1
@@ -802,7 +803,7 @@ class Trainer:
         loss = outputs.loss
         loss_dict = outputs.loss_dict
         if self.task in ['binary_retrieval', 'single_binary_retrieval']:
-            score = torch.max(outputs.cross_relationship_score,dim=1)[-1].tolist()
+            score = torch.max(outputs.pooled_logits,dim=1)[-1].tolist()
             gt = inputs['label'].tolist()
             loss_dict['Acc'] = accuracy_score(gt,score)
 
@@ -1076,6 +1077,9 @@ class Trainer:
         elif self.task in ['binary_retrieval', 'single_binary_retrieval']:
             self.predicted += [('score',[])]
             self.predicted += [('label', [])]
+        elif self.task in ['adm_lvl_prediction']:
+            self.predicted += [('score',[])]
+            self.predicted += [('label', [])]
         elif self.task in ['generation', 'single_generation']:
             self.predicted += [(k,[]) for k in ['lang']]
             self.predicted += [('gt_'+k, []) for k in ['lang']]
@@ -1109,6 +1113,8 @@ class Trainer:
                     self.metrics[f"eval_{key}_MacroF1"] = f1_score(self.predicted[f'gt_{key}'], self.predicted[key],average='macro')
             if (self.task in ['binary_retrieval', 'single_binary_retrieval']) and (key in ['score']):
                 self.metrics["eval_align_Acc"] = accuracy_score(self.predicted['label'],self.predicted['score'])
+            if (self.task in ['adm_lvl_prediction']) and (key in ['score']):
+                self.metrics[f"eval_P@{self.args.k}"] = precision_at_k(self.predicted['label'],self.predicted['score'])
             if (self.task in ['generation', 'single_generation']) and (key in ['lang']):
                 self.metrics[f"eval_{key}_Acc"] = accuracy_score(self.predicted[f'gt_{key}'],self.predicted[key])
                 self.metrics[f"eval_{key}_MacroF1"] = f1_score(self.predicted[f'gt_{key}'], self.predicted[key],average='macro')
@@ -1165,13 +1171,20 @@ class Trainer:
             ## prediction for binary retreival
             elif self.task in ['binary_retrieval', 'single_binary_retrieval']:
                 if prediction:
-                    return outputs.cross_relationship_score.detach().numpy()
+                    return outputs.pooled_logits.detach().numpy()
 
                 if not prediction_loss_only:
-                    self.predicted['score'] += torch.max(outputs.cross_relationship_score,dim=1)[-1].tolist()
+                    self.predicted['score'] += torch.max(outputs.pooled_logits,dim=1)[-1].tolist()
                     self.predicted['label'] += inputs['label'].tolist()
 
             ## prediction for triplet retreival
+            elif self.task in ['adm_lvl_prediction']:
+                if prediction:
+                    return outputs.pooled_logits.detach().numpy()
+
+                if not prediction_loss_only:
+                    self.predicted['score'] += F.sigmoid(outputs.pooled_logits).tolist()
+                    self.predicted['label'] += inputs['label'].tolist()
 
             ## prediction for generation
             elif self.task in ['generation', 'single_generation']:

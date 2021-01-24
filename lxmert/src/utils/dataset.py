@@ -45,6 +45,7 @@ class InputFeatures:
     kg_attention_mask: Optional[List[int]] = None
     kg_label_mask: Optional[List[int]] = None
     kg_label: Optional[List[int]] = None
+    label: Optional[List[int]] = None
     rc_indeces: Optional[List[int]] = None
     token_type_ids: Optional[List[int]] = None
 
@@ -103,9 +104,13 @@ class HeadOnlyDataset(Dataset):
             if 'mask' in self.batch_encoding:
                 inputs['kg_attention_mask'] = self.batch_encoding['mask'][idx]
             if 'label' in self.batch_encoding:
-                inputs['kg_label'] = self.batch_encoding['label'][idx]
-            inputs['kg_label_mask'] = self.batch_encoding['label_mask'][idx]
-            inputs['rc_indeces'] = self.batch_encoding['rc_index'][idx]
+                if 'label_mask' in self.batch_encoding:
+                    inputs['kg_label'] = self.batch_encoding['label'][idx]
+                    inputs['kg_label_mask'] = self.batch_encoding['label_mask'][idx]
+                else:
+                    inputs['label'] = self.batch_encoding['label'][idx]
+            if 'rc_indeces' in self.batch_encoding:
+                inputs['rc_indeces'] = self.batch_encoding['rc_index'][idx]
 
             feature = InputFeatures(**inputs)
             self.features.append(feature)

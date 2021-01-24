@@ -188,6 +188,52 @@ class LxmertForPreTrainingOutput(ModelOutput):
     kg_attentions: Optional[Tuple[torch.FloatTensor]] = None
     cross_encoder_attentions: Optional[Tuple[torch.FloatTensor]] = None
 
+@dataclass
+class LxmertForDownstreamOutput(ModelOutput):
+    """
+    Output type of :class:`~transformers.LxmertForPreTrainingModel`.
+
+    Args:
+        loss (`optional`, returned when ``labels`` is provided, ``torch.FloatTensor`` of shape :obj:`(1,)`):
+            Total loss as the sum of the masked language modeling loss and the next sequence prediction
+            (classification) loss.
+        prediction_logits (:obj:`torch.FloatTensor` of shape :obj:`(batch_size, sequence_length, config.vocab_size)`):
+            Prediction scores of the language modeling head (scores for each vocabulary token before SoftMax).
+        pooled_logits: (:obj:`torch.FloatTensor` of shape :obj:`(batch_size, 2)`):
+            Pooled logit from two [CLS] pooling token
+        question_answering_score: (:obj:`torch.FloatTensor` of shape :obj:`(batch_size, n_qa_answers)`):
+            Prediction scores of question answering objective (classification).
+        language_hidden_states (:obj:`tuple(torch.FloatTensor)`, `optional`, returned when ``output_hidden_states=True`` is passed or when ``config.output_hidden_states=True``):
+            Tuple of :obj:`torch.FloatTensor` (one for input features + one for the output of each cross-modality
+            layer) of shape :obj:`(batch_size, sequence_length, hidden_size)`.
+        vision_hidden_states (:obj:`tuple(torch.FloatTensor)`, `optional`, returned when ``output_hidden_states=True`` is passed or when ``config.output_hidden_states=True``):
+            Tuple of :obj:`torch.FloatTensor` (one for input features + one for the output of each cross-modality
+            layer) of shape :obj:`(batch_size, sequence_length, hidden_size)`.
+        language_attentions (:obj:`tuple(torch.FloatTensor)`, `optional`, returned when ``output_attentions=True`` is passed or when ``config.output_attentions=True``):
+            Tuple of :obj:`torch.FloatTensor` (one for each layer) of shape :obj:`(batch_size, num_heads,
+            sequence_length, sequence_length)`. Attentions weights after the attention softmax, used to compute the
+            weighted average in the self-attention heads.
+        vision_attentions (:obj:`tuple(torch.FloatTensor)`, `optional`, returned when ``output_attentions=True`` is passed or when ``config.output_attentions=True``):
+            Tuple of :obj:`torch.FloatTensor` (one for each layer) of shape :obj:`(batch_size, num_heads,
+            sequence_length, sequence_length)`. Attentions weights after the attention softmax, used to compute the
+            weighted average in the self-attention heads.
+        cross_encoder_attentions (:obj:`tuple(torch.FloatTensor)`, `optional`, returned when ``output_attentions=True`` is passed or when ``config.output_attentions=True``):
+            Tuple of :obj:`torch.FloatTensor` (one for each layer) of shape :obj:`(batch_size, num_heads,
+            sequence_length, sequence_length)`. Attentions weights after the attention softmax, used to compute the
+            weighted average in the self-attention heads.
+
+    """
+
+    loss: [torch.FloatTensor] = None
+    loss_dict: Optional[dict] = None
+    lang_prediction_logits: Optional[torch.FloatTensor] = None
+    kg_prediction_logits: Optional[torch.FloatTensor] = None
+    pooled_logits: Optional[torch.FloatTensor] = None
+    language_hidden_states: Optional[Tuple[torch.FloatTensor]] = None
+    kg_hidden_states: Optional[Tuple[torch.FloatTensor]] = None
+    language_attentions: Optional[Tuple[torch.FloatTensor]] = None
+    kg_attentions: Optional[Tuple[torch.FloatTensor]] = None
+    cross_encoder_attentions: Optional[Tuple[torch.FloatTensor]] = None
 
 def load_tf_weights_in_lxmert(model, config, tf_checkpoint_path):
     """Load tf checkpoints in a pytorch model."""
@@ -724,20 +770,22 @@ class LxmertEncoder(nn.Module):
 class LxmertPooler(nn.Module):
     def __init__(self, config):
         super(LxmertPooler, self).__init__()
-        self.pooler = nn.Sequential(nn.Linear(config.hidden_size*2, config.hidden_size*2),
+        self.multi_pooler = nn.Sequential(nn.Linear(config.hidden_size*2, config.hidden_size*2),
                                     nn.Tanh(),
-                                    nn.Linear(config.hidden_size*2, 1),
-                                    nn.Sigmoid())
+                                    nn.Linear(config.hidden_size*2, config.num_kg_labels))
         self.ce_pooler = nn.Sequential(nn.Linear(config.hidden_size*2, config.hidden_size*2),
                                     nn.Tanh(),
                                     nn.Linear(config.hidden_size*2, 2))
-
+        self.use_ce_pooler = config.use_ce_pooler
     #def forward(self, hidden_states):
     def forward(self, kg_hidden_states, lang_hidden_states):
         # We "pool" the model by simply taking the hidden state corresponding
         # to the first token.
         first_token_tensors = torch.cat([kg_hidden_states[:, 0],lang_hidden_states[:, 0]],dim=1)
-        pooled_output = self.ce_pooler(first_token_tensors)
+        if self.use_ce_pooler:
+            pooled_output = self.ce_pooler(first_token_tensors)
+        else:
+            pooled_output = self.multi_pooler(first_token_tensors)
         return pooled_output
 
 
@@ -1257,7 +1305,7 @@ class LxmertForRanking(LxmertPreTrainedModel):
         }
 
     #@add_start_docstrings_to_callable(LXMERT_INPUTS_DOCSTRING.format("batch_size, sequence_length"))
-    @replace_return_docstrings(output_type=LxmertForPreTrainingOutput, config_class=_CONFIG_FOR_DOC)
+    @replace_return_docstrings(output_type=LxmertForDownstreamOutput, config_class=_CONFIG_FOR_DOC)
     def forward(
         self,
         lang_input_ids=None,
@@ -1331,10 +1379,114 @@ class LxmertForRanking(LxmertPreTrainedModel):
             ) + lxmert_output[3:]
             return ((total_loss,) + output) if total_loss is not None else output
 
-        return LxmertForPreTrainingOutput(
+        return LxmertForDownstreamOutput(
             loss=total_loss,
             loss_dict=loss_dict,
-            cross_relationship_score=cross_relationship_score,
+            pooled_logits=cross_relationship_score,
+            language_hidden_states=lxmert_output.language_hidden_states,
+            kg_hidden_states=lxmert_output.kg_hidden_states,
+            language_attentions=lxmert_output.language_attentions,
+            kg_attentions=lxmert_output.kg_attentions,
+            cross_encoder_attentions=lxmert_output.cross_encoder_attentions,
+        )
+
+class LxmertForMultiLabelClassification(LxmertPreTrainedModel):
+    def __init__(self, config):
+        super().__init__(config)
+        # Configuration
+        self.config = config
+
+        # Lxmert backbone
+        self.lxmert = LxmertModel(config)
+        self.dropout = nn.Dropout(config.hidden_dropout_prob)
+
+        # Weight initialization
+        self.init_weights()
+
+        # Loss functions
+        self.loss_fcts = {
+            "bce": nn.BCEWithLogitsLoss()
+        }
+
+    #@add_start_docstrings_to_callable(LXMERT_INPUTS_DOCSTRING.format("batch_size, sequence_length"))
+    @replace_return_docstrings(output_type=LxmertForDownstreamOutput, config_class=_CONFIG_FOR_DOC)
+    def forward(
+        self,
+        lang_input_ids=None,
+        kg_input_ids=None,
+        lang_inputs_embeds=None,
+        kg_inputs_embeds=None,
+        lang_attention_mask=None,
+        kg_attention_mask=None,
+        kg_padding_mask=None,
+        label=None,
+        token_type_ids=None,
+        output_attentions=None,
+        output_hidden_states=None,
+        return_dict=True,
+    ):
+        r"""
+        masked_lm_labels (``torch.LongTensor`` of shape ``(batch_size, sequence_length)``, `optional`):
+            Labels for computing the masked language modeling loss. Indices should be in ``[-100, 0, ...,
+            config.vocab_size]`` (see ``input_ids`` docstring) Tokens with indices set to ``-100`` are ignored
+            (masked), the loss is only computed for the tokens with labels in ``[0, ..., config.vocab_size]``
+        obj_labels: (``Dict[Str: Tuple[Torch.FloatTensor, Torch.FloatTensor]]``, `optional`):
+            each key is named after each one of the visual losses and each element of the tuple is of the shape
+            ``(batch_size, num_features)`` and ``(batch_size, num_features, visual_feature_dim)`` for each the label id
+            and the label score respectively
+        matched_label (``torch.LongTensor`` of shape ``(batch_size,)``, `optional`):
+            Labels for computing the whether or not the text input matches the image (classification) loss. Input
+            should be a sequence pair (see :obj:`input_ids` docstring) Indices should be in ``[0, 1]``:
+
+            - 0 indicates that the sentence does not match the image,
+            - 1 indicates that the sentence does match the image.
+        ans: (``Torch.Tensor`` of shape ``(batch_size)``, `optional`):
+            a one hot representation hof the correct answer `optional`
+
+        Returns:
+        """
+
+        device = lang_input_ids.device if lang_input_ids is not None else inputs_embeds.device
+
+        loss_dict = dict()
+
+        lxmert_output = self.lxmert(
+            lang_input_ids=lang_input_ids,
+            kg_input_ids=kg_input_ids,
+            lang_inputs_embeds=lang_inputs_embeds,
+            kg_inputs_embeds=kg_inputs_embeds,
+            lang_attention_mask=lang_attention_mask,
+            kg_attention_mask=kg_attention_mask,
+            kg_padding_mask=kg_padding_mask,
+            token_type_ids=token_type_ids,
+            output_attentions=output_attentions,
+            output_hidden_states=output_hidden_states,
+            return_dict=return_dict,
+        )
+
+        lang_output, kg_output, multi_label_score = (
+            lxmert_output.language_output,
+            lxmert_output.kg_output,
+            lxmert_output.pooled_output,
+        )
+
+        if label is not None:
+            total_loss = self.loss_fcts["bce"](multi_label_score, label)
+            loss_dict['loss']=total_loss.mean().item()
+        else:
+            total_loss = None
+        
+
+        if not return_dict:
+            output = (
+                loss_dict,
+            ) + lxmert_output[3:]
+            return ((total_loss,) + output) if total_loss is not None else output
+
+        return LxmertForDownstreamOutput(
+            loss=total_loss,
+            loss_dict=loss_dict,
+            pooled_logits=multi_label_score,
             language_hidden_states=lxmert_output.language_hidden_states,
             kg_hidden_states=lxmert_output.kg_hidden_states,
             language_attentions=lxmert_output.language_attentions,

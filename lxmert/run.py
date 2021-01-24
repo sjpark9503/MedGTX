@@ -1,23 +1,32 @@
 import subprocess
 import json
 import os
+import time
 # ======================= CONFIG ==================== #
 ## GPU setting
-os.environ["CUDA_VISIBLE_DEVICES"] = '5'
+os.environ["CUDA_VISIBLE_DEVICES"] = '3'
+# for _unified in [True, False]:
+#     for _rc in [True, False]:
 ## TASK & DB
 Evaluation = False
-TASK_NAME = 'binary_retrieval'
+TASK_NAME = 'adm_lvl_prediction'
 DB = 'dx,prx'
 DB_size = 2000
 ## Pretraining Configs
-MODEL_TYPE = 'both'
-Unified = True
+MODEL_TYPE = 'rand'
+Unified = False
 Align = False
-Relation_Classification = True
+Relation_Classification = True 
 Scratch_Downstream = False
 ## Important Hyperparameters
+### Model Params
 Dim_Hidden = 128
 NUM_Layers = {'lang':2, 'kg':2, 'cross':4}
+### Training Args
+lr = 1e-5
+num_epochs = 20
+train_bsize = 8
+eval_bsize = 2
 Dropout = 0.1
 Num_Negatives = 1
 Margin = 1.0
@@ -30,7 +39,7 @@ Var_Align = 'Align_' if Align else ''
 Var_RC = 'RC_' if Relation_Classification else ''
 assert MODEL_TYPE in Var_MODEL, "Model not supported"
 assert DB in ['px','dx,prx'], "DB not supported"
-assert TASK_NAME in ['pretrain', 'binary_retrieval', 'generation', 'single_pretrain', 'single_binary_retrieval', 'single_generation'], "Task not supported"
+assert TASK_NAME in ['pretrain', 'binary_retrieval', 'generation', 'single_pretrain', 'single_binary_retrieval', 'single_generation', 'adm_lvl_prediction'], "Task not supported"
 if Scratch_Downstream is True:
     assert Align is False and Relation_Classification is False, "Scratch start downstream task must turn off alignment prediction & relation classification"
 
@@ -56,12 +65,12 @@ TRAINING_CONFIG = {
     "overwrite_output_dir":False,
     "mlm_probability": 0.15,
     "block_size": 512,
-    "per_device_train_batch_size": 16,
-    "per_device_eval_batch_size": 4,
-    "learning_rate": 1e-5,
-    "num_train_epochs": 20,
+    "per_device_train_batch_size": train_bsize,
+    "per_device_eval_batch_size": eval_bsize,
+    "learning_rate": lr,
+    "num_train_epochs": num_epochs,
     "num_log_per_epoch": 20,
-    "save_per_run": 4,
+    "save_per_run": (num_epochs//10) if TASK_NAME in ['pretrain', 'single_pretrain'] else int(1e2),
     "num_eval_per_epoch": 2,
     "task" : TASK_NAME,
     "train_data_file":os.path.join(EXP_PATH,f"data/{DB}_{DB_size}/{MODEL_NAME}/train"),
@@ -122,11 +131,20 @@ else:
         Config['hidden_dropout_prob'] = Dropout
         if TASK_NAME in ['generation']:
             Config['cross_att_type'] = 'unilm'
+        elif TASK_NAME in ['adm_lvl_prediction']:
+            Config['cross_att_type'] = 'single' if TASK_NAME.split('_')[0] == 'single' else 'cross'
+            for k in TRAINING_CONFIG:
+                if 'file' in k:
+                    TRAINING_CONFIG[k] = TRAINING_CONFIG[k].replace('data','data/adm')
+            Config['num_kg_labels'] = 8049 if DB=='px' else 9291
         else:
             Config['cross_att_type'] = 'single' if TASK_NAME.split('_')[0] == 'single' else 'cross'
         # overwrite config
-        with open(f"{TRAINING_CONFIG['model_name_or_path']}/config.json",'w') as g:
+        if not os.path.isdir(f"config/{TASK_NAME}/{DB}"):
+            os.makedirs(f"config/{TASK_NAME}/{DB}")
+        with open(f"config/{TASK_NAME}/{RUN_NAME}.json",'w') as g:
             json.dump(Config,g)
+        TRAINING_CONFIG['config_name'] = f"config/{TASK_NAME}/{RUN_NAME}.json"
     
 TRAINING_CONFIG_LIST = list()
 for (k,v) in list(TRAINING_CONFIG.items()):
@@ -138,4 +156,4 @@ for (k,v) in list(TRAINING_CONFIG.items()):
 
 # Run script
 subprocess.run(['python',SRC_PATH]+TRAINING_CONFIG_LIST)
-
+#time.sleep(60)

@@ -195,7 +195,6 @@ class NegativeSampling_DataCollator:
     - preprocesses batches for masked language modeling
     """
     tokenizer: PreTrainedTokenizerBase
-    NCE : bool
     kg_special_token_ids: dict
     n_negatives: int = 1
     prediction: bool = False
@@ -203,23 +202,23 @@ class NegativeSampling_DataCollator:
     def __call__(self,features: List[InputDataClass]) -> Dict[str, torch.Tensor]:
         if not isinstance(features[0], (dict, BatchEncoding)):
             features = [vars(f) for f in features]
-        batch = self._tensorize_batch(features, self.NCE)
+        batch = self._tensorize_batch(features)
         batch_size = len(features)
 
         if not self.prediction:
-            if self.NCE:
-                shuffled_idx = (torch.arange(batch_size) + torch.randint(1, batch_size - 1, (1, 1)).item()) % batch_size
-                batch['negative_kg_input_ids'] = batch['kg_input_ids'].detach().clone()[shuffled_idx]
-                batch['label'] = None
-            else:
-                batch['label'] = torch.cat([torch.ones(batch_size, dtype=torch.long),
+            # if self.NCE:
+            #     shuffled_idx = (torch.arange(batch_size) + torch.randint(1, batch_size - 1, (1, 1)).item()) % batch_size
+            #     batch['negative_kg_input_ids'] = batch['kg_input_ids'].detach().clone()[shuffled_idx]
+            #     batch['label'] = None
+            # else:
+            batch['label'] = torch.cat([torch.ones(batch_size, dtype=torch.long),
                                              torch.zeros(batch_size*self.n_negatives, dtype=torch.long)],dim=0)
         else:
             return NotImplementedError("Not Support Yet")
 
         return batch
 
-    def _tensorize_batch(self,features: List[Dict], NCE) -> Dict[str, torch.Tensor]:
+    def _tensorize_batch(self,features: List[Dict]) -> Dict[str, torch.Tensor]:
         # In this function we'll make the assumption that all `features` in the batch
         # have the same attributes.
         # So we will look at the first element as a proxy for what attributes exist
@@ -248,18 +247,72 @@ class NegativeSampling_DataCollator:
                     if (k == "kg_input_ids"):
                         batch['kg_padding_mask'] = ~batch[k].detach().clone().eq(self.kg_special_token_ids['PAD'])
 
-                if not NCE:
-                    if 'kg' not in k:
-                        batch_size = len(features)
-                        batch[k] = torch.cat([batch[k].detach().clone()[(torch.arange(batch_size) + idx) % batch_size] for idx in range(self.n_negatives+1)],dim=0)
-                    else:
-                        batch[k] = torch.cat([batch[k].detach().clone() for _ in range(self.n_negatives + 1)],dim=0)
-                        if (k == "kg_input_ids"):
-                            batch['kg_padding_mask'] = torch.cat([batch['kg_padding_mask'].detach().clone() for _ in range(self.n_negatives + 1)],dim=0)
+                # if not NCE:
+                if 'kg' not in k:
+                    batch_size = len(features)
+                    batch[k] = torch.cat([batch[k].detach().clone()[(torch.arange(batch_size) + idx) % batch_size] for idx in range(self.n_negatives+1)],dim=0)
+                else:
+                    batch[k] = torch.cat([batch[k].detach().clone() for _ in range(self.n_negatives + 1)],dim=0)
+                    if (k == "kg_input_ids"):
+                        batch['kg_padding_mask'] = torch.cat([batch['kg_padding_mask'].detach().clone() for _ in range(self.n_negatives + 1)],dim=0)
 
         return batch
         
-    
+@dataclass
+class AdmLvlPred_DataCollator:
+    """
+    Data collator used for language modeling.
+    - collates batches of tensors, honoring their tokenizer's pad_token
+    - preprocesses batches for masked language modeling
+    """
+    tokenizer: PreTrainedTokenizerBase
+    kg_special_token_ids: dict
+    num_kg_labels: int
+    prediction: bool = False
+
+    def __call__(self,features: List[InputDataClass]) -> Dict[str, torch.Tensor]:
+        if not isinstance(features[0], (dict, BatchEncoding)):
+            features = [vars(f) for f in features]
+        batch = self._tensorize_batch(features)
+        batch_size = len(features)
+
+        # else:
+        #     return NotImplementedError("Not Support Yet")
+
+        return batch
+
+    def _tensorize_batch(self,features: List[Dict]) -> Dict[str, torch.Tensor]:
+        # In this function we'll make the assumption that all `features` in the batch
+        # have the same attributes.
+        # So we will look at the first element as a proxy for what attributes exist
+        # on the whole batch.
+        first = features[0]
+        batch = {}
+
+        for k, v in first.items():
+            if (v is not None) and (not isinstance(v, str)):
+                if (k == 'label'):
+                    batch[k] = torch.stack([torch.zeros(self.num_kg_labels).index_fill_(0,torch.LongTensor(f[k]),1) for f in features])
+                    continue
+                if (k == "kg_attention_mask"):
+                    if isinstance(v, torch.Tensor):
+                        if (len(v.shape) == 3):
+                            batch[k] = torch.stack([f[k] for f in features]).permute(0,3,1,2)
+                        else:
+                            batch[k] = torch.stack([f[k] for f in features])
+                    else:
+                        batch[k] = torch.tensor([f[k] for f in features])
+                else:
+                    if isinstance(v, torch.Tensor):
+                        batch[k] = torch.stack([f[k] for f in features])
+                    else:
+                        batch[k] = torch.tensor([f[k] for f in features])
+
+                    if (k == "kg_input_ids"):
+                        batch['kg_padding_mask'] = ~batch[k].detach().clone().eq(self.kg_special_token_ids['PAD'])
+
+        return batch
+
 @dataclass
 class UniLM_DataCollator:
     """

@@ -11,8 +11,8 @@ import torch
 # Own implementation
 from utils.parameters import parser
 from utils.dataset import get_dataset
-from utils.data_collator import NegativeSampling_DataCollator
-from model import LxmertForRanking, LxmertForKGTokPredAndMaskedLM
+from utils.data_collator import NegativeSampling_DataCollator, AdmLvlPred_DataCollator
+from model import LxmertForRanking, LxmertForKGTokPredAndMaskedLM, LxmertForMultiLabelClassification
 from trainer import Trainer
 
 # From Huggingface transformers package
@@ -84,7 +84,7 @@ def main():
     else:
         config = CONFIG_MAPPING[model_args.model_type]()
         logger.warning("You are instantiating a new config instance from scratch.")
-
+    logger.info(config)
     if model_args.tokenizer_name:
         tokenizer = LxmertTokenizer.from_pretrained(model_args.tokenizer_name, cache_dir=model_args.cache_dir)
     elif model_args.model_name_or_path:
@@ -100,8 +100,9 @@ def main():
         )
 
     if model_args.model_name_or_path:
-        if training_args.task in ['binary_retrieval', 'triplet_retrieval', 'single_binary_retrieval']:
+        if training_args.task in ['binary_retrieval', 'single_binary_retrieval']:
             # try:
+            config.use_ce_pooler=True
             model = LxmertForRanking.from_pretrained(
                 model_args.model_name_or_path,
                 from_tf=bool(".ckpt" in model_args.model_name_or_path),
@@ -123,9 +124,17 @@ def main():
             #         config=config,
             #         cache_dir=model_args.cache_dir,
             #     )
-
         elif training_args.task in ['generation']: 
+            config.use_ce_pooler=True
             model = LxmertForKGTokPredAndMaskedLM.from_pretrained(
+                model_args.model_name_or_path,
+                from_tf=bool(".ckpt" in model_args.model_name_or_path),
+                config=config,
+                cache_dir=model_args.cache_dir,
+            )
+        elif training_args.task in ['adm_lvl_prediction']:
+            config.use_ce_pooler=False
+            model = LxmertForMultiLabelClassification.from_pretrained(
                 model_args.model_name_or_path,
                 from_tf=bool(".ckpt" in model_args.model_name_or_path),
                 config=config,
@@ -159,29 +168,26 @@ def main():
                                 )
     logger.info(train_dataset[0])
     eval_dataset = get_dataset(data_args,
-                               tokenizer=tokenizer,
-                               token_type_vocab=config.token_type_vocab,
-                               evaluate=True
-                               )
+                                tokenizer=tokenizer,
+                                token_type_vocab=config.token_type_vocab,
+                                evaluate=True,
+                                )
     test_dataset = get_dataset(data_args,
-                               tokenizer=tokenizer,
-                               token_type_vocab=config.token_type_vocab,
-                               test=True
-                               ) if training_args.do_eval else None
+                                tokenizer=tokenizer,
+                                token_type_vocab=config.token_type_vocab,
+                                test=True
+                                ) if training_args.do_eval else None
     eval_data_collator = None
     if training_args.task in ['binary_retrieval', 'single_binary_retrieval']:
         data_collator = NegativeSampling_DataCollator(tokenizer=tokenizer,
                                                       kg_special_token_ids=config.kg_special_token_ids,
-                                                      n_negatives=training_args.n_negatives,
-                                                      NCE=False)
+                                                      n_negatives=training_args.n_negatives)
         eval_data_collator = NegativeSampling_DataCollator(tokenizer=tokenizer,
-                                                      kg_special_token_ids=config.kg_special_token_ids,
-                                                      NCE=False)
-
-    elif training_args.task == 'triplet_retrieval':
-        data_collator = NegativeSampling_DataCollator(tokenizer=tokenizer,
-                                                      kg_special_token_ids=config.kg_special_token_ids,
-                                                      NCE=True)
+                                                      kg_special_token_ids=config.kg_special_token_ids)
+    elif training_args.task == 'adm_lvl_prediction':
+        data_collator = AdmLvlPred_DataCollator(tokenizer=tokenizer,
+                                                num_kg_labels=config.num_kg_labels,
+                                                kg_special_token_ids=config.kg_special_token_ids)
     elif training_args.task == 'generation':
         from utils.data_collator import UniLM_DataCollator
         data_collator = UniLM_DataCollator(tokenizer=tokenizer,

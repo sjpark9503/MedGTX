@@ -80,8 +80,20 @@ def main():
     # The .from_pretrained methods guarantee that only one local process can concurrently
     # download model & vocab.
 
-    config = LxmertConfig.from_pretrained(model_args.model_name_or_path, cache_dir=model_args.cache_dir)
-    tokenizer = LxmertTokenizer.from_pretrained(model_args.model_name_or_path, cache_dir=model_args.cache_dir)
+    if model_args.config_name:
+        config = LxmertConfig.from_pretrained(model_args.config_name, cache_dir=model_args.cache_dir)
+    elif model_args.model_name_or_path:
+        config = LxmertConfig.from_pretrained(model_args.model_name_or_path, cache_dir=model_args.cache_dir)
+    else:
+        config = CONFIG_MAPPING[model_args.model_type]()
+        logger.warning("You are instantiating a new config instance from scratch.")
+    logger.info(config)
+    config.use_ce_pooler = True
+    if model_args.tokenizer_name:
+        tokenizer = LxmertTokenizer.from_pretrained(model_args.tokenizer_name, cache_dir=model_args.cache_dir)
+    elif model_args.model_name_or_path:
+        tokenizer = LxmertTokenizer.from_pretrained(model_args.model_name_or_path, cache_dir=model_args.cache_dir)
+
     if training_args.task in ['binary_retrieval', 'triplet_retrieval', 'single_binary_retrieval']:
         model = LxmertForRanking.from_pretrained(
             model_args.model_name_or_path,
@@ -166,7 +178,7 @@ def main():
 
                     outputs = model(**inputs)
 
-                    scores+=outputs.cross_relationship_score[:,1].tolist()
+                    scores+=outputs.pooled_logits[:,1].tolist()
 
                 ranks = sorted(range(len(scores)), key=lambda k: scores[k], reverse=True)
 
