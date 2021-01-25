@@ -33,7 +33,7 @@ from packaging import version
 
 #from utils.compute_metrics import get_accuracy
 from sklearn.metrics import accuracy_score, f1_score, label_ranking_average_precision_score, top_k_accuracy_score
-#from utils.metrics import MRR, Hits_at_k
+from utils.metrics import precision_at_k, recall_at_k
 
 from torch import nn
 import torch.nn.functional as F
@@ -600,10 +600,12 @@ class Trainer:
                     # self.control = self.callback_handler.on_step_end(self.args, self.state, self.control)
 
                     loss_dict, FLAG_EarlyStop = self.log_save_evaluate(loss_dict, model)
+                    if FLAG_EarlyStop:
+                        break
             if FLAG_EarlyStop:
                 break
 
-            if (epoch+1) % self.args.save_per_run:
+            if (epoch+1) % self.args.save_per_run == 0:
                 self._save_checkpoint(model)
 
             if self.args.tpu_metrics_debug or self.args.debug:
@@ -657,13 +659,16 @@ class Trainer:
                 #logger.info("log done")
         if (self.state.global_step % (self.steps_in_epoch//self.args.num_eval_per_epoch) == 0) and (self.args.num_eval_per_epoch>0):
             metrics = self.evaluate()
-            if metrics['eval_loss'] < self.best_eval_loss:
-                self.best_eval_loss = metrics['eval_loss']
-            else:
-                if (self.early_stop_queue > self.args.num_eval_per_epoch) and not self.task in ['pretrain','single_pretrain']:
-                    FLAG_EarlyStop = True
-                    logger.info("No progress on Evaluation loss. Early stop the training loop")
-                self.early_stop_queue +=1
+            if not self.task in ['pretrain','single_pretrain']:
+                if metrics['eval_loss'] < self.best_eval_loss:
+                    self.best_eval_loss = metrics['eval_loss']
+                    self.save_model()
+                    self.early_stop_queue = 0
+                else:
+                    if (self.early_stop_queue > self.args.num_eval_per_epoch):
+                        FLAG_EarlyStop = True
+                        logger.info("No progress on Evaluation loss. Early stop the training loop")
+                    self.early_stop_queue +=1
             logger.info("eval done")
         else:
             metrics = None
