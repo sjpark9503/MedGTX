@@ -193,6 +193,10 @@ def main():
         logger.info(f"Model : {training_args.output_dir.split('/')[-2]}_{training_args.output_dir.split('/')[-1]}")
         logger.info(f"Hits@{top_k} = {sum(sample_hits)/len(sample_hits)}\tMRR = {sum(sample_rank)/len(sample_rank)}")
         logger.info("*"*20)
+        if not os.path.isdir(training_args.output_dir):
+            os.makedirs(training_args.output_dir)
+        with open(os.path.join(training_args.output_dir,'result.txt'),'w') as h:
+            h.write(f"Hits@{top_k} = {sum(sample_hits)/len(sample_hits)}\tMRR = {sum(sample_rank)/len(sample_rank)}")
 
 
 def _mp_fn(index):

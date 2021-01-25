@@ -213,7 +213,7 @@ def main():
             else None
         )
         trainer.train(model_path=model_path)
-        trainer.save_model()
+        # trainer.save_model()
         # For convenience, we also re-save the tokenizer to the same directory,
         # so that you can share your model easily on huggingface.co/models =)
         if trainer.is_world_master():
