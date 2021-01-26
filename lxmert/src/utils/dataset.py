@@ -109,7 +109,7 @@ class HeadOnlyDataset(Dataset):
                     inputs['kg_label_mask'] = self.batch_encoding['label_mask'][idx]
                 else:
                     inputs['label'] = self.batch_encoding['label'][idx]
-            if 'rc_indeces' in self.batch_encoding:
+            if 'rc_index' in self.batch_encoding:
                 inputs['rc_indeces'] = self.batch_encoding['rc_index'][idx]
 
             feature = InputFeatures(**inputs)
