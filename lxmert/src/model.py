@@ -1494,6 +1494,113 @@ class LxmertForMultiLabelClassification(LxmertPreTrainedModel):
             cross_encoder_attentions=lxmert_output.cross_encoder_attentions,
         )
 
+class LxmertForErrorDetection(LxmertPreTrainedModel):
+    def __init__(self, config):
+        super().__init__(config)
+        # Configuration
+        self.config = config
+
+        # Lxmert backbone
+        self.lxmert = LxmertModel(config)
+        self.token_classifier = nn.Linear(config.hidden_size, 1)
+        self.dropout = nn.Dropout(config.hidden_dropout_prob)
+
+        # Weight initialization
+        self.init_weights()
+
+        # Loss functions
+        self.loss_fcts = {
+            "bce": nn.BCEWithLogitsLoss()
+        }
+
+    #@add_start_docstrings_to_callable(LXMERT_INPUTS_DOCSTRING.format("batch_size, sequence_length"))
+    @replace_return_docstrings(output_type=LxmertForDownstreamOutput, config_class=_CONFIG_FOR_DOC)
+    def forward(
+        self,
+        lang_input_ids=None,
+        kg_input_ids=None,
+        lang_inputs_embeds=None,
+        kg_inputs_embeds=None,
+        lang_attention_mask=None,
+        kg_attention_mask=None,
+        kg_padding_mask=None,
+        deletion_label=None,
+        replacement_label=None,
+        token_type_ids=None,
+        output_attentions=None,
+        output_hidden_states=None,
+        return_dict=True,
+    ):
+        r"""
+        masked_lm_labels (``torch.LongTensor`` of shape ``(batch_size, sequence_length)``, `optional`):
+            Labels for computing the masked language modeling loss. Indices should be in ``[-100, 0, ...,
+            config.vocab_size]`` (see ``input_ids`` docstring) Tokens with indices set to ``-100`` are ignored
+            (masked), the loss is only computed for the tokens with labels in ``[0, ..., config.vocab_size]``
+        obj_labels: (``Dict[Str: Tuple[Torch.FloatTensor, Torch.FloatTensor]]``, `optional`):
+            each key is named after each one of the visual losses and each element of the tuple is of the shape
+            ``(batch_size, num_features)`` and ``(batch_size, num_features, visual_feature_dim)`` for each the label id
+            and the label score respectively
+        matched_label (``torch.LongTensor`` of shape ``(batch_size,)``, `optional`):
+            Labels for computing the whether or not the text input matches the image (classification) loss. Input
+            should be a sequence pair (see :obj:`input_ids` docstring) Indices should be in ``[0, 1]``:
+
+            - 0 indicates that the sentence does not match the image,
+            - 1 indicates that the sentence does match the image.
+        ans: (``Torch.Tensor`` of shape ``(batch_size)``, `optional`):
+            a one hot representation hof the correct answer `optional`
+
+        Returns:
+        """
+
+        device = lang_input_ids.device if lang_input_ids is not None else inputs_embeds.device
+
+        loss_dict = dict()
+
+        lxmert_output = self.lxmert(
+            lang_input_ids=lang_input_ids,
+            kg_input_ids=kg_input_ids,
+            lang_inputs_embeds=lang_inputs_embeds,
+            kg_inputs_embeds=kg_inputs_embeds,
+            lang_attention_mask=lang_attention_mask,
+            kg_attention_mask=kg_attention_mask,
+            kg_padding_mask=kg_padding_mask,
+            token_type_ids=token_type_ids,
+            output_attentions=output_attentions,
+            output_hidden_states=output_hidden_states,
+            return_dict=return_dict,
+        )
+
+        lang_output, kg_output, multi_label_score = (
+            lxmert_output.language_output,
+            lxmert_output.kg_output,
+            lxmert_output.pooled_output,
+        )
+
+        if label is not None:
+            total_loss = self.loss_fcts["bce"](multi_label_score, label)
+            loss_dict['loss']=total_loss.mean().item()
+        else:
+            total_loss = None
+        
+
+        if not return_dict:
+            output = (
+                loss_dict,
+            ) + lxmert_output[3:]
+            return ((total_loss,) + output) if total_loss is not None else output
+
+        return LxmertForDownstreamOutput(
+            loss=total_loss,
+            loss_dict=loss_dict,
+            pooled_logits=multi_label_score,
+            language_hidden_states=lxmert_output.language_hidden_states,
+            kg_hidden_states=lxmert_output.kg_hidden_states,
+            language_attentions=lxmert_output.language_attentions,
+            kg_attentions=lxmert_output.kg_attentions,
+            cross_encoder_attentions=lxmert_output.cross_encoder_attentions,
+        )
+
+
 class LxmertForGeneration(LxmertPreTrainedModel):
     def __init__(self, config, tokenizer):
         super().__init__(config)

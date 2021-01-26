@@ -1119,7 +1119,7 @@ class Trainer:
             if (self.task in ['binary_retrieval', 'single_binary_retrieval']) and (key in ['score']):
                 self.metrics["eval_align_Acc"] = accuracy_score(self.predicted['label'],self.predicted['score'])
             if (self.task in ['adm_lvl_prediction']) and (key in ['score']):
-                self.metrics[f"eval_P@{self.args.k}"] = precision_at_k(self.predicted['label'],self.predicted['score'])
+                self.metrics[f"eval_P@{self.args.top_k}"] = precision_at_k(self.predicted['label'],self.predicted['score'],k=self.args.top_k)
             if (self.task in ['generation', 'single_generation']) and (key in ['lang']):
                 self.metrics[f"eval_{key}_Acc"] = accuracy_score(self.predicted[f'gt_{key}'],self.predicted[key])
                 self.metrics[f"eval_{key}_MacroF1"] = f1_score(self.predicted[f'gt_{key}'], self.predicted[key],average='macro')

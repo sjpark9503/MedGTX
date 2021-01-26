@@ -139,7 +139,7 @@ def main():
 
     # Evaluation
     if training_args.task in ['binary_retrieval', 'single_binary_retrieval']:
-        tok_k = 10
+        top_k = training_args.top_k
         data_loader = DataLoader(
             test_dataset,
             sampler=SequentialSampler(test_dataset),
@@ -153,7 +153,6 @@ def main():
         for k in datas[0]:
             db[k] = torch.cat([data[k] for data in datas]).to(training_args.device)
 
-        top_k = 10
         sample_hits = list()
         sample_rank = list()
 
@@ -186,7 +185,7 @@ def main():
                     sample_hits.append(1)
                 else:
                     sample_hits.append(0)
-                sample_rank.append(1/(ranks[positive_idx]+1))
+                sample_rank.append(1/(ranks.index(positive_idx)+1))
 
         logger.info("Evaluation on Test set is done!")
         logger.info("*"*20)
