@@ -1499,6 +1499,7 @@ class LxmertForGeneration(LxmertPreTrainedModel):
         super().__init__(config)
         
         # Configuration
+        config.use_ce_pooler = True
         self.config = config
         # self.num_kg_labels = config.num_kg_labels
         
@@ -1518,7 +1519,9 @@ class LxmertForGeneration(LxmertPreTrainedModel):
         self.init_weights()
 
         self.rand_embeds = nn.Embedding(config.vocab_size['kg'], config.hidden_size)
-        self.ce_loss = nn.CrossEntropyLoss()
+        
+        # for ppl
+        self.ce_loss = nn.CrossEntropyLoss(reduction='none')
         
     def forward(
         self,
@@ -1554,6 +1557,7 @@ class LxmertForGeneration(LxmertPreTrainedModel):
                                         kg_attention_mask=kg_attention_mask,
                                         kg_padding_mask=kg_padding_mask,
                                         perturb_type=perturb_type)
+                
         # num_db: dx,prx(2) / px(1)
         num_db = len(torch.bincount(token_type_ids.flatten()))
         gt_length = torch.sum(lang_input_ids.not_equal(self.pad_token_id), axis=1)
@@ -1690,7 +1694,7 @@ class LxmertForGeneration(LxmertPreTrainedModel):
         self,
         lang_input_ids=None,
         kg_input_ids=None,
-        # lang_inputs_embeds=None,
+        lang_inputs_embeds=None,
         kg_inputs_embeds=None,
         lang_attention_mask=None,
         kg_attention_mask=None,
@@ -1702,34 +1706,34 @@ class LxmertForGeneration(LxmertPreTrainedModel):
         output_attentions=None,
         output_hidden_states=None,
         return_dict=True,
-        gt_length=None,
+        given_lang_tokens=1,
+        perturb_type=None,
+        clean_outputs=True,
+        given_gt_length=False,
+        search_beam_size=1,
         ):
         
-        total_loss = 0.0
+        total_ppl = 0.0
         
         assert len(lang_input_ids.shape) == 2
         batch_size, max_length = lang_input_ids.shape
         
         # set output_length for max_length within a batch
+        gt_length = torch.sum(lang_input_ids.not_equal(self.pad_token_id), axis=1)
         output_length = torch.max(gt_length).item()
         assert output_length <= max_length
         
         # construct initial settings [[CLS], [MASK]]
-        output_ids = []
         mask_ids = lang_input_ids.new(batch_size, 1).fill_(self.mask_token_id)
-        output_ids.append(curr_ids)
         
-        next_pos = given_lang_tokens
+        next_pos = 1
         while next_pos < output_length:
             
-            curr_ids = lang_input_ids[:, :next_pos]
-            curr_length = list(curr_ids.size())[1]
             curr_ids = torch.cat([lang_input_ids[:, :next_pos], mask_ids], axis=1)
-            curr_attention_mask = lang_attention_mask[:, :curr_length+1, :curr_length+1]
-            curr_token_type_ids = token_type_ids[:, :curr_length+1]
+            curr_length = list(curr_ids.size())[1]
+            curr_attention_mask = lang_attention_mask[:, :curr_length, :curr_length]
+            curr_token_type_ids = token_type_ids[:, :curr_length]
             
-            curr_lm_labels = lang_input_ids[:, :next_pos+1].clone().fill_(-10000)
-            curr_lm_labels = curr_ids.eq(self.mask_token_id) * curr_lm_labels
             assert curr_ids.shape[-1] == curr_attention_mask.shape[-1]
             
             lxmert_output = self.lxmert(
@@ -1751,23 +1755,23 @@ class LxmertForGeneration(LxmertPreTrainedModel):
                 lxmert_output.pooled_output,
             )
             
-            # predict [MASK] by greedy infer.
             last_hidden = lang_output[:, -1, :]
             prediction_scores = self.lm_head(last_hidden)
-            log_scores = F.log_softmax(prediction_scores, dim=-1)
+            _lm_label = lang_input_ids[:, next_pos]        
+            # log_scores = F.log_softmax(prediction_scores, dim=-1)
             
             masked_lm_loss = self.ce_loss(
-                prediction_scores.view(-1, self.config.vocab_size['lang'])[:positive_batch_size],
+                prediction_scores.view(-1, self.config.vocab_size['lang']),
                 _lm_label,
             )
+            loss_mask = (curr_length <= gt_length)
+            total_ppl += masked_lm_loss * loss_mask
             
-            _, max_ids = torch.max(prediction_scores, dim=1)
-            output_ids.append(max_ids.unsqueeze(1))
-            
-            # setup for next loop
             next_pos += 1
             
-        return ppl
+        total_ppl = torch.exp(total_ppl/gt_length)
+        batch_mean_ppl = total_ppl.mean().item()
+        return batch_mean_ppl
             
     def beam_search(
         self,
