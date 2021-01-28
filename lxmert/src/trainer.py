@@ -642,7 +642,7 @@ class Trainer:
 
         # self.control = self.callback_handler.on_train_end(self.args, self.state, self.control)
 
-        return TrainOutput(self.state.global_step, self.process_loss_dict(loss_dict,accumulate=True)['loss'])
+        #return TrainOutput(self.state.global_step, self.process_loss_dict(loss_dict,accumulate=True)['loss'])
 
     def log_save_evaluate(self, loss_dict, model):
         FLAG_EarlyStop = False

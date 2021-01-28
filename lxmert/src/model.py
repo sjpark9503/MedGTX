@@ -1405,7 +1405,7 @@ class LxmertForAdmLvlPrediction(LxmertPreTrainedModel):
 
         # Loss functions
         self.loss_fcts = {
-            "bce": nn.BCEWithLogitsLoss(),
+            "bce": nn.BCEWithLogitsLoss(reduction='none'),
             # "ce": nn.CrossEntropyLoss(),
             # "nll": nn.NLLLoss(),
         }
@@ -1475,8 +1475,10 @@ class LxmertForAdmLvlPrediction(LxmertPreTrainedModel):
         # multi_label_score = multi_label_score.softmax(dim=1)
         if label is not None:
             total_loss = self.loss_fcts["bce"](multi_label_score, label)
-            if self.class_weight is not None:
-                total_loss = total_loss*self.class_weight
+            #if self.class_weight is not None:
+            total_loss = total_loss*self.class_weight
+            focal_weight = (multi_label_score.sigmoid()-label).abs().detach().clone()
+            total_loss = total_loss*focal_weight.square()
             # labels = list()
             # probs = list()
             # focal_weights = list()
@@ -1486,7 +1488,8 @@ class LxmertForAdmLvlPrediction(LxmertPreTrainedModel):
             #     focal_weights.append(multi_label_score[idx,sample_label])
             # total_loss = loss_fct['nll'](torch.stack(logits).log(), torch.tensor(labels).to(lang_output.device))
             # weighted_total_loss = total_loss*torch.stack(1-focal_weights)
-            loss_dict['loss']=total_loss.mean().item()
+            total_loss = total_loss.mean()
+            loss_dict['loss']=total_loss.item()
         else:
             total_loss = None
         

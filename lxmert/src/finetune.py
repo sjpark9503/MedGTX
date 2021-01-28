@@ -138,6 +138,9 @@ def main():
                 config=config,
                 cache_dir=model_args.cache_dir,
             )
+            db =  training_args.run_name.split('/')[0].split('_')[-1]
+            class_weight_dict = torch.load(os.path.join(os.getcwd(),f'data/{db}/adm_class_weight'))
+            model.class_weight = torch.tensor(list(dict(sorted(class_weight_dict.items())).values()),requires_grad=False).to(training_args.device)
         elif training_args.task in ['deletion_detection', 'replacement_detection']:
             model = LxmertForErrorDetection.from_pretrained(
                 model_args.model_name_or_path,

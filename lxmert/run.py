@@ -13,8 +13,8 @@ for _unified in [True,False]:
             ## TASK & DB
             Evaluation = False
             TASK_NAME = 'single_pretrain'
-            DB = 'px'
-            DB_size = 1000
+            DB = 'dx,prx'
+            DB_size = 2000
             ## Pretraining Configs
             MODEL_TYPE = 'rand'
             Unified = _unified
@@ -28,9 +28,9 @@ for _unified in [True,False]:
             ### Training Args
             lr = 1e-4
             num_epochs = 40
-            train_bsize = 8
-            eval_bsize = 2
-            top_k = 10
+            train_bsize = 16
+            eval_bsize = 4
+            top_k = 5
             Dropout = 0.1
             Num_Negatives = 1
             Margin = 1.0
