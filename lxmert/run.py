@@ -4,15 +4,15 @@ import os
 import time
 # ======================= CONFIG ==================== #
 ## GPU setting
-os.environ["CUDA_VISIBLE_DEVICES"] = '3'
+os.environ["CUDA_VISIBLE_DEVICES"] = '7'
 for _unified in [True]:
-    for _rc in [True,False]:
+    for _rc in [True, False]:
         for _align in [True]:
             # if not _align and not _rc:
             #     continue
             ## TASK & DB
-            Evaluation = False
-            TASK_NAME = 'single_pretrain'
+            Evaluation = True
+            TASK_NAME = 'single_binary_retrieval'
             DB = 'px'
             DB_size = 1000
             ## Pretraining Configs
@@ -26,10 +26,10 @@ for _unified in [True]:
             Dim_Hidden = 128
             NUM_Layers = {'lang':2, 'kg':2, 'cross':4}
             ### Training Args
-            lr = 1e-4
-            num_epochs = 40
+            lr = 1e-5
+            num_epochs = 20
             train_bsize = 8
-            eval_bsize = 2
+            eval_bsize = 200
             top_k = 10
             Dropout = 0.1
             Num_Negatives = 1
