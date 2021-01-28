@@ -1390,7 +1390,7 @@ class LxmertForRanking(LxmertPreTrainedModel):
             cross_encoder_attentions=lxmert_output.cross_encoder_attentions,
         )
 
-class LxmertForMultiLabelClassification(LxmertPreTrainedModel):
+class LxmertForAdmLvlPrediction(LxmertPreTrainedModel):
     def __init__(self, config):
         super().__init__(config)
         # Configuration
@@ -1405,8 +1405,11 @@ class LxmertForMultiLabelClassification(LxmertPreTrainedModel):
 
         # Loss functions
         self.loss_fcts = {
-            "bce": nn.BCEWithLogitsLoss()
+            "bce": nn.BCEWithLogitsLoss(),
+            # "ce": nn.CrossEntropyLoss(),
+            # "nll": nn.NLLLoss(),
         }
+        self.class_weight = None
 
     #@add_start_docstrings_to_callable(LXMERT_INPUTS_DOCSTRING.format("batch_size, sequence_length"))
     @replace_return_docstrings(output_type=LxmertForDownstreamOutput, config_class=_CONFIG_FOR_DOC)
@@ -1469,9 +1472,20 @@ class LxmertForMultiLabelClassification(LxmertPreTrainedModel):
             lxmert_output.kg_output,
             lxmert_output.pooled_output,
         )
-
+        # multi_label_score = multi_label_score.softmax(dim=1)
         if label is not None:
             total_loss = self.loss_fcts["bce"](multi_label_score, label)
+            if self.class_weight is not None:
+                total_loss = total_loss*self.class_weight
+            # labels = list()
+            # probs = list()
+            # focal_weights = list()
+            # for idx, sample_label in enumerate(label):
+                # probs.append(multi_label_score[idx])
+            #     labels.append(sample_label)
+            #     focal_weights.append(multi_label_score[idx,sample_label])
+            # total_loss = loss_fct['nll'](torch.stack(logits).log(), torch.tensor(labels).to(lang_output.device))
+            # weighted_total_loss = total_loss*torch.stack(1-focal_weights)
             loss_dict['loss']=total_loss.mean().item()
         else:
             total_loss = None
@@ -1502,6 +1516,9 @@ class LxmertForErrorDetection(LxmertPreTrainedModel):
 
         # Lxmert backbone
         self.lxmert = LxmertModel(config)
+        self.multilabel_classifier = nn.Sequential(nn.Linear(config.hidden_size, config.hidden_size),
+                                                nn.ReLU(),
+                                                nn.Linear(config.hidden_size, config.num_kg_labels))
         self.token_classifier = nn.Linear(config.hidden_size, 1)
         self.dropout = nn.Dropout(config.hidden_dropout_prob)
 
@@ -1575,13 +1592,18 @@ class LxmertForErrorDetection(LxmertPreTrainedModel):
             lxmert_output.kg_output,
             lxmert_output.pooled_output,
         )
-
-        if label is not None:
-            total_loss = self.loss_fcts["bce"](multi_label_score, label)
+        # total_loss = 0
+        if deletion_label is not None:
+            deletion_score = self.multilabel_classifier(kg_output[:,0])
+            total_loss = self.loss_fcts["bce"](deletion_score, deletion_label)
+            loss_dict['loss']=total_loss.mean().item()
+        elif replacement_label is not None:
+            _size = kg_output.shape[:-1]
+            replacement_score = self.token_classifier(kg_output.view(-1, config.hidden_size)).view(_size)
+            total_loss = self.loss_fcts["bce"](replacement_score, replacement_label)
             loss_dict['loss']=total_loss.mean().item()
         else:
             total_loss = None
-        
 
         if not return_dict:
             output = (

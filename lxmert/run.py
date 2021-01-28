@@ -4,10 +4,10 @@ import os
 import time
 # ======================= CONFIG ==================== #
 ## GPU setting
-os.environ["CUDA_VISIBLE_DEVICES"] = '3'
-for _unified in [True]:
-    for _rc in [True,False]:
-        for _align in [True]:
+os.environ["CUDA_VISIBLE_DEVICES"] = '0'
+for _unified in [True,False]:
+    for _rc in [False]:
+        for _align in [False]:
             # if not _align and not _rc:
             #     continue
             ## TASK & DB
@@ -143,7 +143,7 @@ for _unified in [True]:
                         for k in TRAINING_CONFIG:
                             if 'file' in k:
                                 TRAINING_CONFIG[k] = TRAINING_CONFIG[k].replace('data','data/adm')
-                        Config['num_kg_labels'] = 8049 if DB=='px' else 9291
+                        Config['num_kg_labels'] = 221 if DB=='px' else 296
                     else:
                         Config['cross_att_type'] = 'single' if TASK_NAME.split('_')[0] == 'single' else 'cross'
                     # overwrite config

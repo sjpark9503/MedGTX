@@ -170,7 +170,7 @@ def main():
 
                     inputs = dict()
                     for k in db:
-                        if 'kg' not in k:
+                        if 'kg' in k:
                             inputs[k] = torch.stack([db[k][positive_idx]]*(end_idx-start_idx))
                         else:
                             inputs[k] = db[k][start_idx:end_idx]
