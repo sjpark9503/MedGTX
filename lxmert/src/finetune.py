@@ -124,7 +124,7 @@ def main():
             #         config=config,
             #         cache_dir=model_args.cache_dir,
             #     )
-        elif training_args.task in ['generation']: 
+        elif training_args.task in ['generation', 'single_generation']: 
             config.use_ce_pooler=True
             model = LxmertForKGTokPredAndMaskedLM.from_pretrained(
                 model_args.model_name_or_path,
@@ -188,7 +188,7 @@ def main():
         data_collator = AdmLvlPred_DataCollator(tokenizer=tokenizer,
                                                 num_kg_labels=config.num_kg_labels,
                                                 kg_special_token_ids=config.kg_special_token_ids)
-    elif training_args.task == 'generation':
+    elif training_args.task in ['generation', 'single_generation']:
         from utils.data_collator import UniLM_DataCollator
         data_collator = UniLM_DataCollator(tokenizer=tokenizer,
                                            kg_special_token_ids=config.kg_special_token_ids)

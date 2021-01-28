@@ -11,8 +11,8 @@ for _unified in [True]:
             # if not _align and not _rc:
             #     continue
             ## TASK & DB
-            Evaluation = True
-            TASK_NAME = 'single_binary_retrieval'
+            Evaluation = False
+            TASK_NAME = 'single_generation'
             DB = 'px'
             DB_size = 1000
             ## Pretraining Configs
@@ -28,8 +28,8 @@ for _unified in [True]:
             ### Training Args
             lr = 1e-5
             num_epochs = 20
-            train_bsize = 8
-            eval_bsize = 200
+            train_bsize = 16
+            eval_bsize = 4
             top_k = 10
             Dropout = 0.1
             Num_Negatives = 1
@@ -116,7 +116,7 @@ for _unified in [True]:
                     TRAINING_CONFIG['model_name_or_path'] = os.path.join(EXP_PATH, f'pretrained_models/{TASK_NAME}/{RUN_NAME}')
                     # if Align:
                     #     TRAINING_CONFIG['model_name_or_path'] = os.path.join(EXP_PATH, f'pretrained_models/pretrain/{RUN_NAME}')
-                    if TASK_NAME in ['generation']:
+                    if TASK_NAME in ['generation', 'single_generation']:
                         SRC_PATH = os.path.join(EXP_PATH, 'src/evaluation_generation.py')
                         TRAINING_CONFIG['decode_option'] = {"perturb_type" : 'pad_all', # init_all, pad_all, None
                                                             "given_lang_tokens": 1, # 1,5,25
@@ -136,7 +136,7 @@ for _unified in [True]:
                     Config['margin'] = Margin
                     Config['attention_probs_dropout_prob'] = Dropout
                     Config['hidden_dropout_prob'] = Dropout
-                    if TASK_NAME in ['generation']:
+                    if TASK_NAME in ['generation', 'single_generation']:
                         Config['cross_att_type'] = 'unilm'
                     elif TASK_NAME in ['adm_lvl_prediction']:
                         Config['cross_att_type'] = 'single' if TASK_NAME.split('_')[0] == 'single' else 'cross'

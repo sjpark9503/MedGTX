@@ -194,7 +194,7 @@ class Trainer:
         self.task = args.task
         self.optimizer, self.lr_scheduler = optimizers
         self.best_eval_loss = 1e10
-        self.early_stop_queue = 0
+        self.early_stop_queue = -100
         if model_init is not None and (self.optimizer is not None or self.lr_scheduler is not None):
             raise RuntimeError(
                 "Passing a `model_init` is incompatible with providing the `optimizers` argument."
@@ -663,7 +663,7 @@ class Trainer:
                 if metrics['eval_loss'] < self.best_eval_loss:
                     self.best_eval_loss = metrics['eval_loss']
                     self.save_model()
-                    self.early_stop_queue = 0
+                    self.early_stop_queue = -100
                 else:
                     if (self.early_stop_queue > self.args.num_eval_per_epoch):
                         FLAG_EarlyStop = True
