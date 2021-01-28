@@ -141,7 +141,7 @@ for _unified in [True]:
                     Config['margin'] = Margin
                     Config['attention_probs_dropout_prob'] = Dropout
                     Config['hidden_dropout_prob'] = Dropout
-                    if TASK_NAME in ['generation']:
+                    if TASK_NAME in ['generation', 'single_generation']:
                         Config['cross_att_type'] = 'unilm'
                     elif TASK_NAME in ['adm_lvl_prediction']:
                         Config['cross_att_type'] = 'single' if TASK_NAME.split('_')[0] == 'single' else 'cross'
