@@ -116,7 +116,7 @@ for _unified in [True]:
                     TRAINING_CONFIG['model_name_or_path'] = os.path.join(EXP_PATH, f'pretrained_models/{TASK_NAME}/{RUN_NAME}')
                     # if Align:
                     #     TRAINING_CONFIG['model_name_or_path'] = os.path.join(EXP_PATH, f'pretrained_models/pretrain/{RUN_NAME}')
-                    if TASK_NAME in ['generation, single_generation']:
+                    if TASK_NAME in ['generation', 'single_generation']:
                         # TASK_NAME = TASK_NAME + '_LR_3E-5'
                         TRAINING_CONFIG['model_name_or_path'] = os.path.join(EXP_PATH, f'pretrained_models/{TASK_NAME}/{RUN_NAME}')
                         SRC_PATH = os.path.join(EXP_PATH, 'src/evaluation_generation.py')
