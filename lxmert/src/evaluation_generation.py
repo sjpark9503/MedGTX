@@ -64,10 +64,12 @@ def main():
         and os.listdir(training_args.output_dir)
         and training_args.do_train
         and not training_args.overwrite_output_dir
-    ):
-        raise ValueError(
-            f"Output directory ({training_args.output_dir}) already exists and is not empty. Use --overwrite_output_dir to overcome."
-        )
+    ):  
+        pass
+        # raise ValueError(
+        #     f"Output directory ({training_args.output_dir}) already exists and is not empty. Use --overwrite_output_dir to overcome."
+        # )
+    os.makedirs(training_args.output_dir, exist_ok=True)
 
     # Setup logging
     logging.basicConfig(
@@ -118,7 +120,7 @@ def main():
         )
 
     if model_args.model_name_or_path:
-        if training_args.task in ['generation']:
+        if training_args.task in ['generation', 'single_generation']:
             from model import LxmertForGeneration
             model = LxmertForGeneration.from_pretrained(
                 model_args.model_name_or_path,
@@ -162,7 +164,7 @@ def main():
         #                            ) if training_args.do_eval else None
     
     # Get data collator
-    if training_args.task == 'generation':
+    if training_args.task in ['generation', 'single_generation']:
         from utils.data_collator import UniLM_DataCollator
         data_collator = UniLM_DataCollator(tokenizer=tokenizer,
                                            kg_special_token_ids=config.kg_special_token_ids,
@@ -202,75 +204,174 @@ def main():
         eval_dataloader = _get_dataloader(args=training_args, dataset=eval_dataset, data_collator=data_collator)
         # test_dataloader = _get_dataloader(args=training_args, dataset=test_dataset, data_collator=data_collator)
     
-    
     device = training_args.device
     model.to(device)
     model.eval()
     
-    eval_outputs, test_outputs = None, None
-    if training_args.do_eval and data_args.eval_data_file:        
-        eval_outputs = {'prd_text': [],
-                        'gt_text': [],
-                        'gt_graph': [],
-                        'ptb_graph': [],
-                        'metric': {'bleu': [], 'rouge': [], 'ppl': []},
-        }
-        eval_dataset_size = len(eval_dataset)
-        
-        # 1. generate text(=decoding)
-        logger.info("start decoding...")
-        with torch.no_grad():
-            for idx, inputs in tqdm(enumerate(eval_dataloader), total=len(eval_dataloader), desc='Step'):
-                # if idx > 5:
-                #     continue
-                inputs = _prepare_inputs(inputs, device)
-                outputs = model(**inputs, **decode_option)
-                
-                eval_outputs['prd_text'] += outputs[0]
-                eval_outputs['gt_graph'] += list(outputs[1])
-                eval_outputs['gt_text'] += list(outputs[2])
-                if len(outputs) == 4:
-                    eval_outputs['ptb_graph'] += list(outputs[3])
-                    
-        # 2. evaluate metrics
-        logger.info("start evaluation...")
-        
-        from utils.metrics import bleu_all
-        K = decode_option['search_beam_size']
-        for idx in tqdm(range(eval_dataset_size)):
-            if K == 1:
-                ref = tokenizer.convert_ids_to_tokens(eval_outputs['prd_text'][idx], skip_special_tokens=True) # generated text
-                hyp = tokenizer.convert_ids_to_tokens(eval_outputs['gt_text'][idx], skip_special_tokens=True) # ground truth text
-                eval_outputs['metric']['bleu'] += bleu_all([ref], hyp)
-            else:
-                refs = [tokenizer.convert_ids_to_tokens(outputs[0][idx][k], skip_special_tokens=True) for k in range(K)] # generated text
-                hyp = tokenizer.convert_ids_to_tokens(outputs[2][idx], skip_special_tokens=True) # ground truth text
-                eval_outputs['metric']['bleu'] += bleu_all(refs, hyp)
+    eval_dataset_size = len(eval_dataset)
+    eval_batch_size = len(eval_dataloader)
     
-        # 3. Summarize metrics
+    eval_outputs = None
+    # test_outputs = None
+    
+    # EVAL_DATASET
+    if training_args.do_eval and data_args.eval_data_file:
+        save_file_suffix = '_'.join([str(v) for v in decode_option.values()])
+        save_file_path = os.path.join(training_args.output_dir, f"eval_outputs_{save_file_suffix}.pt")
+            
+        if os.path.isfile(save_file_path):
+            logger.info(f"You've already had this file in {save_file_path}")
+            
+            logger.info(f"Directly load from {save_file_path}")
+            eval_outputs = torch.load(save_file_path)
+            
+            assert list(eval_outputs.keys()) == ['prd_text', 'gt_text', 'gt_graph', 'ptb_graph', 'metric']
+            assert eval_outputs['metric']['ppl'] > 0 # must exists ppl
+            
+        else:
+            logger.info(f"You have to decode...")
+            eval_outputs = {'prd_text': [],
+                            'gt_text': [],
+                            'gt_graph': [],
+                            'ptb_graph': [],
+                            'metric': {'bleu': [], 'rouge': [], 'ppl': []},
+            }
+            
+            # 1. decode for generation
+            logger.info("start decoding...")
+            with torch.no_grad():
+                for idx, inputs in tqdm(enumerate(eval_dataloader), total=eval_batch_size, desc='Step'):
+                    inputs = _prepare_inputs(inputs, device)
+                    outputs = model(**inputs, **decode_option)
+                    
+                    eval_outputs['prd_text'] += outputs[0]
+                    eval_outputs['gt_graph'] += list(outputs[1])
+                    eval_outputs['gt_text'] += list(outputs[2])
+                    if len(outputs) == 4:
+                        eval_outputs['ptb_graph'] += list(outputs[3])
+                    
+            # 2. evaluate metrics
+            logger.info("start evaluation...")
+            
+            # 2-a. BLEU
+            from utils.metrics import bleu_all
+            K = decode_option['search_beam_size']
+            for idx in tqdm(range(eval_dataset_size)):
+                if K == 1:
+                    ref = tokenizer.convert_ids_to_tokens(eval_outputs['prd_text'][idx], skip_special_tokens=True) # generated text
+                    hyp = tokenizer.convert_ids_to_tokens(eval_outputs['gt_text'][idx], skip_special_tokens=True) # ground truth text
+                    eval_outputs['metric']['bleu'] += bleu_all([ref], hyp)
+                else:
+                    refs = [tokenizer.convert_ids_to_tokens(outputs[0][idx][k], skip_special_tokens=True) for k in range(K)] # generated text
+                    hyp = tokenizer.convert_ids_to_tokens(outputs[2][idx], skip_special_tokens=True) # ground truth text
+                    eval_outputs['metric']['bleu'] += bleu_all(refs, hyp)
+            
+            # 2-b. PPL        
+            final_ppl = 0.0
+            with torch.no_grad():
+                for idx, inputs in tqdm(enumerate(eval_dataloader), total=eval_batch_size, desc='Step'):
+                    inputs = _prepare_inputs(inputs, device)
+                    batch_mean_ppl = model.decode_for_ppl(**inputs, **decode_option) # batch_mean_ppl
+                    final_ppl += batch_mean_ppl
+            eval_outputs['metric']['ppl'] = final_ppl/eval_batch_size
+                    
+            # 3. Save file
+            logger.info("start saving the file...")
+            os.makedirs(training_args.output_dir, exist_ok=True)
+            for k,v in eval_outputs.items():
+                eval_outputs[k] = _prepare_outputs(outputs=v)
+            torch.save(eval_outputs, save_file_path)
+        
+        
+        # Summarize metrics
+        logger.info("start summarization...")
+        
+        ''' BLEU 
+        '''
         _keys = ['bleu-1', 'bleu-2', 'bleu-3', 'bleu-4', 'bleu-a', 'bleu-s']
         bleu_scores = {k:0.0 for k in _keys}
         for idx in tqdm(range(eval_dataset_size)):            
             for k in _keys:
                 bleu_scores[k] += eval_outputs['metric']['bleu'][idx][k]
                 
-        print('bleu-1: ', bleu_scores['bleu-1']/eval_dataset_size)
-        print('bleu-2: ', bleu_scores['bleu-2']/eval_dataset_size)
-        print('bleu-3: ', bleu_scores['bleu-3']/eval_dataset_size)
-        print('bleu-4: ', bleu_scores['bleu-4']/eval_dataset_size)
-        print('bleu-a: ', bleu_scores['bleu-a']/eval_dataset_size)
-        print('bleu-s: ', bleu_scores['bleu-s']/eval_dataset_size)
+        print(f"bleu-1: {(bleu_scores['bleu-1']/eval_dataset_size):.4f}")
+        print(f"bleu-2: {(bleu_scores['bleu-2']/eval_dataset_size):.4f}")
+        print(f"bleu-3: {(bleu_scores['bleu-3']/eval_dataset_size):.4f}")
+        print(f"bleu-4: {(bleu_scores['bleu-4']/eval_dataset_size):.4f}")
+        print(f"bleu-a: {(bleu_scores['bleu-a']/eval_dataset_size):.4f}")
+        print(f"bleu-s: {(bleu_scores['bleu-s']/eval_dataset_size):.4f}")
         
-    # 3. Save outputs
-    if training_args.do_eval and data_args.eval_data_file:
-        os.makedirs(training_args.output_dir, exist_ok=True)
-        for k,v in eval_outputs.items():
-            eval_outputs[k] = _prepare_outputs(outputs=v)
         
-        file_suffix = '_'.join([str(v) for v in decode_option.values()])    
-        torch.save(eval_outputs, os.path.join(training_args.output_dir, f"eval_outputs_{file_suffix}.pt"))
+        ''' PPL (should be the same batch_size)
+        '''
+        print(f"PPL: {eval_outputs['metric']['ppl']:.4f}")
+        
+        
+        ''' KG_RATIO (how many refer kg's info?
+        '''
+        # load kg dictionary (id2label mapping)
+        if 'Unified' in data_args.eval_data_file:  # Unified
+            node2id = torch.load(os.path.join(data_args.eval_data_file.replace('/valid',''), 'unified_node'))
+            id2node = {v:k.split('^^')[0] for k,v in node2id.items()}
+            R = config.num_relations
+        # else:  # Not-Unified
+        #     ENTITY2ID_PATH = '/home/ssbae/bae/kg_txt_multimodal/preprocessing/px/entity2id.txt'
+        #     id2node = {
+        #         int(line.split('\t')[1]) + len(config.kg_special_token_ids):\
+        #             line.split('\t')[0].split('^^')[0] for line in open(ENTITY2ID_PATH).read().splitlines()[1:]
+        #             }
+        #     R = len(config.kg_special_token_ids)
+        #     assert R == 3 # {0:'[PAD]', 1:'[MASK]', 2:'[CLS]'}
+        
+        # load px words (ex. aspirine)
+        import pandas as pd
+        PX_TB_PATH = '/home/sjpark/experiments/kg_txt_multimodal/preprocessing/mimic_table/PRESCRIPTIONS.csv'
+        df_px = pd.read_csv(PX_TB_PATH)
+        TOT_PX_WORDS = list(df_px['DRUG'].str.lower().value_counts().index)
+        del df_px
+        
+        # define pattern for finding px
+        PATTERN = r'(\d*[\d]\. +[a-z][^0-9]+)'
+        
+        txt_in_kg_ratio = []
+        gen_in_kg_ratio = []
+        gen_in_kg_nin_txt_ratio = []
+        
+        for idx in tqdm(range(eval_dataset_size)):
+            _gen = eval_outputs['prd_text'][idx]
+            _txt = eval_outputs['gt_text'][idx]
+            _kg = eval_outputs['gt_graph'][idx]
+            
+            # output pool
+            _txt = tokenizer.decode(_txt, skip_special_tokens=True)
+            _gen = tokenizer.decode(_gen, skip_special_tokens=True)
+            
+            # extract keywords in text
+            import re
+            _txt_temp = re.findall(PATTERN, _txt)
+            txt_keywords = [' '.join(t.split()[1:2]) for t in _txt_temp]
+            _gen_temp = re.findall(PATTERN, _gen)
+            gen_keywords = [' '.join(g.split()[1:2]) for g in _gen_temp]
+            
+            # extract keywords in graph
+            _kg_temp = [id2node[k.item()].replace('\"','') for k in _kg if k not in range(R)]
+            kg_keywords = list(set([n_id for n_id in _kg_temp if n_id in TOT_PX_WORDS]))
     
-    
+            # compare and compute metric 
+            txt_keywords_in_kg = set([t for t in txt_keywords if t in ' '.join(kg_keywords).split()])
+            gen_keywords_in_kg = set([g for g in gen_keywords if g in ' '.join(kg_keywords).split()])
+            gen_keywords_in_kg_nin_txt = gen_keywords_in_kg - txt_keywords_in_kg
+            
+            txt_in_kg_ratio += [100*len(txt_keywords_in_kg)/len(kg_keywords)]
+            gen_in_kg_ratio += [100*len(gen_keywords_in_kg)/len(kg_keywords)]
+            gen_in_kg_nin_txt_ratio += [100*len(gen_keywords_in_kg_nin_txt)/len(kg_keywords)]
+            
+        print('txt_in_kg_ratio', sum(txt_in_kg_ratio) / eval_dataset_size)
+        print('gen_in_kg_ratio', sum(gen_in_kg_ratio) / eval_dataset_size)
+        print('gen_in_kg_nin_txt_ratio', sum(gen_in_kg_nin_txt_ratio) / eval_dataset_size)
+        
+            
+        
     
 
 if __name__ == "__main__":

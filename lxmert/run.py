@@ -4,14 +4,14 @@ import os
 import time
 # ======================= CONFIG ==================== #
 ## GPU setting
-os.environ["CUDA_VISIBLE_DEVICES"] = '7'
+os.environ["CUDA_VISIBLE_DEVICES"] = '5'
 for _unified in [True]:
     for _rc in [True, False]:
         for _align in [True]:
             # if not _align and not _rc:
             #     continue
             ## TASK & DB
-            Evaluation = False
+            Evaluation = True
             TASK_NAME = 'single_generation'
             DB = 'px'
             DB_size = 1000
@@ -29,7 +29,7 @@ for _unified in [True]:
             lr = 1e-5
             num_epochs = 20
             train_bsize = 16
-            eval_bsize = 4
+            eval_bsize = 32
             top_k = 10
             Dropout = 0.1
             Num_Negatives = 1
@@ -118,9 +118,12 @@ for _unified in [True]:
                     #     TRAINING_CONFIG['model_name_or_path'] = os.path.join(EXP_PATH, f'pretrained_models/pretrain/{RUN_NAME}')
                     if TASK_NAME in ['generation', 'single_generation']:
                         SRC_PATH = os.path.join(EXP_PATH, 'src/evaluation_generation.py')
-                        TRAINING_CONFIG['decode_option'] = {"perturb_type" : 'pad_all', # init_all, pad_all, None
+                        TRAINING_CONFIG['decode_option'] = {"perturb_type" : None, # init_all, pad_all, None
                                                             "given_lang_tokens": 1, # 1,5,25
-                                                            "clean_outputs": True}
+                                                            "clean_outputs": True,
+                                                            "given_gt_length": False,
+                                                            "search_beam_size": 1,
+                                                            }
                     TRAINING_CONFIG['output_dir'] = os.path.join(EXP_PATH,f"eval_output/{TASK_NAME}/{RUN_NAME}")
                 else:
                     SRC_PATH = os.path.join(EXP_PATH, 'src/finetune.py')
