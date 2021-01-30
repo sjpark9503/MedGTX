@@ -94,7 +94,7 @@ def main():
     elif model_args.model_name_or_path:
         tokenizer = LxmertTokenizer.from_pretrained(model_args.model_name_or_path, cache_dir=model_args.cache_dir)
 
-    if training_args.task in ['binary_retrieval', 'triplet_retrieval', 'single_binary_retrieval']:
+    if training_args.task in ['text_retrieval', 'single_text_retrieval', 'graph_retrieval', 'single_graph_retrieval']:
         model = LxmertForRanking.from_pretrained(
             model_args.model_name_or_path,
             from_tf=bool(".ckpt" in model_args.model_name_or_path),
@@ -138,7 +138,7 @@ def main():
     # )
 
     # Evaluation
-    if training_args.task in ['binary_retrieval', 'single_binary_retrieval']:
+    if training_args.task in ['text_retrieval', 'single_text_retrieval', 'graph_retrieval', 'single_graph_retrieval']:
         top_k = training_args.top_k
         data_loader = DataLoader(
             test_dataset,
@@ -170,10 +170,16 @@ def main():
 
                     inputs = dict()
                     for k in db:
-                        if 'kg' not in k:
-                            inputs[k] = torch.stack([db[k][positive_idx]]*(end_idx-start_idx))
+                        if training_args.task in ['text_retrieval', 'single_text_retrieval']:
+                            if 'kg' in k:
+                                inputs[k] = torch.stack([db[k][positive_idx]]*(end_idx-start_idx))
+                            else:
+                                inputs[k] = db[k][start_idx:end_idx]
                         else:
-                            inputs[k] = db[k][start_idx:end_idx]
+                            if 'kg' not in k:
+                                inputs[k] = torch.stack([db[k][positive_idx]]*(end_idx-start_idx))
+                            else:
+                                inputs[k] = db[k][start_idx:end_idx]
 
                     outputs = model(**inputs)
 

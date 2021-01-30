@@ -97,4 +97,9 @@ __v4.1__ : Evolve generation model and add an evaluation file for generation par
 __v4.1.1__ : Faster MRR, Hits@k evaluation, skip dataset saving, minor bug fix in model.py when ignoring signal from negative sample for Masked LP, Masked LM\
 __v4.1.2__ : add Evaluation file for generation (BLEU), add bleu_all on metrics.py, and ongoing... modify on model.py\
 __v4.2__ : Add Admission level prediction codes.\
-__v4.2.1__ : fix generation evaluation codes
+__v4.2.1__ : fix generation evaluation codes\
+__v4.3__ : 
++ Add manual seed & seed list. (Base seed is 1234, additional seeds are 42, 1, 12, 123)
++ Contain Seed number & Scratch Training in RUN_NAME (_please check run.py!_)
++ Add text retrieval (given graph, retrieve text), graph retrieval option (given text, retrieve graph)
++ Supports Admission Level Prediction
