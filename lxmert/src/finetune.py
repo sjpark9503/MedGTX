@@ -167,7 +167,17 @@ def main():
             raise NotImplementedError("Not implemented task: %s", training_args.task)
     else:
         logger.info("Training new model from scratch")
-        model = LxmertForRanking(config)
+        if 'retrieval' in training_args.task:
+            model = LxmertForRanking(config)
+        elif 'generation' in training_args.task:
+            model = LxmertForKGTokPredAndMaskedLM(config)
+        elif 'prediction' in training_args.task:
+            config.use_ce_pooler=False
+            model = LxmertForAdmLvlPrediction(config)
+        elif 'detection' in training_args.task:
+            model = LxmertForErrorDetection(config)
+        else:
+            raise NotImplementedError("Not implemented task for scratch: %s", training_args.task)
     logger.info(config)
     #model.resize_token_embeddings(len(tokenizer))
 
@@ -184,7 +194,6 @@ def main():
         data_args.block_size = min(data_args.block_size, tokenizer.max_len)
 
     # Get datasets
-
     train_dataset = get_dataset(data_args,
                                 tokenizer=tokenizer,
                                 token_type_vocab=config.token_type_vocab,

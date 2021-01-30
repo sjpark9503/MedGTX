@@ -120,7 +120,7 @@ def main():
         )
 
     if model_args.model_name_or_path:
-        if training_args.task in ['generation', 'single_generation']:
+        if training_args.task in ['generation', 'single_generation', 'scratch_generation']:
             from model import LxmertForGeneration
             model = LxmertForGeneration.from_pretrained(
                 model_args.model_name_or_path,
@@ -164,7 +164,7 @@ def main():
         #                            ) if training_args.do_eval else None
     
     # Get data collator
-    if training_args.task in ['generation', 'single_generation']:
+    if training_args.task in ['generation', 'single_generation', 'scratch_generation']:
         from utils.data_collator import UniLM_DataCollator
         data_collator = UniLM_DataCollator(tokenizer=tokenizer,
                                            kg_special_token_ids=config.kg_special_token_ids,
@@ -219,25 +219,25 @@ def main():
         save_file_suffix = '_'.join([str(v) for v in decode_option.values()])
         save_file_path = os.path.join(training_args.output_dir, f"eval_outputs_{save_file_suffix}.pt")
             
+        eval_outputs = {'prd_text': [],
+                        'gt_text': [],
+                        'gt_graph': [],
+                        'ptb_graph': [],
+                        'metric': {'bleu': [], 'rouge': [], 'ppl': []},
+                        }
+        
         if os.path.isfile(save_file_path):
             logger.info(f"You've already had this file in {save_file_path}")
             
             logger.info(f"Directly load from {save_file_path}")
             eval_outputs = torch.load(save_file_path)
             
-            assert list(eval_outputs.keys()) == ['prd_text', 'gt_text', 'gt_graph', 'ptb_graph', 'metric']
-            assert eval_outputs['metric']['ppl'] > 0 # must exists ppl
+            # assert list(eval_outputs.keys()) == ['prd_text', 'gt_text', 'gt_graph', 'ptb_graph', 'metric']
+            # assert eval_outputs['metric']['ppl'] > 0 # must exists ppl
             
-        else:
+        if len(eval_outputs['gt_text']) == 0:
             logger.info(f"You have to decode...")
-            eval_outputs = {'prd_text': [],
-                            'gt_text': [],
-                            'gt_graph': [],
-                            'ptb_graph': [],
-                            'metric': {'bleu': [], 'rouge': [], 'ppl': []},
-            }
-            
-            # 1. decode for generation
+            # decode for generation
             logger.info("start decoding...")
             with torch.no_grad():
                 for idx, inputs in tqdm(enumerate(eval_dataloader), total=eval_batch_size, desc='Step'):
@@ -249,11 +249,12 @@ def main():
                     eval_outputs['gt_text'] += list(outputs[2])
                     if len(outputs) == 4:
                         eval_outputs['ptb_graph'] += list(outputs[3])
-                    
-            # 2. evaluate metrics
+                        
+        if len(eval_outputs['metric']['bleu']) == 0:        
+            # evaluate metrics
             logger.info("start evaluation...")
             
-            # 2-a. BLEU
+            # BLEU
             from utils.metrics import bleu_all
             K = decode_option['search_beam_size']
             for idx in tqdm(range(eval_dataset_size)):
@@ -265,23 +266,27 @@ def main():
                     refs = [tokenizer.convert_ids_to_tokens(outputs[0][idx][k], skip_special_tokens=True) for k in range(K)] # generated text
                     hyp = tokenizer.convert_ids_to_tokens(outputs[2][idx], skip_special_tokens=True) # ground truth text
                     eval_outputs['metric']['bleu'] += bleu_all(refs, hyp)
-            
-            # 2-b. PPL        
+              
+        if isinstance(eval_outputs['metric']['ppl'], float):
+            eval_outputs['metric']['ppl'] = list(eval_outputs['metric']['ppl'])
+        if len(eval_outputs['metric']['ppl']) == 0:            
+            # PPL        
             final_ppl = 0.0
             with torch.no_grad():
                 for idx, inputs in tqdm(enumerate(eval_dataloader), total=eval_batch_size, desc='Step'):
                     inputs = _prepare_inputs(inputs, device)
                     batch_mean_ppl = model.decode_for_ppl(**inputs, **decode_option) # batch_mean_ppl
                     final_ppl += batch_mean_ppl
-            eval_outputs['metric']['ppl'] = final_ppl/eval_batch_size
-                    
-            # 3. Save file
-            logger.info("start saving the file...")
-            os.makedirs(training_args.output_dir, exist_ok=True)
-            for k,v in eval_outputs.items():
-                eval_outputs[k] = _prepare_outputs(outputs=v)
-            torch.save(eval_outputs, save_file_path)
+            eval_outputs['metric']['ppl'] = [final_ppl/eval_batch_size]
         
+                
+        # 3. Save file
+        logger.info("start saving the file...")
+        os.makedirs(training_args.output_dir, exist_ok=True)
+        for k,v in eval_outputs.items():
+            eval_outputs[k] = _prepare_outputs(outputs=v)
+        torch.save(eval_outputs, save_file_path)
+    
         
         # Summarize metrics
         logger.info("start summarization...")
@@ -314,14 +319,14 @@ def main():
             node2id = torch.load(os.path.join(data_args.eval_data_file.replace('/valid',''), 'unified_node'))
             id2node = {v:k.split('^^')[0] for k,v in node2id.items()}
             R = config.num_relations
-        # else:  # Not-Unified
-        #     ENTITY2ID_PATH = '/home/ssbae/bae/kg_txt_multimodal/preprocessing/px/entity2id.txt'
-        #     id2node = {
-        #         int(line.split('\t')[1]) + len(config.kg_special_token_ids):\
-        #             line.split('\t')[0].split('^^')[0] for line in open(ENTITY2ID_PATH).read().splitlines()[1:]
-        #             }
-        #     R = len(config.kg_special_token_ids)
-        #     assert R == 3 # {0:'[PAD]', 1:'[MASK]', 2:'[CLS]'}
+        else:  # Not-Unified
+            ENTITY2ID_PATH = '/home/ssbae/bae/kg_txt_multimodal/preprocessing/px/entity2id.txt'
+            id2node = {
+                int(line.split('\t')[1]) + len(config.kg_special_token_ids):\
+                    line.split('\t')[0].split('^^')[0] for line in open(ENTITY2ID_PATH).read().splitlines()[1:]
+                    }
+            R = len(config.kg_special_token_ids)
+            assert R == 3 # {0:'[PAD]', 1:'[MASK]', 2:'[CLS]'}
         
         # load px words (ex. aspirine)
         import pandas as pd
