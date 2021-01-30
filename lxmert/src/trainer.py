@@ -642,7 +642,7 @@ class Trainer:
 
         # self.control = self.callback_handler.on_train_end(self.args, self.state, self.control)
 
-        return TrainOutput(self.state.global_step, self.process_loss_dict(loss_dict,accumulate=True)['loss'])
+        #return TrainOutput(self.state.global_step, self.process_loss_dict(loss_dict,accumulate=True)['loss'])
 
     def log_save_evaluate(self, loss_dict, model):
         FLAG_EarlyStop = False
@@ -807,7 +807,7 @@ class Trainer:
 
         loss = outputs.loss
         loss_dict = outputs.loss_dict
-        if self.task in ['binary_retrieval', 'single_binary_retrieval']:
+        if self.task in ['binary_retrieval', 'single_binary_retrieval', 'text_retrieval', 'single_text_retrieval', 'graph_retrieval', 'single_graph_retrieval']:
             score = torch.max(outputs.pooled_logits,dim=1)[-1].tolist()
             gt = inputs['label'].tolist()
             loss_dict['Acc'] = accuracy_score(gt,score)
@@ -1079,7 +1079,7 @@ class Trainer:
         if self.task in ['pretrain', 'single_pretrain']:
             self.predicted += [(k,[]) for k in ['kg', 'lang']]
             self.predicted += [('gt_'+k, []) for k in ['kg', 'lang']]
-        elif self.task in ['binary_retrieval', 'single_binary_retrieval']:
+        elif self.task in ['binary_retrieval', 'single_binary_retrieval', 'text_retrieval', 'single_text_retrieval', 'graph_retrieval', 'single_graph_retrieval']:
             self.predicted += [('score',[])]
             self.predicted += [('label', [])]
         elif self.task in ['adm_lvl_prediction']:
@@ -1116,7 +1116,7 @@ class Trainer:
                 if key in ['lang','kg']:
                     self.metrics[f"eval_{key}_Acc"] = accuracy_score(self.predicted[f'gt_{key}'],self.predicted[key])
                     self.metrics[f"eval_{key}_MacroF1"] = f1_score(self.predicted[f'gt_{key}'], self.predicted[key],average='macro')
-            if (self.task in ['binary_retrieval', 'single_binary_retrieval']) and (key in ['score']):
+            if (self.task in ['binary_retrieval', 'single_binary_retrieval', 'text_retrieval', 'single_text_retrieval', 'graph_retrieval', 'single_graph_retrieval']) and (key in ['score']):
                 self.metrics["eval_align_Acc"] = accuracy_score(self.predicted['label'],self.predicted['score'])
             if (self.task in ['adm_lvl_prediction']) and (key in ['score']):
                 self.metrics[f"eval_P@{self.args.top_k}"] = precision_at_k(self.predicted['label'],self.predicted['score'],k=self.args.top_k)
@@ -1174,7 +1174,7 @@ class Trainer:
                         -1).long().tolist()
 
             ## prediction for binary retreival
-            elif self.task in ['binary_retrieval', 'single_binary_retrieval']:
+            elif self.task in ['binary_retrieval', 'single_binary_retrieval', 'text_retrieval', 'single_text_retrieval', 'graph_retrieval', 'single_graph_retrieval']:
                 if prediction:
                     return outputs.pooled_logits.detach().numpy()
 

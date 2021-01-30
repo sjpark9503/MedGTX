@@ -11,8 +11,8 @@ import torch
 # Own implementation
 from utils.parameters import parser
 from utils.dataset import get_dataset
-from utils.data_collator import NegativeSampling_DataCollator, AdmLvlPred_DataCollator
-from model import LxmertForRanking, LxmertForKGTokPredAndMaskedLM, LxmertForMultiLabelClassification
+from utils.data_collator import NegativeSampling_DataCollator, AdmLvlPred_DataCollator, ErrorDetection_DataCollator
+from model import LxmertForRanking, LxmertForKGTokPredAndMaskedLM, LxmertForAdmLvlPrediction, LxmertForErrorDetection
 from trainer import Trainer
 
 # From Huggingface transformers package
@@ -84,7 +84,7 @@ def main():
     else:
         config = CONFIG_MAPPING[model_args.model_type]()
         logger.warning("You are instantiating a new config instance from scratch.")
-    logger.info(config)
+    config.use_ce_pooler=True
     if model_args.tokenizer_name:
         tokenizer = LxmertTokenizer.from_pretrained(model_args.tokenizer_name, cache_dir=model_args.cache_dir)
     elif model_args.model_name_or_path:
@@ -102,7 +102,6 @@ def main():
     if model_args.model_name_or_path:
         if training_args.task in ['binary_retrieval', 'single_binary_retrieval']:
             # try:
-            config.use_ce_pooler=True
             model = LxmertForRanking.from_pretrained(
                 model_args.model_name_or_path,
                 from_tf=bool(".ckpt" in model_args.model_name_or_path),
@@ -125,7 +124,6 @@ def main():
             #         cache_dir=model_args.cache_dir,
             #     )
         elif training_args.task in ['generation', 'single_generation']: 
-            config.use_ce_pooler=True
             model = LxmertForKGTokPredAndMaskedLM.from_pretrained(
                 model_args.model_name_or_path,
                 from_tf=bool(".ckpt" in model_args.model_name_or_path),
@@ -134,7 +132,17 @@ def main():
             )
         elif training_args.task in ['adm_lvl_prediction']:
             config.use_ce_pooler=False
-            model = LxmertForMultiLabelClassification.from_pretrained(
+            model = LxmertForAdmLvlPrediction.from_pretrained(
+                model_args.model_name_or_path,
+                from_tf=bool(".ckpt" in model_args.model_name_or_path),
+                config=config,
+                cache_dir=model_args.cache_dir,
+            )
+            #db =  training_args.run_name.split('/')[0].split('_')[-1]
+            #class_weight_dict = torch.load(os.path.join(os.getcwd(),f'data/{db}/adm_class_weight'))
+            #model.class_weight = torch.tensor(list(dict(sorted(class_weight_dict.items())).values()),requires_grad=False).to(training_args.device)
+        elif training_args.task in ['deletion_detection', 'replacement_detection']:
+            model = LxmertForErrorDetection.from_pretrained(
                 model_args.model_name_or_path,
                 from_tf=bool(".ckpt" in model_args.model_name_or_path),
                 config=config,
@@ -145,7 +153,7 @@ def main():
     else:
         logger.info("Training new model from scratch")
         model = LxmertForRanking(config)
-
+    logger.info(config)
     #model.resize_token_embeddings(len(tokenizer))
 
     if config.model_type in ["bert", "roberta", "distilbert", "camembert"] and not data_args.mlm:
@@ -188,7 +196,12 @@ def main():
         data_collator = AdmLvlPred_DataCollator(tokenizer=tokenizer,
                                                 num_kg_labels=config.num_kg_labels,
                                                 kg_special_token_ids=config.kg_special_token_ids)
-    elif training_args.task in ['generation', 'single_generation']:
+    elif training_args.task in ['deletion_detection', 'replacement_detection']:
+        data_collator = ErrorDetection_DataCollator(tokenizer=tokenizer,
+                                                num_kg_labels=config.num_kg_labels,
+                                                task = training_args.task,
+                                                kg_special_token_ids=config.kg_special_token_ids)
+    elif training_args.task == 'generation':
         from utils.data_collator import UniLM_DataCollator
         data_collator = UniLM_DataCollator(tokenizer=tokenizer,
                                            kg_special_token_ids=config.kg_special_token_ids)
