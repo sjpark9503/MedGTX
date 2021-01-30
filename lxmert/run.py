@@ -4,11 +4,11 @@ import os
 import time
 # ======================= CONFIG ==================== #
 ## GPU setting
-os.environ["CUDA_VISIBLE_DEVICES"] = '4'
+os.environ["CUDA_VISIBLE_DEVICES"] = '6'
 # Seed List
 ## Base seed : [1234] / Additional seeds : [42, 1, 12, 123]
 SEED = [1234]
-assert all([True if seed in [1234, 1, 2, 123, 42] else False for seed in SEED]), 'Seed out of range'
+assert all([True if seed in [1234, 1, 12, 123, 42] else False for seed in SEED]), 'Seed out of range'
 
 for rand_seed in SEED:
     for _unified in [True,False]:
