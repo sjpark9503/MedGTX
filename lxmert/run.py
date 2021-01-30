@@ -4,23 +4,23 @@ import os
 import time
 # ======================= CONFIG ==================== #
 ## GPU setting
-os.environ["CUDA_VISIBLE_DEVICES"] = '6'
+os.environ["CUDA_VISIBLE_DEVICES"] = '7'
 # Seed List
 ## Base seed : [1234] / Additional seeds : [42, 1, 12, 123]
-SEED = [1234]
+SEED = [123, 42]
 assert all([True if seed in [1234, 1, 12, 123, 42] else False for seed in SEED]), 'Seed out of range'
 
 for rand_seed in SEED:
-    for _unified in [True,False]:
-        for _rc in [True]:
-            for _align in [True,False]:
+    for _unified in [True]:
+        for _rc in [False]:
+            for _align in [True]:
                 ## TASK & DB
-                Evaluation = False
-                TASK_NAME = 'adm_lvl_prediction'
-                DB = 'dx,prx'
-                DB_size = 2000
+                Evaluation = True
+                TASK_NAME = 'text_retrieval'
+                DB = 'px'
+                DB_size = 1000
                 ## Pretraining Configs
-                MODEL_TYPE = 'rand'
+                MODEL_TYPE = 'both'
                 Unified = _unified
                 Align = _align
                 Relation_Classification = _rc
@@ -33,7 +33,7 @@ for rand_seed in SEED:
                 lr = 2e-5
                 num_epochs = 20
                 train_bsize = 32
-                eval_bsize = 4
+                eval_bsize = 200
                 top_k = 10
                 Dropout = 0.1
                 Num_Negatives = 1
@@ -119,14 +119,17 @@ for rand_seed in SEED:
                     if Evaluation:
                         SRC_PATH = os.path.join(EXP_PATH, 'src/evaluation.py')
                         TRAINING_CONFIG['model_name_or_path'] = os.path.join(EXP_PATH, f"pretrained_models/{TASK_NAME}/{RUN_NAME}_RNG{rand_seed}{'_scratch' if Scratch_Downstream else ''}")
+                        if TASK_NAME in ['text_retrieval', 'single_text_retrieval', 'graph_retrieval', 'single_graph_retrieval']:
+                            TRAINING_CONFIG['model_name_or_path'] = os.path.join(EXP_PATH, f"pretrained_models/{'single' if TASK_NAME.split('_')[0] == 'single' else ''}binary_retrieval/{RUN_NAME}_RNG{rand_seed}{'_scratch' if Scratch_Downstream else ''}")
+
                         if TASK_NAME in ['generation', 'single_generation']:
                             SRC_PATH = os.path.join(EXP_PATH, 'src/evaluation_generation.py')
-                        TRAINING_CONFIG['decode_option'] = {"perturb_type" : None, # init_all, pad_all, None
-                                                            "given_lang_tokens": 1, # 1,5,25
-                                                            "clean_outputs": True,
-                                                            "given_gt_length": False,
-                                                            "search_beam_size": 1,
-                                                            }
+                            TRAINING_CONFIG['decode_option'] = {"perturb_type" : None, # init_all, pad_all, None
+                                                                "given_lang_tokens": 1, # 1,5,25
+                                                                "clean_outputs": True,
+                                                                "given_gt_length": False,
+                                                                "search_beam_size": 1,
+                                                                }
                         TRAINING_CONFIG['output_dir'] = os.path.join(EXP_PATH,f"eval_output/{TASK_NAME}/{RUN_NAME}_RNG{rand_seed}{'_scratch' if Scratch_Downstream else ''}")
                     else:
                         SRC_PATH = os.path.join(EXP_PATH, 'src/finetune.py')
