@@ -102,4 +102,5 @@ __v4.3__ :
 + Add manual seed & seed list. (Base seed is 1234, additional seeds are 42, 1, 12, 123)
 + Contain Seed number & Scratch Training in RUN_NAME (_please check run.py!_)
 + Add text retrieval (given graph, retrieve text), graph retrieval option (given text, retrieve graph)
-+ Supports Admission Level Prediction
++ Supports Admission Level Prediction\
+__v4.3.1__ : add helper variables(TASK_POOL, isSingleModel) in run.py, update finetune.py
