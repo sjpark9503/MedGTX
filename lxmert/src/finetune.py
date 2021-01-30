@@ -130,14 +130,29 @@ def main():
                 config=config,
                 cache_dir=model_args.cache_dir,
             )
-        elif training_args.task in ['adm_lvl_prediction']:
-            config.use_ce_pooler=False
-            model = LxmertForAdmLvlPrediction.from_pretrained(
-                model_args.model_name_or_path,
-                from_tf=bool(".ckpt" in model_args.model_name_or_path),
-                config=config,
-                cache_dir=model_args.cache_dir,
-            )
+        elif training_args.task in ['adm_lvl_prediction', 'single_adm_lvl_prediction']:
+            try:
+                config.use_ce_pooler=False
+                model = LxmertForAdmLvlPrediction.from_pretrained(
+                    model_args.model_name_or_path,
+                    from_tf=bool(".ckpt" in model_args.model_name_or_path),
+                    config=config,
+                    cache_dir=model_args.cache_dir,
+                )
+            except:
+                ckpt_path = os.path.join(model_args.model_name_or_path, 'pytorch_model.bin')
+                load_model_dict = torch.load(ckpt_path)
+                modified_model_dict = load_model_dict.copy()
+                for param in load_model_dict:
+                    if 'multi_pooler' in param:
+                        modified_model_dict.pop(param)
+                torch.save(modified_model_dict, ckpt_path)
+                model = LxmertForAdmLvlPrediction.from_pretrained(
+                    model_args.model_name_or_path,
+                    from_tf=bool(".ckpt" in model_args.model_name_or_path),
+                    config=config,
+                    cache_dir=model_args.cache_dir,
+                )
             #db =  training_args.run_name.split('/')[0].split('_')[-1]
             #class_weight_dict = torch.load(os.path.join(os.getcwd(),f'data/{db}/adm_class_weight'))
             #model.class_weight = torch.tensor(list(dict(sorted(class_weight_dict.items())).values()),requires_grad=False).to(training_args.device)
@@ -192,7 +207,7 @@ def main():
                                                       n_negatives=training_args.n_negatives)
         eval_data_collator = NegativeSampling_DataCollator(tokenizer=tokenizer,
                                                       kg_special_token_ids=config.kg_special_token_ids)
-    elif training_args.task == 'adm_lvl_prediction':
+    elif training_args.task in ['adm_lvl_prediction', 'single_adm_lvl_prediction']:
         data_collator = AdmLvlPred_DataCollator(tokenizer=tokenizer,
                                                 num_kg_labels=config.num_kg_labels,
                                                 kg_special_token_ids=config.kg_special_token_ids)
@@ -201,7 +216,7 @@ def main():
                                                 num_kg_labels=config.num_kg_labels,
                                                 task = training_args.task,
                                                 kg_special_token_ids=config.kg_special_token_ids)
-    elif training_args.task == 'generation':
+    elif training_args.task in ['generation', 'single_generation']:
         from utils.data_collator import UniLM_DataCollator
         data_collator = UniLM_DataCollator(tokenizer=tokenizer,
                                            kg_special_token_ids=config.kg_special_token_ids)

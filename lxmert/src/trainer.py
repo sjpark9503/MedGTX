@@ -1082,7 +1082,7 @@ class Trainer:
         elif self.task in ['binary_retrieval', 'single_binary_retrieval', 'text_retrieval', 'single_text_retrieval', 'graph_retrieval', 'single_graph_retrieval']:
             self.predicted += [('score',[])]
             self.predicted += [('label', [])]
-        elif self.task in ['adm_lvl_prediction']:
+        elif self.task in ['adm_lvl_prediction', 'single_adm_lvl_prediction']:
             self.predicted += [('score',[])]
             self.predicted += [('label', [])]
         elif self.task in ['generation', 'single_generation']:
@@ -1118,7 +1118,7 @@ class Trainer:
                     self.metrics[f"eval_{key}_MacroF1"] = f1_score(self.predicted[f'gt_{key}'], self.predicted[key],average='macro')
             if (self.task in ['binary_retrieval', 'single_binary_retrieval', 'text_retrieval', 'single_text_retrieval', 'graph_retrieval', 'single_graph_retrieval']) and (key in ['score']):
                 self.metrics["eval_align_Acc"] = accuracy_score(self.predicted['label'],self.predicted['score'])
-            if (self.task in ['adm_lvl_prediction']) and (key in ['score']):
+            if (self.task in ['adm_lvl_prediction', 'single_adm_lvl_prediction']) and (key in ['score']):
                 self.metrics[f"eval_P@{self.args.top_k}"] = precision_at_k(self.predicted['label'],self.predicted['score'],k=self.args.top_k)
             if (self.task in ['generation', 'single_generation']) and (key in ['lang']):
                 self.metrics[f"eval_{key}_Acc"] = accuracy_score(self.predicted[f'gt_{key}'],self.predicted[key])
@@ -1183,7 +1183,7 @@ class Trainer:
                     self.predicted['label'] += inputs['label'].tolist()
 
             ## prediction for triplet retreival
-            elif self.task in ['adm_lvl_prediction']:
+            elif self.task in ['adm_lvl_prediction', 'single_adm_lvl_prediction']:
                 if prediction:
                     return outputs.pooled_logits.detach().numpy()
 
