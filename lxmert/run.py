@@ -2,12 +2,13 @@ import subprocess
 import json
 import os
 import time
+import itertools
 # ======================= CONFIG ==================== #
 ## GPU setting
-os.environ["CUDA_VISIBLE_DEVICES"] = '7'
+os.environ["CUDA_VISIBLE_DEVICES"] = '0'
 # Seed List
 ## Base seed : [1234] / Additional seeds : [42, 1, 12, 123]
-SEED = [123, 42]
+SEED = [1234]
 assert all([True if seed in [1234, 1, 12, 123, 42] else False for seed in SEED]), 'Seed out of range'
 
 for rand_seed in SEED:
@@ -45,13 +46,20 @@ for rand_seed in SEED:
                 Var_Unified = 'Unified' if Unified else ''
                 Var_Align = 'Align_' if Align else ''
                 Var_RC = 'RC_' if Relation_Classification else ''
+                # Helper Variables (TASK_POOL, isSingleModel)
+                TASK_POOL = {'pretrain': ['pretrain'], 
+                             'task_retrieval': ['binary_retrieval', 'text_retrieval', 'graph_retrieval'],
+                             'task_generation': ['generation'],
+                             'task_prediction': ['adm_lvl_prediction'],
+                             'task_detection': ['error_detection', 'deletion_detection']}
+                TASK_POOL = {k:[''.join(l) for l in itertools.product(['','single_'],v)] for k,v in TASK_POOL.items()}
+                isSingleModel = (TASK_NAME.split('_')[0] == 'single')
+                # Assertion
                 assert MODEL_TYPE in Var_MODEL, "Model not supported"
                 assert DB in ['px','dx,prx'], "DB not supported"
-                assert TASK_NAME in ['pretrain', 'binary_retrieval', 'text_retrieval', 'graph_retrieval','generation', 'adm_lvl_prediction',
-                                    'single_pretrain',  'single_binary_retrieval', 'single_text_retrieval', 'single_graph_retrieval', 'single_generation'], "Task not supported"
+                assert TASK_NAME in sum(TASK_POOL.values(), []), "Task not supported"
                 if Scratch_Downstream is True:
                     assert Align is False and Relation_Classification is False, "Scratch start downstream task must turn off alignment prediction & relation classification"
-
                 # Model Name
                 ## <LMinit & KGenc> : both, <LMinit only> : lm, <KGenc only> : kg, <RandomInit> : rand
                 ## Unified(Placeholder) for Abstract Node : True or False
@@ -80,7 +88,7 @@ for rand_seed in SEED:
                     "learning_rate": lr,
                     "num_train_epochs": num_epochs,
                     "num_log_per_epoch": 20,
-                    "save_per_run": (num_epochs//10) if TASK_NAME in ['pretrain', 'single_pretrain'] else int(1e2),
+                    "save_per_run": (num_epochs//10) if TASK_NAME in TASK_POOL['pretrain'] else int(1e2),
                     "num_eval_per_epoch": 2,
                     "task" : TASK_NAME,
                     "train_data_file":os.path.join(EXP_PATH,f"data/{DB}_{DB_size}/{MODEL_NAME}/train"),
@@ -89,7 +97,7 @@ for rand_seed in SEED:
                     "run_name":f"{TASK_NAME}_{RUN_NAME}"
                 }
 
-                if (TASK_NAME in ['pretrain', 'single_pretrain']) or Scratch_Downstream:
+                if (TASK_NAME in TASK_POOL['pretrain']) or Scratch_Downstream:
                     if Scratch_Downstream:
                         SRC_PATH = os.path.join(EXP_PATH, 'src/finetune.py')
                         TRAINING_CONFIG['output_dir'] = os.path.join(EXP_PATH,f"pretrained_models/{TASK_NAME}/{RUN_NAME}_RNG{rand_seed}_scratch")
@@ -111,7 +119,7 @@ for rand_seed in SEED:
                     Config['margin'] = Margin
                     Config['attention_probs_dropout_prob'] = Dropout
                     Config['hidden_dropout_prob'] = Dropout
-                    Config['cross_att_type'] = 'single' if TASK_NAME.split('_')[0] == 'single' else 'cross'
+                    Config['cross_att_type'] = 'single' if isSingleModel else 'cross'
                     with open(TRAINING_CONFIG['config_name'],'w') as g:
                         json.dump(Config,g)
                         
@@ -119,10 +127,9 @@ for rand_seed in SEED:
                     if Evaluation:
                         SRC_PATH = os.path.join(EXP_PATH, 'src/evaluation.py')
                         TRAINING_CONFIG['model_name_or_path'] = os.path.join(EXP_PATH, f"pretrained_models/{TASK_NAME}/{RUN_NAME}_RNG{rand_seed}{'_scratch' if Scratch_Downstream else ''}")
-                        if TASK_NAME in ['text_retrieval', 'single_text_retrieval', 'graph_retrieval', 'single_graph_retrieval']:
-                            TRAINING_CONFIG['model_name_or_path'] = os.path.join(EXP_PATH, f"pretrained_models/{'single' if TASK_NAME.split('_')[0] == 'single' else ''}binary_retrieval/{RUN_NAME}_RNG{rand_seed}{'_scratch' if Scratch_Downstream else ''}")
-
-                        if TASK_NAME in ['generation', 'single_generation']:
+                        if TASK_NAME in TASK_POOL['task_retrieval']:
+                            TRAINING_CONFIG['model_name_or_path'] = os.path.join(EXP_PATH, f"pretrained_models/{'single_' if isSingleModel else ''}binary_retrieval/{RUN_NAME}_RNG{rand_seed}{'_scratch' if Scratch_Downstream else ''}")
+                        if TASK_NAME in TASK_POOL['task_generation']:
                             SRC_PATH = os.path.join(EXP_PATH, 'src/evaluation_generation.py')
                             TRAINING_CONFIG['decode_option'] = {"perturb_type" : None, # init_all, pad_all, None
                                                                 "given_lang_tokens": 1, # 1,5,25
@@ -133,10 +140,7 @@ for rand_seed in SEED:
                         TRAINING_CONFIG['output_dir'] = os.path.join(EXP_PATH,f"eval_output/{TASK_NAME}/{RUN_NAME}_RNG{rand_seed}{'_scratch' if Scratch_Downstream else ''}")
                     else:
                         SRC_PATH = os.path.join(EXP_PATH, 'src/finetune.py')
-                        if TASK_NAME.split('_')[0] == 'single':
-                            TRAINING_CONFIG['model_name_or_path'] = os.path.join(EXP_PATH, f'pretrained_models/single_pretrain/{RUN_NAME}')
-                        else:
-                            TRAINING_CONFIG['model_name_or_path'] = os.path.join(EXP_PATH, f'pretrained_models/pretrain/{RUN_NAME}')
+                        TRAINING_CONFIG['model_name_or_path'] = os.path.join(EXP_PATH, f"pretrained_models/{'single_' if isSingleModel else ''}pretrain/{RUN_NAME}")
                         TRAINING_CONFIG['run_name'] = f"{TASK_NAME}_{RUN_NAME}_RNG{rand_seed}{'_scratch' if Scratch_Downstream else ''}"
                         TRAINING_CONFIG['output_dir'] = os.path.join(EXP_PATH,f"pretrained_models/{TASK_NAME}/{RUN_NAME}_RNG{rand_seed}{'_scratch' if Scratch_Downstream else ''}")
                         # load config
@@ -146,16 +150,12 @@ for rand_seed in SEED:
                         Config['margin'] = Margin
                         Config['attention_probs_dropout_prob'] = Dropout
                         Config['hidden_dropout_prob'] = Dropout
-                        if TASK_NAME in ['generation', 'single_generation']:
-                            Config['cross_att_type'] = 'unilm'
-                        elif TASK_NAME in ['adm_lvl_prediction']:
-                            Config['cross_att_type'] = 'single' if TASK_NAME.split('_')[0] == 'single' else 'cross'
+                        Config['cross_att_type'] = 'unilm' if TASK_NAME in TASK_POOL['task_generation'] else ('single' if isSingleModel else 'cross')
+                        if TASK_NAME in TASK_POOL['task_prediction']:
                             for k in TRAINING_CONFIG:
                                 if 'file' in k:
                                     TRAINING_CONFIG[k] = TRAINING_CONFIG[k].replace('data','data/adm')
                             Config['num_kg_labels'] = 45 if DB=='px' else 95
-                        else:
-                            Config['cross_att_type'] = 'single' if TASK_NAME.split('_')[0] == 'single' else 'cross'
                         # overwrite config
                         if not os.path.isdir(f"config/{TASK_NAME}/{DB}"):
                             os.makedirs(f"config/{TASK_NAME}/{DB}")
