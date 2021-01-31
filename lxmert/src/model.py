@@ -682,6 +682,7 @@ class LxmertEncoder(nn.Module):
         super().__init__()
 
         self.config = config
+        self.encoder_type = self.config.encoder_type['lang'].lower()
 
         # Number of layers
         self.num_l_layers = config.l_layers
@@ -693,19 +694,47 @@ class LxmertEncoder(nn.Module):
         self.layer = nn.ModuleList([LxmertLayer(config) for _ in range(self.num_l_layers)])
         self.x_layers = nn.ModuleList([LxmertXLayer(config) for _ in range(self.num_x_layers)])
         self.r_layers = nn.ModuleList([LxmertLayer(config) for _ in range(self.num_r_layers)])
+        
+        # Lang Encoder Architecture
+        # LSTM for generation, BiLSTM for pretraining/other donwstream tasks
+        if self.encoder_type in ['bilstm', 'lstm']:
+            self.convert_lang_encoder_to_RNN()
 
     def re_init_to_pretrained_lang_model(self):
-        """ If we usep lm to language part, then we re-init our encoder.layer """
-        plm_usage = self.config.pretrained_lang_model
-        from transformers import AutoModel, AutoConfig
-        if plm_usage['use_weight']:
-            logger.info("Load weight of pretrained model for language part")
-            self.layer = AutoModel.from_pretrained(plm_usage['model_name']).encoder.layer
+        if isinstance(self.layer, nn.LSTM):
+            logger.info("You've already used RNN-Style Architecture so that cannot re-init with PLMs.")
         else:
-            logger.info("Load only configuration of pretrained model for language part")
-            plm_config = AutoConfig.from_pretrained(plm_usage['model_name'])
-            self.layer = AutoModel.from_config(plm_config).encoder.layer
-
+            """ If we use lm to language part, then we re-init our encoder.layer """
+            plm_usage = self.config.pretrained_lang_model
+            from transformers import AutoModel, AutoConfig
+            if plm_usage['use_weight']:
+                logger.info("Load weight of pretrained model for language part")
+                self.layer = AutoModel.from_pretrained(plm_usage['model_name']).encoder.layer
+            else:
+                logger.info("Load only configuration of pretrained model for language part")
+                plm_config = AutoConfig.from_pretrained(plm_usage['model_name'])
+                self.layer = AutoModel.from_config(plm_config).encoder.layer
+            
+    def convert_lang_encoder_to_RNN(self):
+        if self.encoder_type == 'lstm':
+            logger.info("Use LSTM Decoder instead of BERT")
+            self.layer = nn.LSTM(input_size=self.config.hidden_size,
+                                 hidden_size=self.config.hidden_size,
+                                 num_layers=3,
+                                 dropout=self.config.hidden_dropout_prob,
+                                 batch_first=True,
+                                 bidirectional=False)
+        elif self.encoder_type == 'bilstm':
+            logger.info("Use BiLSTM Encoder instead of BERT")
+            self.layer = nn.LSTM(input_size=self.config.hidden_size,
+                                 hidden_size=self.config.hidden_size,
+                                 num_layers=3,
+                                 dropout=self.config.hidden_dropout_prob,
+                                 batch_first=True,
+                                 bidirectional=True)
+        else:
+            raise NotImplementedError("not implemented yet, a such kind of architecture for language encoder:", self.encoder_type)
+        
     def forward(
         self,
         lang_feats,
@@ -721,14 +750,24 @@ class LxmertEncoder(nn.Module):
         kg_attentions = () if output_attentions or self.config.output_attentions else None
         language_attentions = () if output_attentions or self.config.output_attentions else None
         cross_encoder_attentions = {'txt->kg':(),'kg->txt':()} if output_attentions or self.config.output_attentions else None
-
+        
         # Run language layers
-        for layer_module in self.layer:
-            l_outputs = layer_module(lang_feats, lang_attention_mask, output_attentions=output_attentions)
+        ## use RNN Encoder
+        if self.encoder_type in ['bilstm', 'lstm']:
+            l_outputs = self.layer(lang_feats)
             lang_feats = l_outputs[0]
+            if self.layer.bidirectional:
+                bsz, seq_len = lang_feats.shape[0], lang_feats.shape[1]
+                lang_feats = lang_feats.view(bsz, seq_len, 2, -1).sum(axis=2)
             language_hidden_states = language_hidden_states + (lang_feats,)
-            if language_attentions is not None:
-                language_attentions = language_attentions + (l_outputs[1],)
+        ## use BERT Encoder
+        else:
+            for layer_module in self.layer:
+                l_outputs = layer_module(lang_feats, lang_attention_mask, output_attentions=output_attentions)
+                lang_feats = l_outputs[0]
+                language_hidden_states = language_hidden_states + (lang_feats,)
+                if language_attentions is not None:
+                    language_attentions = language_attentions + (l_outputs[1],)
 
         # Run relational layers
         for layer_module in self.r_layers:

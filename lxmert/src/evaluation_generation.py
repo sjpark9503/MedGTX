@@ -309,7 +309,7 @@ def main():
         
         ''' PPL (should be the same batch_size)
         '''
-        print(f"PPL: {eval_outputs['metric']['ppl']:.4f}")
+        print(f"PPL: {eval_outputs['metric']['ppl'][0]:.4f}")
         
         
         ''' KG_RATIO (how many refer kg's info?

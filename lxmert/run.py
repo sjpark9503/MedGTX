@@ -5,7 +5,7 @@ import time
 import itertools
 # ======================= CONFIG ==================== #
 ## GPU setting
-os.environ["CUDA_VISIBLE_DEVICES"] = '0'
+os.environ["CUDA_VISIBLE_DEVICES"] = '1'
 # Seed List
 ## Base seed : [1234] / Additional seeds : [42, 1, 12, 123]
 SEED = [1234]
@@ -14,10 +14,10 @@ assert all([True if seed in [1234, 1, 12, 123, 42] else False for seed in SEED])
 for rand_seed in SEED:
     for _unified in [True]:
         for _rc in [False]:
-            for _align in [True]:
+            for _align in [False]:
                 ## TASK & DB
                 Evaluation = False
-                TASK_NAME = 'single_adm_lvl_prediction'
+                TASK_NAME = 'generation'
                 DB = 'px'
                 DB_size = 1000
                 ## Pretraining Configs
@@ -25,15 +25,16 @@ for rand_seed in SEED:
                 Unified = _unified
                 Align = _align
                 Relation_Classification = _rc
-                Scratch_Downstream = False
+                Scratch_Downstream = True
                 ## Important Hyperparameters
                 ### Model Params
                 Dim_Hidden = 128
                 NUM_Layers = {'lang':2, 'kg':2, 'cross':4}
+                Encoder_Type = {'lang':'lstm', 'kg': ''}
                 ### Training Args
-                lr = 2e-5
-                num_epochs = 20
-                train_bsize = 8
+                lr = 3e-5
+                num_epochs = 30
+                train_bsize = 16
                 eval_bsize = 4
                 top_k = 10
                 Dropout = 0.1
@@ -101,6 +102,7 @@ for rand_seed in SEED:
                     if Scratch_Downstream:
                         SRC_PATH = os.path.join(EXP_PATH, 'src/finetune.py')
                         TRAINING_CONFIG['output_dir'] = os.path.join(EXP_PATH,f"pretrained_models/{TASK_NAME}/{RUN_NAME}_RNG{rand_seed}_scratch")
+                        
                     else:
                         SRC_PATH = os.path.join(EXP_PATH, 'src/pretrain.py')
                         TRAINING_CONFIG['output_dir'] = os.path.join(EXP_PATH,f"pretrained_models/{TASK_NAME}/{RUN_NAME}")
@@ -120,29 +122,37 @@ for rand_seed in SEED:
                     Config['attention_probs_dropout_prob'] = Dropout
                     Config['hidden_dropout_prob'] = Dropout
                     Config['cross_att_type'] = 'single' if isSingleModel else 'cross'
+                    
+                    if Scratch_Downstream and TASK_NAME in TASK_POOL['task_generation']:
+                            Config['encoder_type'] = Encoder_Type
+                            Config['cross_att_type'] = 'unilm'
+                            Config['max_position_embeddings']['lang'] = 0 if Encoder_Type['lang'].lower() in ['bilstm', 'lstm'] else 512
+                            
                     with open(TRAINING_CONFIG['config_name'],'w') as g:
                         json.dump(Config,g)
                         
                 else:
+                    TASK_SUFFIX_FOR_CONFIG = ''
+                    TASK_SUFFIX_FOR_OUTPUT = 'LSTM_no_posenc'
                     if Evaluation:
                         SRC_PATH = os.path.join(EXP_PATH, 'src/evaluation.py')
-                        TRAINING_CONFIG['model_name_or_path'] = os.path.join(EXP_PATH, f"pretrained_models/{TASK_NAME}/{RUN_NAME}_RNG{rand_seed}{'_scratch' if Scratch_Downstream else ''}")
+                        TRAINING_CONFIG['model_name_or_path'] = os.path.join(EXP_PATH, f"pretrained_models/{TASK_NAME}{TASK_SUFFIX_FOR_OUTPUT}/{RUN_NAME}_RNG{rand_seed}{'_scratch' if Scratch_Downstream else ''}")
                         if TASK_NAME in TASK_POOL['task_retrieval']:
                             TRAINING_CONFIG['model_name_or_path'] = os.path.join(EXP_PATH, f"pretrained_models/{'single_' if isSingleModel else ''}binary_retrieval/{RUN_NAME}_RNG{rand_seed}{'_scratch' if Scratch_Downstream else ''}")
                         if TASK_NAME in TASK_POOL['task_generation']:
                             SRC_PATH = os.path.join(EXP_PATH, 'src/evaluation_generation.py')
-                            TRAINING_CONFIG['decode_option'] = {"perturb_type" : None, # init_all, pad_all, None
-                                                                "given_lang_tokens": 1, # 1,5,25
+                            TRAINING_CONFIG['decode_option'] = {"perturb_type" : None,
+                                                                "given_lang_tokens": 1,
                                                                 "clean_outputs": True,
                                                                 "given_gt_length": False,
                                                                 "search_beam_size": 1,
                                                                 }
-                        TRAINING_CONFIG['output_dir'] = os.path.join(EXP_PATH,f"eval_output/{TASK_NAME}/{RUN_NAME}_RNG{rand_seed}{'_scratch' if Scratch_Downstream else ''}")
+                        TRAINING_CONFIG['output_dir'] = os.path.join(EXP_PATH,f"eval_output/{TASK_NAME}{TASK_SUFFIX_FOR_OUTPUT}/{RUN_NAME}_RNG{rand_seed}{'_scratch' if Scratch_Downstream else ''}")
                     else:
                         SRC_PATH = os.path.join(EXP_PATH, 'src/finetune.py')
                         TRAINING_CONFIG['model_name_or_path'] = os.path.join(EXP_PATH, f"pretrained_models/{'single_' if isSingleModel else ''}pretrain/{RUN_NAME}")
                         TRAINING_CONFIG['run_name'] = f"{TASK_NAME}_{RUN_NAME}_RNG{rand_seed}{'_scratch' if Scratch_Downstream else ''}"
-                        TRAINING_CONFIG['output_dir'] = os.path.join(EXP_PATH,f"pretrained_models/{TASK_NAME}/{RUN_NAME}_RNG{rand_seed}{'_scratch' if Scratch_Downstream else ''}")
+                        TRAINING_CONFIG['output_dir'] = os.path.join(EXP_PATH,f"pretrained_models/{TASK_NAME}{TASK_SUFFIX_FOR_OUTPUT}/{RUN_NAME}_RNG{rand_seed}{'_scratch' if Scratch_Downstream else ''}")
                         # load config
                         with open(f"{TRAINING_CONFIG['model_name_or_path']}/config.json") as f:
                             Config = json.load(f)
@@ -150,7 +160,11 @@ for rand_seed in SEED:
                         Config['margin'] = Margin
                         Config['attention_probs_dropout_prob'] = Dropout
                         Config['hidden_dropout_prob'] = Dropout
-                        Config['cross_att_type'] = 'unilm' if TASK_NAME in TASK_POOL['task_generation'] else ('single' if isSingleModel else 'cross')
+                        Config['cross_att_type'] = 'single' if isSingleModel else 'cross'
+                        if TASK_NAME in TASK_POOL['task_generation']:
+                            Config['encoder_type'] = Encoder_Type
+                            Config['cross_att_type'] = 'unilm'
+                            Config['max_position_embeddings']['lang'] = 0 if Encoder_Type['lang'].lower() in ['bilstm', 'lstm'] else 512
                         if TASK_NAME in TASK_POOL['task_prediction']:
                             for k in TRAINING_CONFIG:
                                 if 'file' in k:
