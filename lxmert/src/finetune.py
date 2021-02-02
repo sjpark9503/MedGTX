@@ -100,7 +100,7 @@ def main():
         )
 
     if model_args.model_name_or_path:
-        if training_args.task in ['binary_retrieval', 'single_binary_retrieval']:
+        if 'retrieval' in training_args.task:
             # try:
             model = LxmertForRanking.from_pretrained(
                 model_args.model_name_or_path,
@@ -123,14 +123,14 @@ def main():
             #         config=config,
             #         cache_dir=model_args.cache_dir,
             #     )
-        elif training_args.task in ['generation', 'single_generation']: 
+        elif 'generation' in training_args.task: 
             model = LxmertForKGTokPredAndMaskedLM.from_pretrained(
                 model_args.model_name_or_path,
                 from_tf=bool(".ckpt" in model_args.model_name_or_path),
                 config=config,
                 cache_dir=model_args.cache_dir,
             )
-        elif training_args.task in ['adm_lvl_prediction', 'single_adm_lvl_prediction']:
+        elif 'adm' in training_args.task:
             try:
                 config.use_ce_pooler=False
                 model = LxmertForAdmLvlPrediction.from_pretrained(
@@ -156,7 +156,7 @@ def main():
             #db =  training_args.run_name.split('/')[0].split('_')[-1]
             #class_weight_dict = torch.load(os.path.join(os.getcwd(),f'data/{db}/adm_class_weight'))
             #model.class_weight = torch.tensor(list(dict(sorted(class_weight_dict.items())).values()),requires_grad=False).to(training_args.device)
-        elif training_args.task in ['deletion_detection', 'replacement_detection']:
+        elif 'detection' in training_args.task:
             model = LxmertForErrorDetection.from_pretrained(
                 model_args.model_name_or_path,
                 from_tf=bool(".ckpt" in model_args.model_name_or_path),
@@ -168,16 +168,35 @@ def main():
     else:
         logger.info("Training new model from scratch")
         if 'retrieval' in training_args.task:
+            # try:
             model = LxmertForRanking(config)
-        elif 'generation' in training_args.task:
+            # except:
+            #     ckpt_path = os.path.join(model_args.model_name_or_path, 'pytorch_model.bin')
+            #     load_model_dict = torch.load(ckpt_path)
+            #     modified_model_dict = load_model_dict.copy()
+            #     for param in load_model_dict:
+            #         if 'pooler' in param:
+            #             modified_model_dict.pop(param)
+            #     torch.save(modified_model_dict, ckpt_path)
+
+            #     model = LxmertForRanking.from_pretrained(
+            #         model_args.model_name_or_path,
+            #         from_tf=bool(".ckpt" in model_args.model_name_or_path),
+            #         config=config,
+            #         cache_dir=model_args.cache_dir,
+            #     )
+        elif 'generation' in training_args.task: 
             model = LxmertForKGTokPredAndMaskedLM(config)
-        elif 'prediction' in training_args.task:
+        elif 'adm' in training_args.task:
             config.use_ce_pooler=False
             model = LxmertForAdmLvlPrediction(config)
+            #db =  training_args.run_name.split('/')[0].split('_')[-1]
+            #class_weight_dict = torch.load(os.path.join(os.getcwd(),f'data/{db}/adm_class_weight'))
+            #model.class_weight = torch.tensor(list(dict(sorted(class_weight_dict.items())).values()),requires_grad=False).to(training_args.device)
         elif 'detection' in training_args.task:
             model = LxmertForErrorDetection(config)
         else:
-            raise NotImplementedError("Not implemented task for scratch: %s", training_args.task)
+            raise NotImplementedError("Not implemented task: %s", training_args.task)
     logger.info(config)
     #model.resize_token_embeddings(len(tokenizer))
 
@@ -210,22 +229,23 @@ def main():
                                 test=True
                                 ) if training_args.do_eval else None
     eval_data_collator = None
-    if training_args.task in ['binary_retrieval', 'single_binary_retrieval']:
+    if 'retrieval' in training_args.task:
         data_collator = NegativeSampling_DataCollator(tokenizer=tokenizer,
                                                       kg_special_token_ids=config.kg_special_token_ids,
                                                       n_negatives=training_args.n_negatives)
         eval_data_collator = NegativeSampling_DataCollator(tokenizer=tokenizer,
                                                       kg_special_token_ids=config.kg_special_token_ids)
-    elif training_args.task in ['adm_lvl_prediction', 'single_adm_lvl_prediction']:
+    elif 'adm' in training_args.task:
         data_collator = AdmLvlPred_DataCollator(tokenizer=tokenizer,
                                                 num_kg_labels=config.num_kg_labels,
                                                 kg_special_token_ids=config.kg_special_token_ids)
-    elif training_args.task in ['deletion_detection', 'replacement_detection']:
+    elif 'detection' in training_args.task:
         data_collator = ErrorDetection_DataCollator(tokenizer=tokenizer,
+                                                kg_special_token_ids=config.kg_special_token_ids,
                                                 num_kg_labels=config.num_kg_labels,
-                                                task = training_args.task,
-                                                kg_special_token_ids=config.kg_special_token_ids)
-    elif training_args.task in ['generation', 'single_generation']:
+                                                kg_size=config.vocab_size['kg'],
+                                                task = training_args.task)
+    elif 'generation' in training_args.task: 
         from utils.data_collator import UniLM_DataCollator
         data_collator = UniLM_DataCollator(tokenizer=tokenizer,
                                            kg_special_token_ids=config.kg_special_token_ids)

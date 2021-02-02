@@ -720,7 +720,7 @@ class LxmertEncoder(nn.Module):
             logger.info("Use LSTM Decoder instead of BERT")
             self.layer = nn.LSTM(input_size=self.config.hidden_size,
                                  hidden_size=self.config.hidden_size,
-                                 num_layers=3,
+                                 num_layers=1,
                                  dropout=self.config.hidden_dropout_prob,
                                  batch_first=True,
                                  bidirectional=False)
@@ -728,7 +728,7 @@ class LxmertEncoder(nn.Module):
             logger.info("Use BiLSTM Encoder instead of BERT")
             self.layer = nn.LSTM(input_size=self.config.hidden_size,
                                  hidden_size=self.config.hidden_size,
-                                 num_layers=3,
+                                 num_layers=1,
                                  dropout=self.config.hidden_dropout_prob,
                                  batch_first=True,
                                  bidirectional=True)
@@ -1002,7 +1002,7 @@ class LxmertModel(LxmertPreTrainedModel):
 
     def set_kg_embeddings(self, new_embedding):
         if len(self.config.kg_special_token_ids)>0:
-            self.kg_embeddings.word_embeddings.weight.data[len(self.config.kg_special_token_ids):,:] = new_embedding.data
+            self.kg_embeddings.word_embeddings.weight.data[len(self.config.kg_special_token_ids):,:] = new_embedding.data[:-len(self.config.kg_special_token_ids)]
         else:
             self.kg_embeddings.word_embeddings.weight.data = new_embeddings.data
 
@@ -1168,11 +1168,11 @@ class LxmertForKGTokPredAndMaskedLM(LxmertPreTrainedModel):
         # Warm start KG embedding
         if not config.gcn and config.pretrained_kg_embedding:
             logger.info("Load pretrained embedding for translation based KG-LXMERT")
-            loaded_state_dict = torch.load(config.pretrained_kg_embedding)
-            new_embedding = loaded_state_dict['ent_embeddings.weight']
+            new_embedding = torch.load(config.pretrained_kg_embedding)
+            # new_embedding = loaded_state_dict['ent_embeddings.weight']
             self.lxmert.set_kg_embeddings(new_embedding)
-            del loaded_state_dict
-            torch.cuda.empty_cache()
+            del new_embedding
+            #torch.cuda.empty_cache()
 
         # Use Pretrained-LM in Language Part
         self.lxmert.encoder.re_init_to_pretrained_lang_model()
@@ -1575,8 +1575,7 @@ class LxmertForErrorDetection(LxmertPreTrainedModel):
         lang_attention_mask=None,
         kg_attention_mask=None,
         kg_padding_mask=None,
-        deletion_label=None,
-        replacement_label=None,
+        label=None,
         token_type_ids=None,
         output_attentions=None,
         output_hidden_states=None,
@@ -1627,15 +1626,16 @@ class LxmertForErrorDetection(LxmertPreTrainedModel):
             lxmert_output.pooled_output,
         )
         # total_loss = 0
-        if deletion_label is not None:
-            deletion_score = self.multilabel_classifier(kg_output[:,0])
-            total_loss = self.loss_fcts["bce"](deletion_score, deletion_label)
-            loss_dict['loss']=total_loss.mean().item()
-        elif replacement_label is not None:
-            _size = kg_output.shape[:-1]
-            replacement_score = self.token_classifier(kg_output.view(-1, config.hidden_size)).view(_size)
-            total_loss = self.loss_fcts["bce"](replacement_score, replacement_label)
-            loss_dict['loss']=total_loss.mean().item()
+        if label is not None:
+            if kg_input_ids.size(-1)==label.size(-1):
+                _size = kg_output.shape[:-1]
+                score = self.token_classifier(kg_output.view(-1, self.config.hidden_size)).view(_size)
+                total_loss = self.loss_fcts["bce"](score, label)
+                loss_dict['loss']=total_loss.mean().item()
+            else:
+                score = self.multilabel_classifier(kg_output[:,0])
+                total_loss = self.loss_fcts["bce"](score, label)
+                loss_dict['loss']=total_loss.mean().item()
         else:
             total_loss = None
 
@@ -1648,7 +1648,7 @@ class LxmertForErrorDetection(LxmertPreTrainedModel):
         return LxmertForDownstreamOutput(
             loss=total_loss,
             loss_dict=loss_dict,
-            pooled_logits=multi_label_score,
+            pooled_logits=score,
             language_hidden_states=lxmert_output.language_hidden_states,
             kg_hidden_states=lxmert_output.kg_hidden_states,
             language_attentions=lxmert_output.language_attentions,

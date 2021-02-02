@@ -41,8 +41,9 @@ def recall_at_k(labels, scores, k=10):
     sample_recall = list()
     for label, score in zip(labels, scores):
         label = [i for i, e in enumerate(label) if e != 0]
-        top_k_pred = sorted(range(len(score)), key=lambda k: score[k], reverse=True)[:k]
-        hit = sum([1 if pred in label else 0 for pred in top_k_pred])
-        sample_recall.append(hit/len(label))
+        if len(label)>0:
+            top_k_pred = sorted(range(len(score)), key=lambda k: score[k], reverse=True)[:k]
+            hit = sum([1 if pred in label else 0 for pred in top_k_pred])
+            sample_recall.append(hit/len(label))
 
     return sum(sample_recall)/len(sample_recall)

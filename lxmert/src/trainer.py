@@ -174,12 +174,12 @@ class Trainer:
         wandb_config = dict()
         wandb_config.update(vars(args))
         wandb_config.update(vars(model.config))
-        wandb.init(config=wandb_config, entity='kgtxt', project='GraphEncoder')
+        wandb.init(config=wandb_config, entity='kgtxt', project='KDDreport')
         wandb.run.name = self.args.run_name
         #wandb.run.save()
 
         # Seed must be set before instantiating the model when using model
-        #set_seed(self.args.seed)
+        set_seed(self.args.seed)
         assert (
             model is not None or model_init is not None
         ), "You must provide a model to use `Trainer`, either by using the `model` argument or the `model_init` argument."
@@ -335,8 +335,8 @@ class Trainer:
         test_sampler = self._get_eval_sampler(test_dataset)
 
         return DataLoader(
-            eval_dataset,
-            sampler=eval_sampler,
+            test_dataset,
+            sampler=test_sampler,
             batch_size=self.args.eval_batch_size,
             collate_fn=self.eval_data_collator if self.eval_data_collator is not None else self.data_collator,
             drop_last=self.args.dataloader_drop_last,
@@ -550,7 +550,6 @@ class Trainer:
             # self.control = self.callback_handler.on_epoch_begin(self.args, self.state, self.control)
 
             for step, inputs in tqdm(enumerate(epoch_iterator),total=self.steps_in_epoch,desc='Step'):
-
                 # Skip past any already trained steps if resuming training
                 if steps_trained_in_current_epoch > 0:
                     steps_trained_in_current_epoch -= 1
@@ -659,7 +658,7 @@ class Trainer:
                 #logger.info("log done")
         if (self.state.global_step % (self.steps_in_epoch//self.args.num_eval_per_epoch) == 0) and (self.args.num_eval_per_epoch>0):
             metrics = self.evaluate()
-            if not self.task in ['pretrain','single_pretrain']:
+            if not 'pretrain' in self.task:
                 if metrics['eval_loss'] < self.best_eval_loss:
                     self.best_eval_loss = metrics['eval_loss']
                     self.save_model()
@@ -807,7 +806,7 @@ class Trainer:
 
         loss = outputs.loss
         loss_dict = outputs.loss_dict
-        if self.task in ['binary_retrieval', 'single_binary_retrieval', 'text_retrieval', 'single_text_retrieval', 'graph_retrieval', 'single_graph_retrieval']:
+        if 'retrieval' in self.task:
             score = torch.max(outputs.pooled_logits,dim=1)[-1].tolist()
             gt = inputs['label'].tolist()
             loss_dict['Acc'] = accuracy_score(gt,score)
@@ -1010,7 +1009,7 @@ class Trainer:
         # self.control = self.callback_handler.on_evaluate(self.args, self.state, self.control, output.metrics)
         return output.metrics
 
-    def predict(self, test_dataset: Dataset) -> PredictionOutput:
+    def predict(self, test_dataset: Optional[Dataset] = None):
         """
         Run prediction and returns predictions and potential metrics.
         Depending on the dataset and your use case, your test dataset may contain labels. In that case, this method
@@ -1030,7 +1029,16 @@ class Trainer:
 
         test_dataloader = self.get_test_dataloader(test_dataset)
 
-        return self.prediction_loop(test_dataloader, description="Prediction", prediction=True)
+        output = self.prediction_loop(
+            test_dataloader,
+            description="Evaluation",
+            # No point gathering the predictions if there are no metrics, otherwise we defer to
+            prediction_loss_only=False,
+        )
+
+        wandb.log(output.metrics)
+
+        return output
 
     def prediction_loop(
         self, dataloader: DataLoader, description: str, prediction_loss_only: Optional[bool] = None, prediction: Optional[bool] = False
@@ -1076,16 +1084,19 @@ class Trainer:
         # Initialzie
         preds = list()
         self.predicted = []
-        if self.task in ['pretrain', 'single_pretrain']:
+        if 'pretrain' in self.task:
             self.predicted += [(k,[]) for k in ['kg', 'lang']]
             self.predicted += [('gt_'+k, []) for k in ['kg', 'lang']]
-        elif self.task in ['binary_retrieval', 'single_binary_retrieval', 'text_retrieval', 'single_text_retrieval', 'graph_retrieval', 'single_graph_retrieval']:
+        elif 'retrieval' in self.task:
             self.predicted += [('score',[])]
             self.predicted += [('label', [])]
-        elif self.task in ['adm_lvl_prediction', 'single_adm_lvl_prediction']:
+        elif 'adm' in self.task:
             self.predicted += [('score',[])]
             self.predicted += [('label', [])]
-        elif self.task in ['generation', 'single_generation']:
+        elif 'detection' in self.task:
+            self.predicted += [('score',[])]
+            self.predicted += [('label', [])]
+        elif 'generation' in self.task:
             self.predicted += [(k,[]) for k in ['lang']]
             self.predicted += [('gt_'+k, []) for k in ['lang']]
         else:
@@ -1112,15 +1123,17 @@ class Trainer:
         for key in self.predicted:
             if 'loss' in key:
                 self.metrics[f"eval_{key}"] = sum(self.predicted[key])/len(self.predicted[key])
-            if self.task in ['pretrain', 'single_pretrain']:
+            if 'pretrain' in self.task:
                 if key in ['lang','kg']:
                     self.metrics[f"eval_{key}_Acc"] = accuracy_score(self.predicted[f'gt_{key}'],self.predicted[key])
                     self.metrics[f"eval_{key}_MacroF1"] = f1_score(self.predicted[f'gt_{key}'], self.predicted[key],average='macro')
-            if (self.task in ['binary_retrieval', 'single_binary_retrieval', 'text_retrieval', 'single_text_retrieval', 'graph_retrieval', 'single_graph_retrieval']) and (key in ['score']):
+            if ('retrieval' in self.task) and (key in ['score']):
                 self.metrics["eval_align_Acc"] = accuracy_score(self.predicted['label'],self.predicted['score'])
-            if (self.task in ['adm_lvl_prediction', 'single_adm_lvl_prediction']) and (key in ['score']):
+            if ('adm' in self.task) and (key in ['score']):
                 self.metrics[f"eval_P@{self.args.top_k}"] = precision_at_k(self.predicted['label'],self.predicted['score'],k=self.args.top_k)
-            if (self.task in ['generation', 'single_generation']) and (key in ['lang']):
+            if ('detection' in self.task) and (key in ['score']):
+                self.metrics[f"eval_R@{self.args.top_k}"] = recall_at_k(self.predicted['label'],self.predicted['score'],k=self.args.top_k)
+            if ('generation' in self.task) and (key in ['lang']):
                 self.metrics[f"eval_{key}_Acc"] = accuracy_score(self.predicted[f'gt_{key}'],self.predicted[key])
                 self.metrics[f"eval_{key}_MacroF1"] = f1_score(self.predicted[f'gt_{key}'], self.predicted[key],average='macro')
         return PredictionOutput(predictions=numpy_preds, label_ids=None, metrics=self.metrics)
@@ -1159,7 +1172,7 @@ class Trainer:
                     self.predicted[k]=list()
                 self.predicted[k].append(v)
             ## prediction for pretraining
-            if self.task in ['pretrain', 'single_pretrain']:
+            if 'pretrain' in self.task:
                 if prediction:
                     return (outputs.lang_prediction_logits.detach().numpy(), outputs.kg_prediction_logits.detach().numpy())
 
@@ -1174,7 +1187,7 @@ class Trainer:
                         -1).long().tolist()
 
             ## prediction for binary retreival
-            elif self.task in ['binary_retrieval', 'single_binary_retrieval', 'text_retrieval', 'single_text_retrieval', 'graph_retrieval', 'single_graph_retrieval']:
+            elif 'retrieval' in self.task:
                 if prediction:
                     return outputs.pooled_logits.detach().numpy()
 
@@ -1183,16 +1196,23 @@ class Trainer:
                     self.predicted['label'] += inputs['label'].tolist()
 
             ## prediction for triplet retreival
-            elif self.task in ['adm_lvl_prediction', 'single_adm_lvl_prediction']:
+            elif 'adm' in self.task:
                 if prediction:
                     return outputs.pooled_logits.detach().numpy()
 
                 if not prediction_loss_only:
                     self.predicted['score'] += F.sigmoid(outputs.pooled_logits).tolist()
                     self.predicted['label'] += inputs['label'].tolist()
+            ## prediction for triplet retreival
+            elif 'detection' in self.task:
+                if prediction:
+                    return outputs.pooled_logits.detach().numpy()
 
+                if not prediction_loss_only:
+                    self.predicted['score'] += F.sigmoid(outputs.pooled_logits).tolist()
+                    self.predicted['label'] += inputs['label'].tolist()
             ## prediction for generation
-            elif self.task in ['generation', 'single_generation']:
+            elif 'generation' in self.task:
                 if not prediction_loss_only:
                     self.predicted['lang'] += torch.max(outputs.lang_prediction_logits, dim=2)[-1][~inputs['lm_label'].eq(-100)].view(
                         -1).long().tolist()

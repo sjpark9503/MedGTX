@@ -488,9 +488,10 @@ class ErrorDetection_DataCollator:
     """
     tokenizer: PreTrainedTokenizerBase
     kg_special_token_ids: dict
+    num_kg_labels: int
     kg_size: int
-    deletion_probability: float = 0.15
-    replacement_probability: float = 0.15
+    task: str
+    corruption_probability: float = 0.5
     prediction: bool = False
 
     def __call__(self,features: List[InputDataClass]) -> Dict[str, torch.Tensor]:
@@ -498,27 +499,7 @@ class ErrorDetection_DataCollator:
             features = [vars(f) for f in features]
         batch = self._tensorize_batch(features)
 
-        if not self.prediction:
-            # Construct batch for Masked LM
-            masked_texts, lm_label = self.mask_tokens(batch['lang_input_ids'])
-            # Construct batch for Masekd LP
-            if not self.contrastive:
-                masked_subs, kg_label_mask, kg_padding_mask = self.mask_kg(batch['kg_input_ids'], batch['kg_label_mask'])
-                batch['kg_input_ids'] = masked_subs
-                batch['kg_label_mask'] = kg_label_mask
-                batch['kg_padding_mask'] = kg_padding_mask
-            else:
-                batch['kg_label_mask'] = None
-            batch['lang_input_ids'] = masked_texts
-            batch['lm_label'] = lm_label
-            # Construct batch for Alignment loss
-            if self.align:
-                batch = self.negative_sampling(batch, len(features))
-        else:
-            batch['lang_input_ids'] = batch['lang_input_ids']
-            batch['lm_label'] = None
-            batch['kg_input_ids'] = batch['kg_input_ids']
-            batch['kg_label'] = None
+        batch = self.corruption(batch)
 
         return batch
 
@@ -531,10 +512,10 @@ class ErrorDetection_DataCollator:
         batch = {}
 
         for k, v in first.items():
-            if 'rc' in k:
+            if ('rc' in k) or ('label_mask' in k):
                 continue
-            if v is not None:
-                if (k == "kg_attention_mask") and not isinstance(v, str):
+            if (v is not None) and not isinstance(v,str):
+                if k == "kg_attention_mask":
                     if isinstance(v, torch.Tensor):
                         if (len(v.shape) == 3):
                             batch[k] = torch.stack([f[k] for f in features]).permute(0,3,1,2)
@@ -542,7 +523,7 @@ class ErrorDetection_DataCollator:
                             batch[k] = torch.stack([f[k] for f in features])
                     else:
                         batch[k] = torch.tensor([f[k] for f in features])
-                elif not isinstance(v, str):
+                else:
                     if isinstance(v, torch.Tensor):
                         batch[k] = torch.stack([f[k] for f in features])
                     else:
@@ -550,76 +531,41 @@ class ErrorDetection_DataCollator:
 
         return batch
 
-    def corruption(self, inputs: torch.Tensor, labels: torch.Tensor = None, corruption_type: str = 'both'):
+    def corruption(self, batch: dict):
         """
         Prepare masked tokens inputs/labels for masked language modeling: 80% MASK, 10% random, 10% original.
         """
-        assert corruption_type in ['both','delete','replace'], f"corruption strategy {corruption_type} not supported"
-        if self.tokenizer.mask_token is None:
-            raise ValueError(
-                "This tokenizer does not have a mask token which is necessary for masked language modeling. Remove the --mlm flag if you want to use this tokenizer."
-            )
 
-        labels = inputs.clone()
+        inputs = batch['kg_input_ids']
+        labels = batch['label']
+        ignore_corruption = labels.eq(-100)
         # We sample a few tokens in each sequence for masked-LM training (with probability args.mlm_probability defaults to 0.15 in Bert/RoBERTa)
-        probability_matrix = torch.full(labels.shape, self.mlm_probability)
-        special_tokens_mask = [
-            self.tokenizer.get_special_tokens_mask(val, already_has_special_tokens=True) for val in labels.tolist()
-        ]
-        probability_matrix.masked_fill_(torch.tensor(special_tokens_mask, dtype=torch.bool), value=0.0)
-        if self.tokenizer._pad_token is not None:
-            padding_mask = labels.eq(self.tokenizer.pad_token_id)
-            probability_matrix.masked_fill_(padding_mask, value=0.0)
-        masked_indices = torch.bernoulli(probability_matrix).bool()
-        labels[~masked_indices] = -100  # We only compute loss on masked tokens
+        probability_matrix = torch.full(inputs.shape, self.corruption_probability)
+        probability_matrix.masked_fill_(ignore_corruption, value=0.0)
+        must_corrupt_idx=torch.max(torch.rand(ignore_corruption.shape)*(~ignore_corruption),dim=1)[-1]
+        probability_matrix.scatter_(1,must_corrupt_idx.unsqueeze(1),1.0)
+        corruption_indeces = torch.bernoulli(probability_matrix).bool()
 
-        # 80% of the time, we replace masked input tokens with tokenizer.mask_token ([MASK])
-        indices_replaced = torch.bernoulli(torch.full(labels.shape, 0.8)).bool() & masked_indices
-        inputs[indices_replaced] = self.tokenizer.convert_tokens_to_ids(self.tokenizer.mask_token)
-
-        # 10% of the time, we replace masked input tokens with random word
-        indices_random = torch.bernoulli(torch.full(labels.shape, 0.5)).bool() & masked_indices & ~indices_replaced
-        random_words = torch.randint(len(self.tokenizer), labels.shape, dtype=torch.long)
-        inputs[indices_random] = random_words[indices_random]
-
+        if 'deletion' in self.task:
+            inputs[corruption_indeces] = self.kg_special_token_ids['PAD']
+            deleted_label = torch.zeros(inputs.size(0),self.num_kg_labels)
+            for idx in corruption_indeces.nonzero():
+                deleted_label[idx[0],labels[idx[0],idx[1]]]=1
+                if 'kg_attention_mask' in batch:
+                    batch['kg_attention_mask'][idx[0],:,idx[1]]=0
+            batch['label']=deleted_label
+        elif 'replacement' in self.task:
+            inputs_origin = inputs.clone()
+            random_nodes = torch.randint(len(self.kg_special_token_ids),self.kg_size, inputs.shape, dtype=torch.long)
+            inputs[corruption_indeces] = random_nodes[corruption_indeces]
+            batch['label'] = (~(inputs_origin == inputs)).float()
+        else:
+            raise ValueError('task not supported ')
+        
+        batch['kg_input_ids'] = inputs
+        batch['kg_padding_mask'] = ~inputs.eq(self.kg_special_token_ids['PAD'])
         # The rest of the time (10% of the time) we keep the masked input tokens unchanged
-        return inputs, labels
-
-    def replacement(self, inputs: torch.Tensor, entity_mask = None) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        """
-        Prepare masked tokens inputs/labels for masked language modeling: 80% MASK, 10% random, 10% original.
-        """
-
-        if self.kg_special_token_ids['MASK'] is None:
-            raise ValueError(
-                "This tokenizer does not have a mask token which is necessary for masked language modeling. Remove the --mlm flag if you want to use this tokenizer."
-            )
-        ignore_masking = ~torch.tensor(entity_mask, dtype=torch.bool)
-        # We sample a few tokens in each sequence for masked-LM training (with probability args.mlm_probability defaults to 0.15 in Bert/RoBERTa)
-        probability_matrix = torch.full(inputs.shape, self.mlm_probability)
-        if entity_mask is not None:
-            probability_matrix.masked_fill_(ignore_masking, value=0.0)
-        padding_mask = ~inputs.eq(self.kg_special_token_ids['PAD'])
-        masked_indices = torch.bernoulli(probability_matrix).bool()
-
-        # 80% of the time, we replace masked input tokens with tokenizer.mask_token ([MASK])
-        indices_replaced = torch.bernoulli(torch.full(inputs.shape, 0.8)).bool() & masked_indices
-        inputs[indices_replaced] = self.kg_special_token_ids['MASK']
-
-        # 10% of the time, we replace masked input tokens with random word
-        indices_random = torch.bernoulli(torch.full(inputs.shape, 0.5)).bool() & masked_indices & ~indices_replaced
-        random_nodes = torch.randint(len(self.kg_special_token_ids),self.kg_size, inputs.shape, dtype=torch.long)
-        inputs[indices_random] = random_nodes[indices_random]
-
-        # The rest of the time (10% of the time) we keep the masked input tokens unchanged
-        return inputs, masked_indices, padding_mask.float()
-
-    def kg_negative_sampling(self, inputs: torch.Tensor, entity_mask = None) -> Tuple[torch.Tensor, torch.Tensor]:
-        """
-        Prepare masked tokens inputs/labels for masked language modeling: 80% MASK, 10% random, 10% original.
-        """
-        return NotImplementedError("Not Support Yet")
-
+        return batch
 
 @dataclass
 class Evaluation_DataCollator:
