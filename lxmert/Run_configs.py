@@ -58,7 +58,7 @@ class Configuration():
         }
 
     def get_configuration(self):
-        if self.config['task_number']==0 or self.config['scratch']:
+        if (self.config['task_number']==0 or self.config['scratch']) and not self.config['evaluation']:
             if self.config['scratch']:
                 SRC_PATH = os.path.join(self.EXP_PATH, 'src/finetune.py')
                 self.TRAINING_CONFIG['run_name'] = f"scratch/{self.TASK_NAME}/{self.config['model']}/{self.RUN_NAME}_RNG{self.config['seed']}"
@@ -180,7 +180,9 @@ class Configuration():
             return False, "DB not supported"
         elif self.config['task_number'] not in self.TASK_POOL:
             return False, "Task not supported"
-        elif self.config['A'] is False and self.config['R'] is False:
+        elif (self.config['A'] is True or self.config['R'] is True) and self.config['scratch']:
+            return False, "Scratch start downstream task must turn off alignment prediction & relation classification"
+        elif (self.config['architecture'] in ['both','kg']) and self.config['model']=='transe':
             return False, "Scratch start downstream task must turn off alignment prediction & relation classification"
         else:
             return True, None
