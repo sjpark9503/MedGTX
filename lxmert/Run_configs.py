@@ -182,5 +182,7 @@ class Configuration():
             return False, "Task not supported"
         elif (self.config['A'] is True or self.config['R'] is True) and self.config['scratch']:
             return False, "Scratch start downstream task must turn off alignment prediction & relation classification"
+        elif (self.config['architecture'] in ['both','kg']) and self.config['model']=='transe':
+            return False, "Scratch start downstream task must turn off alignment prediction & relation classification"
         else:
             return True, None
