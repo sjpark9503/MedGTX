@@ -682,6 +682,9 @@ class LxmertEncoder(nn.Module):
         super().__init__()
 
         self.config = config
+        if 'encoder_type' not in vars(config).keys():
+            logger.info("You have not specific encoder type in config, so that you don't use any kinds of LSTM")
+            self.config.encoder_type = {'lang': ''}
         self.encoder_type = self.config.encoder_type['lang'].lower()
 
         # Number of layers
