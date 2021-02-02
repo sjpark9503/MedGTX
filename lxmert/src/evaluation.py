@@ -94,23 +94,16 @@ def main():
     elif model_args.model_name_or_path:
         tokenizer = LxmertTokenizer.from_pretrained(model_args.model_name_or_path, cache_dir=model_args.cache_dir)
 
-    if training_args.task in ['text_retrieval', 'single_text_retrieval', 'graph_retrieval', 'single_graph_retrieval']:
-        model = LxmertForRanking.from_pretrained(
-            model_args.model_name_or_path,
-            from_tf=bool(".ckpt" in model_args.model_name_or_path),
-            config=config,
-            cache_dir=model_args.cache_dir,
-        )
-        data_collator = Evaluation_DataCollator(tokenizer=tokenizer,
-                                                kg_special_token_ids=config.kg_special_token_ids,
-                                                task=training_args.task)
-    elif training_args.task in ['generation']: 
-        model = LxmertForKGTokPredAndMaskedLM.from_pretrained(
-            model_args.model_name_or_path,
-            from_tf=bool(".ckpt" in model_args.model_name_or_path),
-            config=config,
-            cache_dir=model_args.cache_dir,
-        )
+    model = LxmertForRanking.from_pretrained(
+        model_args.model_name_or_path,
+        from_tf=bool(".ckpt" in model_args.model_name_or_path),
+        config=config,
+        cache_dir=model_args.cache_dir,
+    )
+    data_collator = Evaluation_DataCollator(tokenizer=tokenizer,
+                                            kg_special_token_ids=config.kg_special_token_ids,
+                                            task=training_args.task)
+
     else:
         raise NotImplementedError("Not implemented task: %s", training_args.task)
     model.to(training_args.device)
@@ -138,20 +131,23 @@ def main():
     # )
 
     # Evaluation
-    if training_args.task in ['text_retrieval', 'single_text_retrieval', 'graph_retrieval', 'single_graph_retrieval']:
-        top_k = training_args.top_k
-        data_loader = DataLoader(
-            test_dataset,
-            sampler=SequentialSampler(test_dataset),
-            batch_size=training_args.eval_batch_size,
-            collate_fn=data_collator,
-            pin_memory=True,
-        )
-        db = dict()
-        datas = [data for data in data_loader]
+    top_k = training_args.top_k
+    data_loader = DataLoader(
+        test_dataset,
+        sampler=SequentialSampler(test_dataset),
+        batch_size=training_args.eval_batch_size,
+        collate_fn=data_collator,
+        pin_memory=True,
+    )
+    db = dict()
+    datas = [data for data in data_loader]
 
-        for k in datas[0]:
-            db[k] = torch.cat([data[k] for data in datas]).to(training_args.device)
+    for k in datas[0]:
+        db[k] = torch.cat([data[k] for data in datas]).to(training_args.device)
+    base_output_dir = training_args.output_dir
+    for task in ['graph_retrieval', 'text_retrieval']
+        training_args.task = task
+        training_args.output_dir = base_output_dir.replace('retrieval', task)
 
         sample_hits = list()
         sample_rank = list()

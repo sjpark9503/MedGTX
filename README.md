@@ -103,4 +103,17 @@ __v4.3__ :
 + Contain Seed number & Scratch Training in RUN_NAME (_please check run.py!_)
 + Add text retrieval (given graph, retrieve text), graph retrieval option (given text, retrieve graph)
 + Supports Admission Level Prediction\
-__v4.3.1__ : add helper variables(TASK_POOL, isSingleModel) in run.py, update finetune.py
+__v4.3.1__ : add helper variables(TASK_POOL, isSingleModel) in run.py, update finetune.py \
+__v5.0__ : refine run.py.
+```
+│   └── pretrained_models
+│       ├── pretrain <- pretrained models
+│       │   ├── "model"
+│       │       ├── "db"
+│       ├── pretrained <- downstream, start from pretrained models
+│       │   ├── "task", e.g.) retrieval
+│       │       ├── "model", e.g.) single
+│       │           ├── "db", e.g.) dx, prx
+│       └── scratch <- downtream, start from scratch
+```
+
