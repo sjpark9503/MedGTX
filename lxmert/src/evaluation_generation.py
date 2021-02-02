@@ -298,13 +298,15 @@ def main():
         for idx in tqdm(range(eval_dataset_size)):            
             for k in _keys:
                 bleu_scores[k] += eval_outputs['metric']['bleu'][idx][k]
-                
-        print(f"bleu-1: {(bleu_scores['bleu-1']/eval_dataset_size):.4f}")
-        print(f"bleu-2: {(bleu_scores['bleu-2']/eval_dataset_size):.4f}")
-        print(f"bleu-3: {(bleu_scores['bleu-3']/eval_dataset_size):.4f}")
-        print(f"bleu-4: {(bleu_scores['bleu-4']/eval_dataset_size):.4f}")
-        print(f"bleu-a: {(bleu_scores['bleu-a']/eval_dataset_size):.4f}")
-        print(f"bleu-s: {(bleu_scores['bleu-s']/eval_dataset_size):.4f}")
+        
+        for k in _keys:
+            print(f"{k}: {(bleu_scores[k]/eval_dataset_size):.4f}")
+        # print(f"bleu-1: {(bleu_scores['bleu-1']/eval_dataset_size):.4f}")
+        # print(f"bleu-2: {(bleu_scores['bleu-2']/eval_dataset_size):.4f}")
+        # print(f"bleu-3: {(bleu_scores['bleu-3']/eval_dataset_size):.4f}")
+        # print(f"bleu-4: {(bleu_scores['bleu-4']/eval_dataset_size):.4f}")
+        # print(f"bleu-a: {(bleu_scores['bleu-a']/eval_dataset_size):.4f}")
+        # print(f"bleu-s: {(bleu_scores['bleu-s']/eval_dataset_size):.4f}")
         
         
         ''' PPL (should be the same batch_size)
@@ -314,26 +316,41 @@ def main():
         
         ''' KG_RATIO (how many refer kg's info?
         '''
+        
+        if eval_dataset_size == 1000:
+            db_name = 'px'
+        else:
+            db_name = 'dx,prx'
+        
         # load kg dictionary (id2label mapping)
         if 'Unified' in data_args.eval_data_file:  # Unified
             node2id = torch.load(os.path.join(data_args.eval_data_file.replace('/valid',''), 'unified_node'))
             id2node = {v:k.split('^^')[0] for k,v in node2id.items()}
             R = config.num_relations
         else:  # Not-Unified
-            ENTITY2ID_PATH = '/home/ssbae/bae/kg_txt_multimodal/preprocessing/px/entity2id.txt'
+            ENTITY2ID_PATH = f'/home/ssbae/bae/kg_txt_multimodal/preprocessing/{db_name}/entity2id.txt'
             id2node = {
                 int(line.split('\t')[1]) + len(config.kg_special_token_ids):\
                     line.split('\t')[0].split('^^')[0] for line in open(ENTITY2ID_PATH).read().splitlines()[1:]
                     }
             R = len(config.kg_special_token_ids)
             assert R == 3 # {0:'[PAD]', 1:'[MASK]', 2:'[CLS]'}
-        
-        # load px words (ex. aspirine)
+    
         import pandas as pd
-        PX_TB_PATH = '/home/sjpark/experiments/kg_txt_multimodal/preprocessing/mimic_table/PRESCRIPTIONS.csv'
-        df_px = pd.read_csv(PX_TB_PATH)
-        TOT_PX_WORDS = list(df_px['DRUG'].str.lower().value_counts().index)
-        del df_px
+        if db_name == 'px':
+            # load px words
+            PX_TB_PATH = '/home/sjpark/experiments/kg_txt_multimodal/preprocessing/mimic_table/PRESCRIPTIONS.csv'
+            df_px = pd.read_csv(PX_TB_PATH)
+            TOT_DB_WORDS = list(df_px['DRUG'].str.lower().value_counts().index)
+            del df_px
+        if db_name == 'dx,prx':
+            # load dx,prx words
+            DX_TB_PATH = '/home/sjpark/experiments/kg_txt_multimodal/preprocessing/mimic_table/D_ICD_DIAGNOSES.csv'
+            PRX_TB_PATH = '/home/sjpark/experiments/kg_txt_multimodal/preprocessing/mimic_table/D_ICD_PROCEDURES.csv'
+            df_dx = pd.read_csv(DX_TB_PATH)
+            df_prx = pd.read_csv(PRX_TB_PATH)
+            TOT_DB_WORDS = list(df_dx['SHORT_TITLE'].str.lower().value_counts().index) + list(df_prx['SHORT_TITLE'].str.lower().value_counts().index)
+            del df_dx, df_prx
         
         # define pattern for finding px
         PATTERN = r'(\d*[\d]\. +[a-z][^0-9]+)'
@@ -341,6 +358,7 @@ def main():
         txt_in_kg_ratio = []
         gen_in_kg_ratio = []
         gen_in_kg_nin_txt_ratio = []
+        num_gen_nin_kg = []
         
         for idx in tqdm(range(eval_dataset_size)):
             _gen = eval_outputs['prd_text'][idx]
@@ -360,20 +378,26 @@ def main():
             
             # extract keywords in graph
             _kg_temp = [id2node[k.item()].replace('\"','') for k in _kg if k not in range(R)]
-            kg_keywords = list(set([n_id for n_id in _kg_temp if n_id in TOT_PX_WORDS]))
+            kg_keywords = list(set([n_id for n_id in _kg_temp if n_id in TOT_DB_WORDS]))
     
             # compare and compute metric 
             txt_keywords_in_kg = set([t for t in txt_keywords if t in ' '.join(kg_keywords).split()])
             gen_keywords_in_kg = set([g for g in gen_keywords if g in ' '.join(kg_keywords).split()])
             gen_keywords_in_kg_nin_txt = gen_keywords_in_kg - txt_keywords_in_kg
+            gen_keywords_nin_kg = set([g for g in gen_keywords if g not in ' '.join(kg_keywords).split()])
             
             txt_in_kg_ratio += [100*len(txt_keywords_in_kg)/len(kg_keywords)]
             gen_in_kg_ratio += [100*len(gen_keywords_in_kg)/len(kg_keywords)]
             gen_in_kg_nin_txt_ratio += [100*len(gen_keywords_in_kg_nin_txt)/len(kg_keywords)]
             
+            num_gen_nin_kg += [len(gen_keywords_nin_kg)/len(gen_k)]
+            
+        
+        print(f'{db_name}')
         print('txt_in_kg_ratio', sum(txt_in_kg_ratio) / eval_dataset_size)
         print('gen_in_kg_ratio', sum(gen_in_kg_ratio) / eval_dataset_size)
         print('gen_in_kg_nin_txt_ratio', sum(gen_in_kg_nin_txt_ratio) / eval_dataset_size)
+        print('num_gen_nin_kg', sum(num_gen_nin_kg) / eval_dataset_size)
         
             
         

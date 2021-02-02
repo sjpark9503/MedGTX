@@ -181,8 +181,11 @@ class Configuration():
         elif self.config['task_number'] not in self.TASK_POOL:
             return False, "Task not supported"
         elif (self.config['A'] is True or self.config['R'] is True) and self.config['scratch']:
+<<<<<<< Updated upstream
             return False, "Scratch start downstream task must turn off alignment prediction & relation classification"
         elif (self.config['architecture'] in ['both','kg']) and self.config['model']=='transe':
+=======
+>>>>>>> Stashed changes
             return False, "Scratch start downstream task must turn off alignment prediction & relation classification"
         else:
             return True, None
