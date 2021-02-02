@@ -180,7 +180,7 @@ class Configuration():
             return False, "DB not supported"
         elif self.config['task_number'] not in self.TASK_POOL:
             return False, "Task not supported"
-        elif self.config['A'] is False and self.config['R'] is False:
+        elif (self.config['A'] is True or self.config['R'] is True) and self.config['scratch']:
             return False, "Scratch start downstream task must turn off alignment prediction & relation classification"
         else:
             return True, None
