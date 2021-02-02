@@ -58,7 +58,7 @@ class Configuration():
         }
 
     def get_configuration(self):
-        if self.config['task_number']==0 or self.config['scratch']:
+        if (self.config['task_number']==0 or self.config['scratch']) and not self.config['evaluation']:
             if self.config['scratch']:
                 SRC_PATH = os.path.join(self.EXP_PATH, 'src/finetune.py')
                 self.TRAINING_CONFIG['run_name'] = f"scratch/{self.TASK_NAME}/{self.config['model']}/{self.RUN_NAME}_RNG{self.config['seed']}"
