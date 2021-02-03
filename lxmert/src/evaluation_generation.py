@@ -384,7 +384,8 @@ def main():
         
     '''
     Main function
-    '''    
+    '''
+    # 3090 path
     MIMIC_TB_PATH = '/home/sjpark/experiments/kg_txt_multimodal/preprocessing/mimic_table/' 
         
     if training_args.do_eval and data_args.eval_data_file:
@@ -410,14 +411,17 @@ def main():
         # summarize metrics
         _ = summarize_bleu_score(results=eval_outputs, return_results=False)
         _ = summarize_ppl(results=eval_outputs, return_results=False)
-        infos = graph_label_info(data_file=data_args.eval_data_file, mimic_dir=MIMIC_TB_PATH, mode='eval')
-        _ = compute_and_summarize_refer_ratio(results=eval_outputs,
-                                              tokenizer=tokenizer,
-                                              id2node=infos['id2node'],
-                                              db_words_pool=infos['db_words_pool'],
-                                              num_kg_relations=config.num_relations,
-                                              return_results=False)
         
+        # summarize metrics (for now, px)
+        if '/px' in data_args.eval_data_file:
+            infos = graph_label_info(data_file=data_args.eval_data_file, mimic_dir=MIMIC_TB_PATH, mode='eval')
+            _ = compute_and_summarize_refer_ratio(results=eval_outputs,
+                                                tokenizer=tokenizer,
+                                                id2node=infos['id2node'],
+                                                db_words_pool=infos['db_words_pool'],
+                                                num_kg_relations=config.num_relations,
+                                                return_results=False)
+            
         
     if training_args.do_eval and data_args.test_data_file:
         logger.info("do evaluation for test dataset")
@@ -442,13 +446,16 @@ def main():
         # summarize metrics
         _ = summarize_bleu_score(results=test_outputs, return_results=False)
         _ = summarize_ppl(results=test_outputs, return_results=False)
-        infos = graph_label_info(data_file=data_args.test_data_file, mimic_dir=MIMIC_TB_PATH, mode='test')
-        _ = compute_and_summarize_refer_ratio(results=test_outputs,
-                                              tokenizer=tokenizer,
-                                              id2node=infos['id2node'],
-                                              db_words_pool=infos['db_words_pool'],
-                                              num_kg_relations=config.num_relations,
-                                              return_results=False)
+        
+        # summarize metrics (for now, px)
+        if '/px' in data_args.test_data_file:
+            infos = graph_label_info(data_file=data_args.test_data_file, mimic_dir=MIMIC_TB_PATH, mode='test')
+            _ = compute_and_summarize_refer_ratio(results=test_outputs,
+                                                tokenizer=tokenizer,
+                                                id2node=infos['id2node'],
+                                                db_words_pool=infos['db_words_pool'],
+                                                num_kg_relations=config.num_relations,
+                                                return_results=False)
                       
     
         
