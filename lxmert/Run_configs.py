@@ -140,6 +140,8 @@ class Configuration():
                 Config['attention_probs_dropout_prob'] = self.config['dropout']
                 Config['hidden_dropout_prob'] = self.config['dropout']
                 Config['cross_att_type'] = 'single' if self.config['model']=='single' else 'cross'
+                if self.config['model']=='transe':
+                    Config['pretrained_kg_embedding'] = ""
                 if self.config['task_number']==2:
                     Config['cross_att_type'] = 'unilm'
                     Config['max_position_embeddings']['lang'] = 0 if self.Encoder_Type['lang'].lower() in ['bilstm', 'lstm'] else 512
