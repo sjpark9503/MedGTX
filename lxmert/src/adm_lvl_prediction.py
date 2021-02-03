@@ -80,6 +80,7 @@ def main():
     tokenizer = LxmertTokenizer.from_pretrained(model_args.model_name_or_path, cache_dir=model_args.cache_dir)
 
     config.use_ce_pooler=False
+    config.pretrained_kg_embedding=""
     model = LxmertForAdmLvlPrediction.from_pretrained(
         model_args.model_name_or_path,
         from_tf=bool(".ckpt" in model_args.model_name_or_path),
