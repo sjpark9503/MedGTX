@@ -277,6 +277,13 @@ def main():
             tokenizer.save_pretrained(training_args.output_dir)
 
     if 'detection' in training_args.task:
+        model = LxmertForErrorDetection.from_pretrained(
+            training_args.output_dir,
+            from_tf=bool(".ckpt" in training_args.output_dir),
+            config=config,
+            cache_dir=model_args.cache_dir,
+        )
+        trainer.model = model.to(training_args.device)
         trainer.args.top_k = 1
         outputs = trainer.predict(test_dataset)
         trainer.args.top_k = 3

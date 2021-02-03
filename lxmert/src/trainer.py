@@ -1037,7 +1037,8 @@ class Trainer:
             # No point gathering the predictions if there are no metrics, otherwise we defer to
             prediction_loss_only=False,
         )
-        for k,v in output.metrics.item():
+        result = output.metrics.copy()
+        for k,v in result.items():
             if 'eval' in k:
                 output.metrics[k.replace('eval','test')] = v
         wandb.log(output.metrics)
