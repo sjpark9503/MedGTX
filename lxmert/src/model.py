@@ -1340,6 +1340,18 @@ class LxmertForRanking(LxmertPreTrainedModel):
         # Weight initialization
         self.init_weights()
 
+        # Use Pretrained-LM in Language Part
+        self.lxmert.encoder.re_init_to_pretrained_lang_model()
+
+        # Warm start KG embedding
+        if not config.gcn and config.pretrained_kg_embedding:
+            logger.info("Load pretrained embedding for translation based KG-LXMERT")
+            new_embedding = torch.load(config.pretrained_kg_embedding)
+            # new_embedding = loaded_state_dict['ent_embeddings.weight']
+            self.lxmert.set_kg_embeddings(new_embedding)
+            del new_embedding
+            #torch.cuda.empty_cache()
+
         # Loss functions
         self.loss_fcts = {
             "ce": nn.CrossEntropyLoss(),
@@ -1444,6 +1456,18 @@ class LxmertForAdmLvlPrediction(LxmertPreTrainedModel):
 
         # Weight initialization
         self.init_weights()
+
+        # Use Pretrained-LM in Language Part
+        self.lxmert.encoder.re_init_to_pretrained_lang_model()
+
+        # Warm start KG embedding
+        if not config.gcn and config.pretrained_kg_embedding:
+            logger.info("Load pretrained embedding for translation based KG-LXMERT")
+            new_embedding = torch.load(config.pretrained_kg_embedding)
+            # new_embedding = loaded_state_dict['ent_embeddings.weight']
+            self.lxmert.set_kg_embeddings(new_embedding)
+            del new_embedding
+            #torch.cuda.empty_cache()
 
         # Loss functions
         self.loss_fcts = {
@@ -1561,6 +1585,18 @@ class LxmertForErrorDetection(LxmertPreTrainedModel):
 
         # Weight initialization
         self.init_weights()
+
+        # Use Pretrained-LM in Language Part
+        self.lxmert.encoder.re_init_to_pretrained_lang_model()
+
+        # Warm start KG embedding
+        if not config.gcn and config.pretrained_kg_embedding:
+            logger.info("Load pretrained embedding for translation based KG-LXMERT")
+            new_embedding = torch.load(config.pretrained_kg_embedding)
+            # new_embedding = loaded_state_dict['ent_embeddings.weight']
+            self.lxmert.set_kg_embeddings(new_embedding)
+            del new_embedding
+            #torch.cuda.empty_cache()
 
         # Loss functions
         self.loss_fcts = {
@@ -1683,6 +1719,18 @@ class LxmertForGeneration(LxmertPreTrainedModel):
         
         # Weight initialization
         self.init_weights()
+
+        # Use Pretrained-LM in Language Part
+        self.lxmert.encoder.re_init_to_pretrained_lang_model()
+        
+        # Warm start KG embedding
+        if not config.gcn and config.pretrained_kg_embedding:
+            logger.info("Load pretrained embedding for translation based KG-LXMERT")
+            new_embedding = torch.load(config.pretrained_kg_embedding)
+            # new_embedding = loaded_state_dict['ent_embeddings.weight']
+            self.lxmert.set_kg_embeddings(new_embedding)
+            del new_embedding
+            #torch.cuda.empty_cache()
 
         self.rand_embeds = nn.Embedding(config.vocab_size['kg'], config.hidden_size)
         

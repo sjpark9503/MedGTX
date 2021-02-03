@@ -68,7 +68,7 @@ class Configuration():
                 self.TRAINING_CONFIG['run_name'] = f"{self.TASK_NAME}/{self.config['model']}/{self.RUN_NAME}"
                 self.TRAINING_CONFIG['output_dir'] = os.path.join(self.EXP_PATH,f"pretrained_models/{self.TASK_NAME}/{self.config['model']}/{self.RUN_NAME}")
             self.TRAINING_CONFIG['tokenizer_name'] = "bert-base-uncased"
-            self.TRAINING_CONFIG['config_name'] = os.path.join(self.EXP_PATH, f"config/config_H{self.Dim_Hidden}_L{self.NUM_Layers['lang']},{self.NUM_Layers['kg']},{self.NUM_Layers['cross']}_{self.MODEL_TYPE}_{self.Var_Unified}{self.DB}.json")
+            self.TRAINING_CONFIG['config_name'] = os.path.join(self.EXP_PATH, f"config/config_H{self.Dim_Hidden}_L{self.NUM_Layers['lang']},{self.NUM_Layers['kg']},{self.NUM_Layers['cross']}_{self.config['model']}_{self.MODEL_TYPE}_{self.Var_Unified}{self.DB}.json")
             with open(os.path.join(self.EXP_PATH, f"config/config_{self.Var_Unified}{self.DB}.json")) as f:
                 Config = json.load(f)
             Config['gcn'] = (self.MODEL_TYPE in ['both', 'kg']) and (self.config['model']!='transe')
@@ -183,6 +183,8 @@ class Configuration():
         elif (self.config['A'] is True or self.config['R'] is True) and self.config['scratch']:
             return False, "Scratch start downstream task must turn off alignment prediction & relation classification"
         elif (self.config['architecture'] in ['both','kg']) and self.config['model']=='transe':
-            return False, "Scratch start downstream task must turn off alignment prediction & relation classification"
+            return False, "TransE should turn off KGencoder"
+        elif (self.config['task_number']==0) and (self.config['scratch']):
+            return False, "Pretrain or Scratch, not both"
         else:
             return True, None
