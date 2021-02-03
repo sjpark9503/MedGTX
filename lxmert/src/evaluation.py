@@ -104,8 +104,7 @@ def main():
                                             kg_special_token_ids=config.kg_special_token_ids,
                                             task=training_args.task)
 
-    else:
-        raise NotImplementedError("Not implemented task: %s", training_args.task)
+
     model.to(training_args.device)
     model.eval()
 
@@ -145,7 +144,7 @@ def main():
     for k in datas[0]:
         db[k] = torch.cat([data[k] for data in datas]).to(training_args.device)
     base_output_dir = training_args.output_dir
-    for task in ['graph_retrieval', 'text_retrieval']
+    for task in ['graph_retrieval', 'text_retrieval']:
         training_args.task = task
         training_args.output_dir = base_output_dir.replace('retrieval', task)
 
