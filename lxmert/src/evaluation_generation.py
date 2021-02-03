@@ -242,8 +242,8 @@ def main():
             K = decode_option['search_beam_size']
             for idx in tqdm(range(len(dataset))):
                 if K == 1:
-                    ref = tokenizer.convert_ids_to_tokens(outputs['prd_text'][idx], skip_special_tokens=True) # generated text
-                    hyp = tokenizer.convert_ids_to_tokens(outputs['gt_text'][idx], skip_special_tokens=True) # ground truth text
+                    ref = tokenizer.convert_ids_to_tokens(results['prd_text'][idx], skip_special_tokens=True) # generated text
+                    hyp = tokenizer.convert_ids_to_tokens(results['gt_text'][idx], skip_special_tokens=True) # ground truth text
                     results['metric']['bleu'] += bleu_all([ref], hyp)
                 else:
                     refs = [tokenizer.convert_ids_to_tokens(outputs[0][idx][k], skip_special_tokens=True) for k in range(K)] # generated text
