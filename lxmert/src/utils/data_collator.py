@@ -488,10 +488,10 @@ class ErrorDetection_DataCollator:
     """
     tokenizer: PreTrainedTokenizerBase
     kg_special_token_ids: dict
-    num_kg_labels: int
+    #num_kg_labels: int
     kg_size: int
     task: str
-    corruption_probability: float = 0.5
+    corruption_probability: float = 0.1
     prediction: bool = False
 
     def __call__(self,features: List[InputDataClass]) -> Dict[str, torch.Tensor]:
@@ -546,21 +546,21 @@ class ErrorDetection_DataCollator:
         probability_matrix.scatter_(1,must_corrupt_idx.unsqueeze(1),1.0)
         corruption_indeces = torch.bernoulli(probability_matrix).bool()
 
-        if 'deletion' in self.task:
-            inputs[corruption_indeces] = self.kg_special_token_ids['PAD']
-            deleted_label = torch.zeros(inputs.size(0),self.num_kg_labels)
-            for idx in corruption_indeces.nonzero():
-                deleted_label[idx[0],labels[idx[0],idx[1]]]=1
-                if 'kg_attention_mask' in batch:
-                    batch['kg_attention_mask'][idx[0],:,idx[1]]=0
-            batch['label']=deleted_label
-        elif 'replacement' in self.task:
-            inputs_origin = inputs.clone()
-            random_nodes = torch.randint(len(self.kg_special_token_ids),self.kg_size, inputs.shape, dtype=torch.long)
-            inputs[corruption_indeces] = random_nodes[corruption_indeces]
-            batch['label'] = (~(inputs_origin == inputs)).float()
-        else:
-            raise ValueError('task not supported ')
+        # if 'deletion' in self.task:
+        #     inputs[corruption_indeces] = self.kg_special_token_ids['PAD']
+        #     deleted_label = torch.zeros(inputs.size(0),self.num_kg_labels)
+        #     for idx in corruption_indeces.nonzero():
+        #         deleted_label[idx[0],labels[idx[0],idx[1]]]=1
+        #         if 'kg_attention_mask' in batch:
+        #             batch['kg_attention_mask'][idx[0],:,idx[1]]=0
+        #     batch['label']=deleted_label
+        # elif 'replacement' in self.task:
+        inputs_origin = inputs.clone()
+        random_nodes = torch.randint(len(self.kg_special_token_ids),self.kg_size, inputs.shape, dtype=torch.long)
+        inputs[corruption_indeces] = random_nodes[corruption_indeces]
+        batch['label'] = (~(inputs_origin == inputs)).float()
+        # else:
+        #     raise ValueError('task not supported ')
         
         batch['kg_input_ids'] = inputs
         batch['kg_padding_mask'] = ~inputs.eq(self.kg_special_token_ids['PAD'])

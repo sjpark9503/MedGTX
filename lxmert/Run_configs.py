@@ -23,7 +23,8 @@ class Configuration():
                         1: 'retrieval',
                         2: 'generation',
                         3: 'adm_lvl_prediction',
-                        4: 'error_detection'}
+                        4: 'graph_error_detection',
+                        5: 'text_error_detection'}
         self.TASK_NAME = self.TASK_POOL[config['task_number']]
 
         self.MODEL_NAME = f'{self.DB}_{self.Var_Unified}{"Uni" if self.MODEL_TYPE in ["both","kg"] else "No"}KGenc'
@@ -96,11 +97,11 @@ class Configuration():
                         self.TRAINING_CONFIG[k] = self.TRAINING_CONFIG[k].replace('data','data/adm')
                 Config['num_kg_labels'] = 45 if self.DB=='px' else 95
 
-            elif self.config['task_number']==4:
+            elif self.config['task_number'] in [4, 5]:
                 for k in self.TRAINING_CONFIG:
                     if 'file' in k:
                         self.TRAINING_CONFIG[k] = self.TRAINING_CONFIG[k].replace('data','data/ed')
-                Config['num_kg_labels'] = 95 if self.DB=='px' else 45
+                # Config['num_kg_labels'] = 95 if self.DB=='px' else 45
             with open(self.TRAINING_CONFIG['config_name'],'w') as g:
                 json.dump(Config,g)
                 
@@ -150,11 +151,11 @@ class Configuration():
                         if 'file' in k:
                             self.TRAINING_CONFIG[k] = self.TRAINING_CONFIG[k].replace('data','data/adm')
                     Config['num_kg_labels'] = 45 if self.DB=='px' else 95
-                elif self.config['task_number']==4:
+                elif self.config['task_number'] in [4,5]:
                     for k in self.TRAINING_CONFIG:
                         if 'file' in k:
                             self.TRAINING_CONFIG[k] = self.TRAINING_CONFIG[k].replace('data','data/ed')
-                    Config['num_kg_labels'] = 95 if self.DB=='px' else 45
+                    # Config['num_kg_labels'] = 95 if self.DB=='px' else 45
                 # overwrite config
                 if not os.path.isdir(f"config/{self.TASK_NAME}/{self.config['model']}/{self.DB}"):
                     os.makedirs(f"config/{self.TASK_NAME}/{self.config['model']}/{self.DB}")

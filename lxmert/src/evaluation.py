@@ -89,6 +89,7 @@ def main():
         logger.warning("You are instantiating a new config instance from scratch.")
     logger.info(config)
     config.use_ce_pooler = True
+    config.pretrained_kg_embedding=""
     if model_args.tokenizer_name:
         tokenizer = LxmertTokenizer.from_pretrained(model_args.tokenizer_name, cache_dir=model_args.cache_dir)
     elif model_args.model_name_or_path:

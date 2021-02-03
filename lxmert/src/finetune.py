@@ -242,7 +242,7 @@ def main():
     elif 'detection' in training_args.task:
         data_collator = ErrorDetection_DataCollator(tokenizer=tokenizer,
                                                 kg_special_token_ids=config.kg_special_token_ids,
-                                                num_kg_labels=config.num_kg_labels,
+                                                #num_kg_labels=config.num_kg_labels,
                                                 kg_size=config.vocab_size['kg'],
                                                 task = training_args.task)
     elif 'generation' in training_args.task: 
@@ -276,8 +276,16 @@ def main():
         if trainer.is_world_master():
             tokenizer.save_pretrained(training_args.output_dir)
 
-    #if training_args.do_eval:
-        
+    if 'detection' in training_args.task:
+        trainer.args.top_k = 1
+        outputs = trainer.predict(test_dataset)
+        trainer.args.top_k = 3
+        outputs = trainer.predict(test_dataset)
+        trainer.args.top_k = 5
+        outputs = trainer.predict(test_dataset)
+        trainer.args.top_k = 10
+        outputs = trainer.predict(test_dataset)
+
 def _mp_fn(index):
     # For xla_spawn (TPUs)
     main()
