@@ -387,40 +387,42 @@ def main():
     '''
     # 3090 path
     MIMIC_TB_PATH = '/home/sjpark/experiments/kg_txt_multimodal/preprocessing/mimic_table/' 
+    # GCP path
+    # MIMIC_TB_PATH = ''
         
-    if training_args.do_eval and data_args.eval_data_file:
-        logger.info("do evaluation for valid dataset")
-        # get dataset and data loader
-        eval_dataset = get_dataset(data_args,
-                                   tokenizer=tokenizer,
-                                   token_type_vocab=config.token_type_vocab,
-                                   evaluate=True)
-        eval_dataloader = get_dataloader(args=training_args,
-                                         dataset=eval_dataset,
-                                         data_collator=data_collator)
+    # if training_args.do_eval and data_args.eval_data_file:
+    #     logger.info("do evaluation for valid dataset")
+    #     # get dataset and data loader
+    #     eval_dataset = get_dataset(data_args,
+    #                                tokenizer=tokenizer,
+    #                                token_type_vocab=config.token_type_vocab,
+    #                                evaluate=True)
+    #     eval_dataloader = get_dataloader(args=training_args,
+    #                                      dataset=eval_dataset,
+    #                                      data_collator=data_collator)
         
-        # evaluate
-        eval_outputs = evaluate_for_generation(model=model,
-                                               tokenizer=tokenizer,
-                                               dataset=eval_dataset,
-                                               data_loader=eval_dataloader,
-                                               training_args=training_args,
-                                               decode_option=decode_option,
-                                               mode='eval')
+    #     # evaluate
+    #     eval_outputs = evaluate_for_generation(model=model,
+    #                                            tokenizer=tokenizer,
+    #                                            dataset=eval_dataset,
+    #                                            data_loader=eval_dataloader,
+    #                                            training_args=training_args,
+    #                                            decode_option=decode_option,
+    #                                            mode='eval')
         
-        # summarize metrics
-        _ = summarize_bleu_score(results=eval_outputs, return_results=False)
-        _ = summarize_ppl(results=eval_outputs, return_results=False)
+    #     # summarize metrics
+    #     _ = summarize_bleu_score(results=eval_outputs, return_results=False)
+    #     _ = summarize_ppl(results=eval_outputs, return_results=False)
         
-        # summarize metrics (for now, px)
-        if '/px' in data_args.eval_data_file:
-            infos = graph_label_info(data_file=data_args.eval_data_file, mimic_dir=MIMIC_TB_PATH, mode='eval')
-            _ = compute_and_summarize_refer_ratio(results=eval_outputs,
-                                                tokenizer=tokenizer,
-                                                id2node=infos['id2node'],
-                                                db_words_pool=infos['db_words_pool'],
-                                                num_kg_relations=config.num_relations,
-                                                return_results=False)
+    #     # summarize metrics (for now, px)
+    #     if '/px' in data_args.eval_data_file:
+    #         infos = graph_label_info(data_file=data_args.eval_data_file, mimic_dir=MIMIC_TB_PATH, mode='eval')
+    #         _ = compute_and_summarize_refer_ratio(results=eval_outputs,
+    #                                             tokenizer=tokenizer,
+    #                                             id2node=infos['id2node'],
+    #                                             db_words_pool=infos['db_words_pool'],
+    #                                             num_kg_relations=config.num_relations,
+    #                                             return_results=False)
             
         
     if training_args.do_eval and data_args.test_data_file:
