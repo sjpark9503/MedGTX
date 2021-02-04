@@ -1614,7 +1614,8 @@ class LxmertForErrorDetection(LxmertPreTrainedModel):
         lang_attention_mask=None,
         kg_attention_mask=None,
         kg_padding_mask=None,
-        label=None,
+        kg_label=None,
+        lang_label=None,
         token_type_ids=None,
         output_attentions=None,
         output_hidden_states=None,
@@ -1665,15 +1666,20 @@ class LxmertForErrorDetection(LxmertPreTrainedModel):
             lxmert_output.pooled_output,
         )
         # total_loss = 0
-        if label is not None:
-            if kg_input_ids.size(-1)==label.size(-1):
+        if kg_label is not None:
+            if kg_input_ids.size(-1)==kg_label.size(-1):
                 _size = kg_output.shape[:-1]
                 score = self.token_classifier(kg_output.view(-1, self.config.hidden_size)).view(_size)
-                total_loss = self.loss_fcts["bce"](score, label)
+                total_loss = self.loss_fcts["bce"](score, kg_label)
                 loss_dict['loss']=total_loss.mean().item()
             else:
                 score = self.multilabel_classifier(kg_output[:,0])
-                total_loss = self.loss_fcts["bce"](score, label)
+                total_loss = self.loss_fcts["bce"](score, kg_label)
+                loss_dict['loss']=total_loss.mean().item()
+        elif lang_label is not None:
+                _size = lang_output.shape[:-1]
+                score = self.token_classifier(lang_output.view(-1, self.config.hidden_size)).view(_size)
+                total_loss = self.loss_fcts["bce"](score, lang_label)
                 loss_dict['loss']=total_loss.mean().item()
         else:
             total_loss = None

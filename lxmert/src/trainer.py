@@ -195,6 +195,7 @@ class Trainer:
         self.optimizer, self.lr_scheduler = optimizers
         self.best_eval_loss = 1e10
         self.early_stop_queue = 0
+        # self.early_stop_queue = -100
         if model_init is not None and (self.optimizer is not None or self.lr_scheduler is not None):
             raise RuntimeError(
                 "Passing a `model_init` is incompatible with providing the `optimizers` argument."
@@ -663,6 +664,7 @@ class Trainer:
                     self.best_eval_loss = metrics['eval_loss']
                     self.save_model()
                     self.early_stop_queue = 0
+                    # self.early_stop_queue = -100
                 else:
                     if (self.early_stop_queue > self.args.num_eval_per_epoch):
                         FLAG_EarlyStop = True
@@ -1035,7 +1037,10 @@ class Trainer:
             # No point gathering the predictions if there are no metrics, otherwise we defer to
             prediction_loss_only=False,
         )
-
+        result = output.metrics.copy()
+        for k,v in result.items():
+            if 'eval' in k:
+                output.metrics[k.replace('eval','test')] = v
         wandb.log(output.metrics)
 
         return output
@@ -1210,7 +1215,10 @@ class Trainer:
 
                 if not prediction_loss_only:
                     self.predicted['score'] += F.sigmoid(outputs.pooled_logits).tolist()
-                    self.predicted['label'] += inputs['label'].tolist()
+                    if 'text' in self.task:
+                        self.predicted['label'] += inputs['lang_label'].tolist()
+                    else:
+                        self.predicted['label'] += inputs['kg_label'].tolist()
             ## prediction for generation
             elif 'generation' in self.task:
                 if not prediction_loss_only:
