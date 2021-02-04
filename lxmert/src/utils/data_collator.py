@@ -498,8 +498,13 @@ class ErrorDetection_DataCollator:
         if not isinstance(features[0], (dict, BatchEncoding)):
             features = [vars(f) for f in features]
         batch = self._tensorize_batch(features)
-
-        batch = self.corruption(batch)
+        if 'graph' in self.task:
+            batch = self.kg_corruption(batch)
+        elif 'text' in self.task:
+            batch = self.text_corruption(batch)
+        else:
+            raise ValueError("Task not supported")
+        batch.pop('label')
 
         return batch
 
@@ -531,7 +536,7 @@ class ErrorDetection_DataCollator:
 
         return batch
 
-    def corruption(self, batch: dict):
+    def kg_corruption(self, batch: dict):
         """
         Prepare masked tokens inputs/labels for masked language modeling: 80% MASK, 10% random, 10% original.
         """
@@ -553,12 +558,12 @@ class ErrorDetection_DataCollator:
         #         deleted_label[idx[0],labels[idx[0],idx[1]]]=1
         #         if 'kg_attention_mask' in batch:
         #             batch['kg_attention_mask'][idx[0],:,idx[1]]=0
-        #     batch['label']=deleted_label
+        #     batch['kg_label']=deleted_label
         # elif 'replacement' in self.task:
         inputs_origin = inputs.clone()
         random_nodes = torch.randint(len(self.kg_special_token_ids),self.kg_size, inputs.shape, dtype=torch.long)
         inputs[corruption_indeces] = random_nodes[corruption_indeces]
-        batch['label'] = (~(inputs_origin == inputs)).float()
+        batch['kg_label'] = (~(inputs_origin == inputs)).float()
         # else:
         #     raise ValueError('task not supported ')
         
@@ -566,6 +571,85 @@ class ErrorDetection_DataCollator:
         batch['kg_padding_mask'] = ~inputs.eq(self.kg_special_token_ids['PAD'])
         # The rest of the time (10% of the time) we keep the masked input tokens unchanged
         return batch
+
+    def text_corruption(self, batch: dict):
+        mask_labels = []
+        for _input in batch["lang_input_ids"].tolist():
+            # ref_tokens = []
+            # for id in _input:
+            tokens = self.tokenizer.convert_ids_to_tokens(_input)
+            ref_tokens = tokens
+            mask_labels.append(self._whole_word_mask(ref_tokens))
+        batch_mask = torch.tensor(mask_labels)
+        inputs, labels = self.mask_tokens(batch["lang_input_ids"], batch_mask)
+        batch['lang_input_ids'] = inputs
+        batch['lang_label'] = labels
+        batch['kg_padding_mask'] = ~batch['kg_input_ids'].eq(self.kg_special_token_ids['PAD'])
+        return batch
+
+    def _whole_word_mask(self, input_tokens: List[str], max_predictions=512):
+        """
+        Get 0/1 labels for masked tokens with whole word mask proxy
+        """
+
+        cand_indexes = []
+        for (i, token) in enumerate(input_tokens):
+            if token == "[CLS]" or token == "[SEP]" or token == "[PAD]":
+                continue
+
+            if len(cand_indexes) >= 1 and token.startswith("##"):
+                cand_indexes[-1].append(i)
+            else:
+                cand_indexes.append([i])
+
+        random.shuffle(cand_indexes)
+        num_to_predict = min(max_predictions, max(1, int(round(len(input_tokens) * self.corruption_probability))))
+        masked_lms = []
+        covered_indexes = set()
+        for index_set in cand_indexes:
+            if len(masked_lms) >= num_to_predict:
+                break
+            # If adding a whole-word mask would exceed the maximum number of
+            # predictions, then just skip this candidate.
+            if len(masked_lms) + len(index_set) > num_to_predict:
+                continue
+            is_any_index_covered = False
+            for index in index_set:
+                if index in covered_indexes:
+                    is_any_index_covered = True
+                    break
+            if is_any_index_covered:
+                continue
+            for index in index_set:
+                covered_indexes.add(index)
+                masked_lms.append(index)
+
+        assert len(covered_indexes) == len(masked_lms)
+        mask_labels = [1 if i in covered_indexes else 0 for i in range(len(input_tokens))] 
+        return mask_labels
+
+    def mask_tokens(self, inputs: torch.Tensor, mask_labels: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+        """
+        Prepare masked tokens inputs/labels for masked language modeling: 80% MASK, 10% random, 10% original. Set
+        'mask_labels' means we use whole word mask (wwm), we directly mask idxs according to it's ref.
+        """
+
+        if self.tokenizer.mask_token is None:
+            raise ValueError(
+                "This tokenizer does not have a mask token which is necessary for masked language modeling. Remove the --mlm flag if you want to use this tokenizer."
+            )
+
+        inputs_origin = inputs.clone()
+        probability_matrix = mask_labels.bool()
+
+        masked_indices = probability_matrix.bool()
+
+        random_words = torch.randint(len(self.tokenizer), inputs.shape, dtype=torch.long)
+        inputs[masked_indices] = random_words[masked_indices]
+
+        labels = (~(inputs_origin == inputs)).float()
+
+        return inputs, labels
 
 @dataclass
 class Evaluation_DataCollator:
