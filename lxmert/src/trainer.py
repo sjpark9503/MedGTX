@@ -1215,7 +1215,10 @@ class Trainer:
 
                 if not prediction_loss_only:
                     self.predicted['score'] += F.sigmoid(outputs.pooled_logits).tolist()
-                    self.predicted['label'] += inputs['label'].tolist()
+                    if 'text' in self.task:
+                        self.predicted['label'] += inputs['lang_label'].tolist()
+                    else:
+                        self.predicted['label'] += inputs['kg_label'].tolist()
             ## prediction for generation
             elif 'generation' in self.task:
                 if not prediction_loss_only:
