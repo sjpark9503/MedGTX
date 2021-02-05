@@ -189,5 +189,7 @@ class Configuration():
             return False, "TransE should turn off KGencoder"
         elif (self.config['task_number']==0) and (self.config['scratch']):
             return False, "Pretrain or Scratch, not both"
+        elif (self.config['architecture']!='kg') and self.config['model']=='lstm':
+            return False, "LSTM should use KGencoder only"
         else:
             return True, None

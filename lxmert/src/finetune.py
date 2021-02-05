@@ -153,9 +153,9 @@ def main():
                     config=config,
                     cache_dir=model_args.cache_dir,
                 )
-            #db =  training_args.run_name.split('/')[0].split('_')[-1]
-            #class_weight_dict = torch.load(os.path.join(os.getcwd(),f'data/{db}/adm_class_weight'))
-            #model.class_weight = torch.tensor(list(dict(sorted(class_weight_dict.items())).values()),requires_grad=False).to(training_args.device)
+            db =  training_args.run_name.split('/')[3].split('_')[-1]
+            class_weight = torch.tensor(torch.load(os.path.join(os.getcwd(),f'data/{db}/adm_class_weight')),requires_grad=False)
+            model.class_weight = class_weight.to(training_args.device)
         elif 'detection' in training_args.task:
             model = LxmertForErrorDetection.from_pretrained(
                 model_args.model_name_or_path,
@@ -244,6 +244,7 @@ def main():
                                                 kg_special_token_ids=config.kg_special_token_ids,
                                                 #num_kg_labels=config.num_kg_labels,
                                                 kg_size=config.vocab_size['kg'],
+                                                corruption_probability=0.2 if 'text' in training_args.task else 0.1,
                                                 task = training_args.task)
     elif 'generation' in training_args.task: 
         from utils.data_collator import UniLM_DataCollator
@@ -278,6 +279,23 @@ def main():
 
     if 'detection' in training_args.task:
         model = LxmertForErrorDetection.from_pretrained(
+            training_args.output_dir,
+            from_tf=bool(".ckpt" in training_args.output_dir),
+            config=config,
+            cache_dir=model_args.cache_dir,
+        )
+        trainer.model = model.to(training_args.device)
+        trainer.args.top_k = 1
+        outputs = trainer.predict(test_dataset)
+        trainer.args.top_k = 3
+        outputs = trainer.predict(test_dataset)
+        trainer.args.top_k = 5
+        outputs = trainer.predict(test_dataset)
+        trainer.args.top_k = 10
+        outputs = trainer.predict(test_dataset)
+
+    elif 'adm' in training_args.task:
+        model = LxmertForAdmLvlPrediction.from_pretrained(
             training_args.output_dir,
             from_tf=bool(".ckpt" in training_args.output_dir),
             config=config,

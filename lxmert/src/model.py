@@ -1680,7 +1680,9 @@ class LxmertForErrorDetection(LxmertPreTrainedModel):
                 _size = lang_output.shape[:-1]
                 score = self.token_classifier(lang_output.view(-1, self.config.hidden_size)).view(_size)
                 total_loss = self.loss_fcts["bce"](score, lang_label)
-                loss_dict['loss']=total_loss.mean().item()
+                focal_weight = (score.sigmoid()-lang_label).square().abs().detach().clone()
+                total_loss = (total_loss*focal_weight).mean()
+                loss_dict['loss']=total_loss.item()
         else:
             total_loss = None
 
