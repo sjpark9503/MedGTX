@@ -11,7 +11,7 @@ from torch.utils.data import ConcatDataset
 from utils.parameters import parser
 from utils.dataset import get_dataset
 from utils.data_collator import NodeClassification_DataCollator #, UnimodalLM_DataCollator, UnimodalKG_DataCollator
-from model import LxmertForKGTokPredAndMaskedLM
+from model import GTXForKGTokPredAndMaskedLM
 from trainer import Trainer
 
 # From Huggingface transformers package
@@ -100,7 +100,7 @@ def main():
         )
 
     if model_args.model_name_or_path:
-        model = LxmertForKGTokPredAndMaskedLM.from_pretrained(
+        model = GTXForKGTokPredAndMaskedLM.from_pretrained(
             model_args.model_name_or_path,
             from_tf=bool(".ckpt" in model_args.model_name_or_path),
             config=config,
@@ -108,7 +108,7 @@ def main():
         )
     else:
         logger.info("Training new model from scratch")
-        model = LxmertForKGTokPredAndMaskedLM(config)
+        model = GTXForKGTokPredAndMaskedLM(config)
     model.training_args = training_args
     #model.resize_token_embeddings(len(tokenizer))
 

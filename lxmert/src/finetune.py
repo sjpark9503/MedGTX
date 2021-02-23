@@ -12,7 +12,7 @@ import torch
 from utils.parameters import parser
 from utils.dataset import get_dataset
 from utils.data_collator import NegativeSampling_DataCollator, AdmLvlPred_DataCollator, ErrorDetection_DataCollator
-from model import LxmertForRanking, LxmertForKGTokPredAndMaskedLM, LxmertForAdmLvlPrediction, LxmertForErrorDetection
+from model import GTXForRanking, GTXForKGTokPredAndMaskedLM, GTXForAdmLvlPrediction, GTXForErrorDetection
 from trainer import Trainer
 
 # From Huggingface transformers package
@@ -102,7 +102,7 @@ def main():
     if model_args.model_name_or_path:
         if 'retrieval' in training_args.task:
             # try:
-            model = LxmertForRanking.from_pretrained(
+            model = GTXForRanking.from_pretrained(
                 model_args.model_name_or_path,
                 from_tf=bool(".ckpt" in model_args.model_name_or_path),
                 config=config,
@@ -117,14 +117,14 @@ def main():
             #             modified_model_dict.pop(param)
             #     torch.save(modified_model_dict, ckpt_path)
 
-            #     model = LxmertForRanking.from_pretrained(
+            #     model = GTXForRanking.from_pretrained(
             #         model_args.model_name_or_path,
             #         from_tf=bool(".ckpt" in model_args.model_name_or_path),
             #         config=config,
             #         cache_dir=model_args.cache_dir,
             #     )
         elif 'generation' in training_args.task: 
-            model = LxmertForKGTokPredAndMaskedLM.from_pretrained(
+            model = GTXForKGTokPredAndMaskedLM.from_pretrained(
                 model_args.model_name_or_path,
                 from_tf=bool(".ckpt" in model_args.model_name_or_path),
                 config=config,
@@ -133,7 +133,7 @@ def main():
         elif 'adm' in training_args.task:
             try:
                 config.use_ce_pooler=False
-                model = LxmertForAdmLvlPrediction.from_pretrained(
+                model = GTXForAdmLvlPrediction.from_pretrained(
                     model_args.model_name_or_path,
                     from_tf=bool(".ckpt" in model_args.model_name_or_path),
                     config=config,
@@ -147,7 +147,7 @@ def main():
                     if 'multi_pooler' in param:
                         modified_model_dict.pop(param)
                 torch.save(modified_model_dict, ckpt_path)
-                model = LxmertForAdmLvlPrediction.from_pretrained(
+                model = GTXForAdmLvlPrediction.from_pretrained(
                     model_args.model_name_or_path,
                     from_tf=bool(".ckpt" in model_args.model_name_or_path),
                     config=config,
@@ -157,7 +157,7 @@ def main():
             class_weight = torch.tensor(torch.load(os.path.join(os.getcwd(),f'data/{db}/adm_class_weight')),requires_grad=False)
             model.class_weight = class_weight.to(training_args.device)
         elif 'detection' in training_args.task:
-            model = LxmertForErrorDetection.from_pretrained(
+            model = GTXForErrorDetection.from_pretrained(
                 model_args.model_name_or_path,
                 from_tf=bool(".ckpt" in model_args.model_name_or_path),
                 config=config,
@@ -169,7 +169,7 @@ def main():
         logger.info("Training new model from scratch")
         if 'retrieval' in training_args.task:
             # try:
-            model = LxmertForRanking(config)
+            model = GTXForRanking(config)
             # except:
             #     ckpt_path = os.path.join(model_args.model_name_or_path, 'pytorch_model.bin')
             #     load_model_dict = torch.load(ckpt_path)
@@ -179,22 +179,22 @@ def main():
             #             modified_model_dict.pop(param)
             #     torch.save(modified_model_dict, ckpt_path)
 
-            #     model = LxmertForRanking.from_pretrained(
+            #     model = GTXForRanking.from_pretrained(
             #         model_args.model_name_or_path,
             #         from_tf=bool(".ckpt" in model_args.model_name_or_path),
             #         config=config,
             #         cache_dir=model_args.cache_dir,
             #     )
         elif 'generation' in training_args.task: 
-            model = LxmertForKGTokPredAndMaskedLM(config)
+            model = GTXForKGTokPredAndMaskedLM(config)
         elif 'adm' in training_args.task:
             config.use_ce_pooler=False
-            model = LxmertForAdmLvlPrediction(config)
+            model = GTXForAdmLvlPrediction(config)
             #db =  training_args.run_name.split('/')[0].split('_')[-1]
             #class_weight_dict = torch.load(os.path.join(os.getcwd(),f'data/{db}/adm_class_weight'))
             #model.class_weight = torch.tensor(list(dict(sorted(class_weight_dict.items())).values()),requires_grad=False).to(training_args.device)
         elif 'detection' in training_args.task:
-            model = LxmertForErrorDetection(config)
+            model = GTXForErrorDetection(config)
         else:
             raise NotImplementedError("Not implemented task: %s", training_args.task)
     logger.info(config)
@@ -278,7 +278,7 @@ def main():
             tokenizer.save_pretrained(training_args.output_dir)
 
     if 'detection' in training_args.task:
-        model = LxmertForErrorDetection.from_pretrained(
+        model = GTXForErrorDetection.from_pretrained(
             training_args.output_dir,
             from_tf=bool(".ckpt" in training_args.output_dir),
             config=config,
@@ -295,7 +295,7 @@ def main():
         outputs = trainer.predict(test_dataset)
 
     elif 'adm' in training_args.task:
-        model = LxmertForAdmLvlPrediction.from_pretrained(
+        model = GTXForAdmLvlPrediction.from_pretrained(
             training_args.output_dir,
             from_tf=bool(".ckpt" in training_args.output_dir),
             config=config,

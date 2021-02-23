@@ -16,7 +16,7 @@ from utils.parameters import parser
 from utils.dataset import get_dataset
 from utils.data_collator import NegativeSampling_DataCollator, Evaluation_DataCollator
 from torch.utils.data.sampler import RandomSampler, SequentialSampler
-from model import LxmertForRanking
+from model import GTXForRanking
 from trainer import Trainer
 
 # From Huggingface transformers package
@@ -95,7 +95,7 @@ def main():
     elif model_args.model_name_or_path:
         tokenizer = LxmertTokenizer.from_pretrained(model_args.model_name_or_path, cache_dir=model_args.cache_dir)
 
-    model = LxmertForRanking.from_pretrained(
+    model = GTXForRanking.from_pretrained(
         model_args.model_name_or_path,
         from_tf=bool(".ckpt" in model_args.model_name_or_path),
         config=config,

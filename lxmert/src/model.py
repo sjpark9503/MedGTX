@@ -12,7 +12,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-""" PyTorch LXMERT model. """
+""" PyTorch GTX model. """
 
 
 import math
@@ -42,11 +42,6 @@ logger = logging.get_logger(__name__)
 _CONFIG_FOR_DOC = "LxmertConfig"
 _TOKENIZER_FOR_DOC = "LxmertTokenizer"
 
-LXMERT_PRETRAINED_MODEL_ARCHIVE_LIST = [
-    "unc-nlp/lxmert-base-uncased",
-]
-
-
 class GeLU(nn.Module):
     def __init__(self):
         super().__init__()
@@ -56,10 +51,10 @@ class GeLU(nn.Module):
 
 
 @dataclass
-class LxmertModelOutput(ModelOutput):
+class GTXModelOutput(ModelOutput):
     """
-    Lxmert's outputs that contain the last hidden states, pooled outputs, and attention probabilites for the language,
-    visual, and, cross-modality encoders. (note: the visual encoder in Lxmert is referred to as the "relation-ship"
+    GTX's outputs that contain the last hidden states, pooled outputs, and attention probabilites for the language,
+    visual, and, cross-modality encoders. (note: the visual encoder in GTX is referred to as the "relation-ship"
     encoder")
 
 
@@ -100,50 +95,10 @@ class LxmertModelOutput(ModelOutput):
     kg_attentions: Optional[Tuple[torch.FloatTensor]] = None
     cross_encoder_attentions: Optional[Tuple[torch.FloatTensor]] = None
 
-
 @dataclass
-class LxmertForQuestionAnsweringOutput(ModelOutput):
+class GTXForPreTrainingOutput(ModelOutput):
     """
-    Output type of :class:`~transformers.LxmertForQuestionAnswering`.
-
-    Args:
-        loss (`optional`, returned when ``labels`` is provided, ``torch.FloatTensor`` of shape :obj:`(1,)`):
-            Total loss as the sum of the masked language modeling loss and the next sequence prediction
-            (classification) loss.k.
-        question_answering_score: (:obj:`torch.FloatTensor` of shape :obj:`(batch_size, n_qa_answers)`, `optional`):
-            Prediction scores of question answering objective (classification).
-        language_hidden_states (:obj:`tuple(torch.FloatTensor)`, `optional`, returned when ``output_hidden_states=True`` is passed or when ``config.output_hidden_states=True``):
-            Tuple of :obj:`torch.FloatTensor` (one for input features + one for the output of each cross-modality
-            layer) of shape :obj:`(batch_size, sequence_length, hidden_size)`.
-        vision_hidden_states (:obj:`tuple(torch.FloatTensor)`, `optional`, returned when ``output_hidden_states=True`` is passed or when ``config.output_hidden_states=True``):
-            Tuple of :obj:`torch.FloatTensor` (one for input features + one for the output of each cross-modality
-            layer) of shape :obj:`(batch_size, sequence_length, hidden_size)`.
-        language_attentions (:obj:`tuple(torch.FloatTensor)`, `optional`, returned when ``output_attentions=True`` is passed or when ``config.output_attentions=True``):
-            Tuple of :obj:`torch.FloatTensor` (one for each layer) of shape :obj:`(batch_size, num_heads,
-            sequence_length, sequence_length)`. Attentions weights after the attention softmax, used to compute the
-            weighted average in the self-attention heads.
-        vision_attentions (:obj:`tuple(torch.FloatTensor)`, `optional`, returned when ``output_attentions=True`` is passed or when ``config.output_attentions=True``):
-            Tuple of :obj:`torch.FloatTensor` (one for each layer) of shape :obj:`(batch_size, num_heads,
-            sequence_length, sequence_length)`. Attentions weights after the attention softmax, used to compute the
-            weighted average in the self-attention heads.
-        cross_encoder_attentions (:obj:`tuple(torch.FloatTensor)`, `optional`, returned when ``output_attentions=True`` is passed or when ``config.output_attentions=True``):
-            Tuple of :obj:`torch.FloatTensor` (one for each layer) of shape :obj:`(batch_size, num_heads,
-            sequence_length, sequence_length)`. Attentions weights after the attention softmax, used to compute the
-            weighted average in the self-attention heads.
-    """
-
-    loss: Optional[torch.FloatTensor] = None
-    question_answering_score: Optional[torch.FloatTensor] = None
-    language_hidden_states: Optional[Tuple[torch.FloatTensor]] = None
-    vision_hidden_states: Optional[Tuple[torch.FloatTensor]] = None
-    language_attentions: Optional[Tuple[torch.FloatTensor]] = None
-    vision_attentions: Optional[Tuple[torch.FloatTensor]] = None
-    cross_encoder_attentions: Optional[Tuple[torch.FloatTensor]] = None
-
-@dataclass
-class LxmertForPreTrainingOutput(ModelOutput):
-    """
-    Output type of :class:`~transformers.LxmertForPreTrainingModel`.
+    Output type of :class:`~transformers.GTXForPreTrainingModel`.
 
     Args:
         loss (`optional`, returned when ``labels`` is provided, ``torch.FloatTensor`` of shape :obj:`(1,)`):
@@ -189,9 +144,9 @@ class LxmertForPreTrainingOutput(ModelOutput):
     cross_encoder_attentions: Optional[Tuple[torch.FloatTensor]] = None
 
 @dataclass
-class LxmertForDownstreamOutput(ModelOutput):
+class GTXForDownstreamOutput(ModelOutput):
     """
-    Output type of :class:`~transformers.LxmertForPreTrainingModel`.
+    Output type of :class:`~transformers.GTXForPreTrainingModel`.
 
     Args:
         loss (`optional`, returned when ``labels`` is provided, ``torch.FloatTensor`` of shape :obj:`(1,)`):
@@ -235,7 +190,7 @@ class LxmertForDownstreamOutput(ModelOutput):
     kg_attentions: Optional[Tuple[torch.FloatTensor]] = None
     cross_encoder_attentions: Optional[Tuple[torch.FloatTensor]] = None
 
-def load_tf_weights_in_lxmert(model, config, tf_checkpoint_path):
+def load_tf_weights_in_GTX(model, config, tf_checkpoint_path):
     """Load tf checkpoints in a pytorch model."""
     try:
         import re
@@ -314,7 +269,7 @@ def load_tf_weights_in_lxmert(model, config, tf_checkpoint_path):
     return model
 
 
-class LxmertEmbeddings(nn.Module):
+class GTXEmbeddings(nn.Module):
     """Construct the embeddings from word, position and token_type embeddings."""
 
     def __init__(self, config, input_type=None):
@@ -362,7 +317,7 @@ class LxmertEmbeddings(nn.Module):
         return embeddings
 
 
-class LxmertAttention(nn.Module):
+class GTXAttention(nn.Module):
     def __init__(self, config, ctx_dim=None):
         super().__init__()
         if config.hidden_size % config.num_attention_heads != 0:
@@ -423,7 +378,7 @@ class LxmertAttention(nn.Module):
         return outputs
 
 
-class LxmertAttentionOutput(nn.Module):
+class GTXAttentionOutput(nn.Module):
     def __init__(self, config):
         super().__init__()
         self.dense = nn.Linear(config.hidden_size, config.hidden_size)
@@ -437,11 +392,11 @@ class LxmertAttentionOutput(nn.Module):
         return hidden_states
 
 
-class LxmertCrossAttentionLayer(nn.Module):
+class GTXCrossAttentionLayer(nn.Module):
     def __init__(self, config):
         super().__init__()
-        self.att = LxmertAttention(config)
-        self.output = LxmertAttentionOutput(config)
+        self.att = GTXAttention(config)
+        self.output = GTXAttentionOutput(config)
 
     def forward(self, input_tensor, ctx_tensor, ctx_att_mask=None, output_attentions=False):
         output = self.att(input_tensor, ctx_tensor, ctx_att_mask, output_attentions=output_attentions)
@@ -452,11 +407,11 @@ class LxmertCrossAttentionLayer(nn.Module):
         return outputs
 
 
-class LxmertSelfAttentionLayer(nn.Module):
+class GTXSelfAttentionLayer(nn.Module):
     def __init__(self, config):
         super().__init__()
-        self.self = LxmertAttention(config)
-        self.output = LxmertAttentionOutput(config)
+        self.self = GTXAttention(config)
+        self.output = GTXAttentionOutput(config)
 
     def forward(self, input_tensor, attention_mask, output_attentions=False):
         # Self attention attends to itself, thus keys and querys are the same (input_tensor).
@@ -472,7 +427,7 @@ class LxmertSelfAttentionLayer(nn.Module):
         outputs = (attention_output, attention_probs) if output_attentions else (attention_output,)
         return outputs
 
-class LxmertIntermediate(nn.Module):
+class GTXIntermediate(nn.Module):
     def __init__(self, config):
         super().__init__()
         self.dense = nn.Linear(config.hidden_size, config.intermediate_size)
@@ -484,7 +439,7 @@ class LxmertIntermediate(nn.Module):
         return hidden_states
 
 
-class LxmertOutput(nn.Module):
+class GTXOutput(nn.Module):
     def __init__(self, config):
         super().__init__()
         self.dense = nn.Linear(config.intermediate_size, config.hidden_size)
@@ -498,12 +453,12 @@ class LxmertOutput(nn.Module):
         return hidden_states
 
 
-class LxmertLayer(nn.Module):
+class GTXLayer(nn.Module):
     def __init__(self, config):
         super().__init__()
-        self.attention = LxmertSelfAttentionLayer(config)
-        self.intermediate = LxmertIntermediate(config)
-        self.output = LxmertOutput(config)
+        self.attention = GTXSelfAttentionLayer(config)
+        self.intermediate = GTXIntermediate(config)
+        self.output = GTXOutput(config)
 
     def forward(self, hidden_states, attention_mask=None, output_attentions=False):
         outputs = self.attention(hidden_states, attention_mask, output_attentions=output_attentions)
@@ -513,7 +468,7 @@ class LxmertLayer(nn.Module):
         outputs = (layer_output,) + outputs[1:]  # add attentions if we output them
         return outputs
 
-class LxmertXLayer(nn.Module):
+class GTXXLayer(nn.Module):
     def __init__(self, config):
         super().__init__()
         
@@ -521,17 +476,17 @@ class LxmertXLayer(nn.Module):
         logger.info(f"This model has a {self.cross_att_type} type of x_attention architecture.")
 
         # The cross-attention Layer
-        self.cross_attention = LxmertCrossAttentionLayer(config)
+        self.cross_attention = GTXCrossAttentionLayer(config)
 
         # Self-attention Layers
-        self.lang_self_att = LxmertSelfAttentionLayer(config)
-        self.visn_self_att = LxmertSelfAttentionLayer(config)
+        self.lang_self_att = GTXSelfAttentionLayer(config)
+        self.visn_self_att = GTXSelfAttentionLayer(config)
 
         # Intermediate and Output Layers (FFNs)
-        self.lang_inter = LxmertIntermediate(config)
-        self.lang_output = LxmertOutput(config)
-        self.visn_inter = LxmertIntermediate(config)
-        self.visn_output = LxmertOutput(config)
+        self.lang_inter = GTXIntermediate(config)
+        self.lang_output = GTXOutput(config)
+        self.visn_inter = GTXIntermediate(config)
+        self.visn_output = GTXOutput(config)
 
     def cross_att(
         self,
@@ -666,7 +621,7 @@ class LxmertXLayer(nn.Module):
         )
 
 
-# class LxmertKGFeatureEncoder(nn.Module):
+# class GTXKGFeatureEncoder(nn.Module):
 #     def __init__(self, config):
 #         super().__init__()
 #         self.dropout = nn.Dropout(config.hidden_dropout_prob)
@@ -677,7 +632,7 @@ class LxmertXLayer(nn.Module):
 #         """
 #         return None
 
-class LxmertEncoder(nn.Module):
+class GTXEncoder(nn.Module):
     def __init__(self, config):
         super().__init__()
 
@@ -694,9 +649,9 @@ class LxmertEncoder(nn.Module):
 
         # Layers
         # Using self.layer instead of self.l_layer to support loading BERT weights.
-        self.layer = nn.ModuleList([LxmertLayer(config) for _ in range(self.num_l_layers)])
-        self.x_layers = nn.ModuleList([LxmertXLayer(config) for _ in range(self.num_x_layers)])
-        self.r_layers = nn.ModuleList([LxmertLayer(config) for _ in range(self.num_r_layers)])
+        self.layer = nn.ModuleList([GTXLayer(config) for _ in range(self.num_l_layers)])
+        self.x_layers = nn.ModuleList([GTXXLayer(config) for _ in range(self.num_x_layers)])
+        self.r_layers = nn.ModuleList([GTXLayer(config) for _ in range(self.num_r_layers)])
         
         # Lang Encoder Architecture
         # LSTM for generation, BiLSTM for pretraining/other donwstream tasks
@@ -809,9 +764,9 @@ class LxmertEncoder(nn.Module):
             cross_encoder_attentions if output_attentions else None,
         )
 
-class LxmertPooler(nn.Module):
+class GTXPooler(nn.Module):
     def __init__(self, config):
-        super(LxmertPooler, self).__init__()
+        super(GTXPooler, self).__init__()
         self.multi_pooler = nn.Sequential(nn.Linear(config.hidden_size*2, config.hidden_size*2),
                                     nn.Tanh(),
                                     nn.Linear(config.hidden_size*2, config.num_kg_labels))
@@ -831,9 +786,9 @@ class LxmertPooler(nn.Module):
         return pooled_output
 
 
-class LxmertPredictionHeadTransform(nn.Module):
+class GTXPredictionHeadTransform(nn.Module):
     def __init__(self, config):
-        super(LxmertPredictionHeadTransform, self).__init__()
+        super(GTXPredictionHeadTransform, self).__init__()
         self.dense = nn.Linear(config.hidden_size, config.hidden_size)
         self.transform_act_fn = ACT2FN[config.hidden_act]
         self.LayerNorm = nn.LayerNorm(config.hidden_size, eps=1e-12)
@@ -845,45 +800,45 @@ class LxmertPredictionHeadTransform(nn.Module):
         return hidden_states
 
 
-class LxmertLMPredictionHead(nn.Module):
-    def __init__(self, config, lxmert_model_embedding_weights):
-        super(LxmertLMPredictionHead, self).__init__()
-        self.transform = LxmertPredictionHeadTransform(config)
+class GTXLMPredictionHead(nn.Module):
+    def __init__(self, config, GTX_model_embedding_weights):
+        super(GTXLMPredictionHead, self).__init__()
+        self.transform = GTXPredictionHeadTransform(config)
 
         # The output weights are the same as the input embeddings, but there is
         # an output-only bias for each token.
         self.decoder = nn.Linear(
-            lxmert_model_embedding_weights.size(1),
-            lxmert_model_embedding_weights.size(0),
+            GTX_model_embedding_weights.size(1),
+            GTX_model_embedding_weights.size(0),
             bias=False,
         )
-        self.decoder.weight = lxmert_model_embedding_weights
-        self.bias = nn.Parameter(torch.zeros(lxmert_model_embedding_weights.size(0)))
+        self.decoder.weight = GTX_model_embedding_weights
+        self.bias = nn.Parameter(torch.zeros(GTX_model_embedding_weights.size(0)))
 
     def forward(self, hidden_states):
         hidden_states = self.transform(hidden_states)
         hidden_states = self.decoder(hidden_states) + self.bias
         return hidden_states
 
-class LxmertPreTrainingHeads(nn.Module):
-    def __init__(self, config, lxmert_model_embedding_weights):
-        super(LxmertPreTrainingHeads, self).__init__()
-        self.predictions = LxmertLMPredictionHead(config, lxmert_model_embedding_weights)
+class GTXPreTrainingHeads(nn.Module):
+    def __init__(self, config, GTX_model_embedding_weights):
+        super(GTXPreTrainingHeads, self).__init__()
+        self.predictions = GTXLMPredictionHead(config, GTX_model_embedding_weights)
 
     def forward(self, sequence_output):
         prediction_scores = self.predictions(sequence_output)
 
         return prediction_scores
 
-class LxmertPreTrainedModel(PreTrainedModel):
+class GTXPreTrainedModel(PreTrainedModel):
     """
     An abstract class to handle weights initialization and a simple interface for downloading and loading pretrained
     models.
     """
 
-    config_class = LxmertConfig
-    load_tf_weights = load_tf_weights_in_lxmert
-    base_model_prefix = "lxmert"
+    config_class = GTXConfig
+    load_tf_weights = load_tf_weights_in_GTX
+    base_model_prefix = "GTX"
 
     def _init_weights(self, module):
         """ Initialize the weights """
@@ -898,9 +853,9 @@ class LxmertPreTrainedModel(PreTrainedModel):
             module.bias.data.zero_()
 
 
-LXMERT_START_DOCSTRING = r"""
+GTX_START_DOCSTRING = r"""
 
-    The LXMERT model was proposed in `LXMERT: Learning Cross-Modality Encoder Representations from Transformers
+    The GTX model was proposed in `GTX: Learning Cross-Modality Encoder Representations from Transformers
     <https://arxiv.org/abs/1908.07490>`__ by Hao Tan and Mohit Bansal. It's a vision and language transformer model,
     pretrained on a variety of multi-modal datasets comprising of GQA, VQAv2.0, MCSCOCO captions, and Visual genome,
     using a combination of masked language modeling, region of interest feature regression, cross entropy loss for
@@ -915,19 +870,19 @@ LXMERT_START_DOCSTRING = r"""
     general usage and behavior.
 
     Parameters:
-        config (:class:`~transformers.LxmertConfig`): Model configuration class with all the parameters of the model.
+        config (:class:`~transformers.GTXConfig`): Model configuration class with all the parameters of the model.
             Initializing with a config file does not load the weights associated with the model, only the
             configuration. Check out the :meth:`~transformers.PreTrainedModel.from_pretrained` method to load the model
             weights.
 """
 
-LXMERT_INPUTS_DOCSTRING = r"""
+GTX_INPUTS_DOCSTRING = r"""
 
     Args:
         input_ids (:obj:`torch.LongTensor` of shape :obj:`({0})`):
             Indices of input sequence tokens in the vocabulary.
 
-            Indices can be obtained using :class:`~transformers.LxmertTokenizer`. See
+            Indices can be obtained using :class:`~transformers.GTXTokenizer`. See
             :meth:`transformers.PreTrainedTokenizer.encode` and :meth:`transformers.PreTrainedTokenizer.__call__` for
             details.
 
@@ -939,7 +894,7 @@ LXMERT_INPUTS_DOCSTRING = r"""
             These are currently not provided by the transformers library.
         visual_pos: (:obj:`torch.FloatTensor` of shape :obj:՝(batch_size, num_visual_features, visual_pos_dim)՝):
             This input represents spacial features corresponding to their relative (via index) visual features. The
-            pre-trained LXMERT model expects these spacial features to be normalized bounding boxes on a scale of 0 to
+            pre-trained GTX model expects these spacial features to be normalized bounding boxes on a scale of 0 to
             1.
 
             These are currently not provided by the transformers library.
@@ -981,16 +936,16 @@ LXMERT_INPUTS_DOCSTRING = r"""
 
 
 @add_start_docstrings(
-    "The bare Lxmert Model transformer outputting raw hidden-states without any specific head on top.",
-    LXMERT_START_DOCSTRING,
+    "The bare GTX Model transformer outputting raw hidden-states without any specific head on top.",
+    GTX_START_DOCSTRING,
 )
-class LxmertModel(LxmertPreTrainedModel):
+class GTXModel(GTXPreTrainedModel):
     def __init__(self, config):
         super().__init__(config)
-        self.lang_embeddings = LxmertEmbeddings(config,input_type='lang')
-        self.kg_embeddings = LxmertEmbeddings(config,input_type='kg')
-        self.encoder = LxmertEncoder(config)
-        self.pooler = LxmertPooler(config)
+        self.lang_embeddings = GTXEmbeddings(config,input_type='lang')
+        self.kg_embeddings = GTXEmbeddings(config,input_type='kg')
+        self.encoder = GTXEncoder(config)
+        self.pooler = GTXPooler(config)
 
         self.init_weights()
 
@@ -1012,7 +967,6 @@ class LxmertModel(LxmertPreTrainedModel):
     #@add_start_docstrings_to_callable(LXMERT_INPUTS_DOCSTRING.format("batch_size, sequence_length"))
     @add_code_sample_docstrings(
         tokenizer_class=_TOKENIZER_FOR_DOC,
-        checkpoint="unc-nlp/lxmert-base-uncased",
         output_type=LxmertModelOutput,
         config_class=_CONFIG_FOR_DOC,
     )
@@ -1101,7 +1055,7 @@ class LxmertModel(LxmertPreTrainedModel):
         lang_embedding_output = self.lang_embeddings(lang_input_ids, token_type_ids, lang_inputs_embeds)
         kg_embedding_output = self.kg_embeddings(kg_input_ids, None, kg_inputs_embeds)
 
-        # Run Lxmert encoder
+        # Run GTX encoder
         encoder_outputs = self.encoder(
             lang_feats=lang_embedding_output,
             lang_attention_mask=extended_lang_attention_mask,
@@ -1136,7 +1090,7 @@ class LxmertModel(LxmertPreTrainedModel):
         if not return_dict:
             return (lang_output, kg_output, pooled_output) + hidden_states + all_attentions
 
-        return LxmertModelOutput(
+        return GTXModelOutput(
             pooled_output=pooled_output,
             language_output=lang_output,
             kg_output=kg_output,
@@ -1147,15 +1101,15 @@ class LxmertModel(LxmertPreTrainedModel):
             cross_encoder_attentions=cross_encoder_attentions if output_attentions else None,
         )
 
-class LxmertForKGTokPredAndMaskedLM(LxmertPreTrainedModel):
+class GTXForKGTokPredAndMaskedLM(GTXPreTrainedModel):
     def __init__(self, config):
         super().__init__(config)
         # Configuration
         self.config = config
         self.num_kg_labels = config.num_kg_labels
 
-        # Lxmert backbone
-        self.lxmert = LxmertModel(config)
+        # GTX backbone
+        self.GTX = GTXModel(config)
         self.dropout = nn.Dropout(config.hidden_dropout_prob)
         self.classifier = nn.Linear(config.hidden_size, config.num_kg_labels)
         self.edge_classifier = nn.Sequential(nn.Linear(config.hidden_size*2, config.hidden_size*2),
@@ -1163,22 +1117,22 @@ class LxmertForKGTokPredAndMaskedLM(LxmertPreTrainedModel):
                                             nn.Linear(config.hidden_size*2, config.num_relations))
 
         # Pre-training heads
-        self.lm_head = LxmertPreTrainingHeads(config, self.lxmert.lang_embeddings.word_embeddings.weight)
+        self.lm_head = GTXPreTrainingHeads(config, self.GTX.lang_embeddings.word_embeddings.weight)
 
         # Weight initialization
         self.init_weights()
 
         # Warm start KG embedding
         if not config.gcn and config.pretrained_kg_embedding:
-            logger.info("Load pretrained embedding for translation based KG-LXMERT")
+            logger.info("Load pretrained embedding for translation based KG-GTX")
             new_embedding = torch.load(config.pretrained_kg_embedding)
             # new_embedding = loaded_state_dict['ent_embeddings.weight']
-            self.lxmert.set_kg_embeddings(new_embedding)
+            self.GTX.set_kg_embeddings(new_embedding)
             del new_embedding
             #torch.cuda.empty_cache()
 
         # Use Pretrained-LM in Language Part
-        self.lxmert.encoder.re_init_to_pretrained_lang_model()
+        self.GTX.encoder.re_init_to_pretrained_lang_model()
 
         # Loss functions
         self.loss_fcts = {
@@ -1188,8 +1142,8 @@ class LxmertForKGTokPredAndMaskedLM(LxmertPreTrainedModel):
             "tri": nn.TripletMarginLoss()#(margin=config.margin)
         }
 
-    #@add_start_docstrings_to_callable(LXMERT_INPUTS_DOCSTRING.format("batch_size, sequence_length"))
-    @replace_return_docstrings(output_type=LxmertForPreTrainingOutput, config_class=_CONFIG_FOR_DOC)
+    #@add_start_docstrings_to_callable(GTX_INPUTS_DOCSTRING.format("batch_size, sequence_length"))
+    @replace_return_docstrings(output_type=GTXForPreTrainingOutput, config_class=_CONFIG_FOR_DOC)
     def forward(
         self,
         lang_input_ids=None,
@@ -1231,7 +1185,7 @@ class LxmertForKGTokPredAndMaskedLM(LxmertPreTrainedModel):
         """
 
         device = lang_input_ids.device if lang_input_ids is not None else inputs_embeds.device
-        lxmert_output = self.lxmert(
+        GTX_output = self.GTX(
             lang_input_ids=lang_input_ids,
             kg_input_ids=kg_input_ids,
             lang_inputs_embeds=lang_inputs_embeds,
@@ -1246,9 +1200,9 @@ class LxmertForKGTokPredAndMaskedLM(LxmertPreTrainedModel):
         )
 
         lang_output, kg_output, cross_relationship_score = (
-            lxmert_output.language_output,
-            lxmert_output.kg_output,
-            lxmert_output.pooled_output,
+            GTX_output.language_output,
+            GTX_output.kg_output,
+            GTX_output.pooled_output,
         )
         lang_prediction_scores = self.lm_head(lang_output)
         kg_prediction_scores = self.classifier(self.dropout(kg_output))
@@ -1311,44 +1265,44 @@ class LxmertForKGTokPredAndMaskedLM(LxmertPreTrainedModel):
                 kg_prediction_scores,
                 cross_relationship_score,
 
-            ) + lxmert_output[3:]
+            ) + GTX_output[3:]
             return ((total_loss,) + output) if total_loss is not None else output
 
-        return LxmertForPreTrainingOutput(
+        return GTXForPreTrainingOutput(
             loss=total_loss,
             loss_dict=loss_dict,
             lang_prediction_logits=lang_prediction_scores,
             kg_prediction_logits=kg_prediction_scores,
             cross_relationship_score=cross_relationship_score,
-            language_hidden_states=lxmert_output.language_hidden_states,
-            kg_hidden_states=lxmert_output.kg_hidden_states,
-            language_attentions=lxmert_output.language_attentions,
-            kg_attentions=lxmert_output.kg_attentions,
-            cross_encoder_attentions=lxmert_output.cross_encoder_attentions,
+            language_hidden_states=GTX_output.language_hidden_states,
+            kg_hidden_states=GTX_output.kg_hidden_states,
+            language_attentions=GTX_output.language_attentions,
+            kg_attentions=GTX_output.kg_attentions,
+            cross_encoder_attentions=GTX_output.cross_encoder_attentions,
         )
 
-class LxmertForRanking(LxmertPreTrainedModel):
+class GTXForRanking(GTXPreTrainedModel):
     def __init__(self, config):
         super().__init__(config)
         # Configuration
         self.config = config
 
-        # Lxmert backbone
-        self.lxmert = LxmertModel(config)
+        # GTX backbone
+        self.GTX = GTXModel(config)
         self.dropout = nn.Dropout(config.hidden_dropout_prob)
 
         # Weight initialization
         self.init_weights()
 
         # Use Pretrained-LM in Language Part
-        self.lxmert.encoder.re_init_to_pretrained_lang_model()
+        self.GTX.encoder.re_init_to_pretrained_lang_model()
 
         # Warm start KG embedding
         if not config.gcn and config.pretrained_kg_embedding:
-            logger.info("Load pretrained embedding for translation based KG-LXMERT")
+            logger.info("Load pretrained embedding for translation based KG-GTX")
             new_embedding = torch.load(config.pretrained_kg_embedding)
             # new_embedding = loaded_state_dict['ent_embeddings.weight']
-            self.lxmert.set_kg_embeddings(new_embedding)
+            self.GTX.set_kg_embeddings(new_embedding)
             del new_embedding
             #torch.cuda.empty_cache()
 
@@ -1358,8 +1312,8 @@ class LxmertForRanking(LxmertPreTrainedModel):
             "tri": nn.TripletMarginLoss(),
         }
 
-    #@add_start_docstrings_to_callable(LXMERT_INPUTS_DOCSTRING.format("batch_size, sequence_length"))
-    @replace_return_docstrings(output_type=LxmertForDownstreamOutput, config_class=_CONFIG_FOR_DOC)
+    #@add_start_docstrings_to_callable(GTX_INPUTS_DOCSTRING.format("batch_size, sequence_length"))
+    @replace_return_docstrings(output_type=GTXForDownstreamOutput, config_class=_CONFIG_FOR_DOC)
     def forward(
         self,
         lang_input_ids=None,
@@ -1400,7 +1354,7 @@ class LxmertForRanking(LxmertPreTrainedModel):
 
         loss_dict = dict()
 
-        lxmert_output = self.lxmert(
+        GTX_output = self.GTX(
             lang_input_ids=lang_input_ids,
             kg_input_ids=kg_input_ids,
             lang_inputs_embeds=lang_inputs_embeds,
@@ -1415,9 +1369,9 @@ class LxmertForRanking(LxmertPreTrainedModel):
         )
 
         lang_output, kg_output, pooled_output = (
-            lxmert_output.language_output,
-            lxmert_output.kg_output,
-            lxmert_output.pooled_output,
+            GTX_output.language_output,
+            GTX_output.kg_output,
+            GTX_output.pooled_output,
         )
         cross_relationship_score = pooled_output.squeeze()
         if label is not None:
@@ -1430,42 +1384,42 @@ class LxmertForRanking(LxmertPreTrainedModel):
         if not return_dict:
             output = (
                 loss_dict,
-            ) + lxmert_output[3:]
+            ) + GTX_output[3:]
             return ((total_loss,) + output) if total_loss is not None else output
 
-        return LxmertForDownstreamOutput(
+        return GTXForDownstreamOutput(
             loss=total_loss,
             loss_dict=loss_dict,
             pooled_logits=cross_relationship_score,
-            language_hidden_states=lxmert_output.language_hidden_states,
-            kg_hidden_states=lxmert_output.kg_hidden_states,
-            language_attentions=lxmert_output.language_attentions,
-            kg_attentions=lxmert_output.kg_attentions,
-            cross_encoder_attentions=lxmert_output.cross_encoder_attentions,
+            language_hidden_states=GTX_output.language_hidden_states,
+            kg_hidden_states=GTX_output.kg_hidden_states,
+            language_attentions=GTX_output.language_attentions,
+            kg_attentions=GTX_output.kg_attentions,
+            cross_encoder_attentions=GTX_output.cross_encoder_attentions,
         )
 
-class LxmertForAdmLvlPrediction(LxmertPreTrainedModel):
+class GTXForAdmLvlPrediction(GTXPreTrainedModel):
     def __init__(self, config):
         super().__init__(config)
         # Configuration
         self.config = config
 
-        # Lxmert backbone
-        self.lxmert = LxmertModel(config)
+        # GTX backbone
+        self.GTX = GTXModel(config)
         self.dropout = nn.Dropout(config.hidden_dropout_prob)
 
         # Weight initialization
         self.init_weights()
 
         # Use Pretrained-LM in Language Part
-        self.lxmert.encoder.re_init_to_pretrained_lang_model()
+        self.GTX.encoder.re_init_to_pretrained_lang_model()
 
         # Warm start KG embedding
         if not config.gcn and config.pretrained_kg_embedding:
-            logger.info("Load pretrained embedding for translation based KG-LXMERT")
+            logger.info("Load pretrained embedding for translation based KG-GTX")
             new_embedding = torch.load(config.pretrained_kg_embedding)
             # new_embedding = loaded_state_dict['ent_embeddings.weight']
-            self.lxmert.set_kg_embeddings(new_embedding)
+            self.GTX.set_kg_embeddings(new_embedding)
             del new_embedding
             #torch.cuda.empty_cache()
 
@@ -1477,8 +1431,8 @@ class LxmertForAdmLvlPrediction(LxmertPreTrainedModel):
         }
         self.class_weight = None
 
-    #@add_start_docstrings_to_callable(LXMERT_INPUTS_DOCSTRING.format("batch_size, sequence_length"))
-    @replace_return_docstrings(output_type=LxmertForDownstreamOutput, config_class=_CONFIG_FOR_DOC)
+    #@add_start_docstrings_to_callable(GTX_INPUTS_DOCSTRING.format("batch_size, sequence_length"))
+    @replace_return_docstrings(output_type=GTXForDownstreamOutput, config_class=_CONFIG_FOR_DOC)
     def forward(
         self,
         lang_input_ids=None,
@@ -1519,7 +1473,7 @@ class LxmertForAdmLvlPrediction(LxmertPreTrainedModel):
 
         loss_dict = dict()
 
-        lxmert_output = self.lxmert(
+        GTX_output = self.GTX(
             lang_input_ids=lang_input_ids,
             kg_input_ids=kg_input_ids,
             lang_inputs_embeds=lang_inputs_embeds,
@@ -1534,9 +1488,9 @@ class LxmertForAdmLvlPrediction(LxmertPreTrainedModel):
         )
 
         lang_output, kg_output, multi_label_score = (
-            lxmert_output.language_output,
-            lxmert_output.kg_output,
-            lxmert_output.pooled_output,
+            GTX_output.language_output,
+            GTX_output.kg_output,
+            GTX_output.pooled_output,
         )
         # multi_label_score = multi_label_score.softmax(dim=1)
         if label is not None:
@@ -1555,28 +1509,28 @@ class LxmertForAdmLvlPrediction(LxmertPreTrainedModel):
         if not return_dict:
             output = (
                 loss_dict,
-            ) + lxmert_output[3:]
+            ) + GTX_output[3:]
             return ((total_loss,) + output) if total_loss is not None else output
 
-        return LxmertForDownstreamOutput(
+        return GTXForDownstreamOutput(
             loss=total_loss,
             loss_dict=loss_dict,
             pooled_logits=multi_label_score,
-            language_hidden_states=lxmert_output.language_hidden_states,
-            kg_hidden_states=lxmert_output.kg_hidden_states,
-            language_attentions=lxmert_output.language_attentions,
-            kg_attentions=lxmert_output.kg_attentions,
-            cross_encoder_attentions=lxmert_output.cross_encoder_attentions,
+            language_hidden_states=GTX_output.language_hidden_states,
+            kg_hidden_states=GTX_output.kg_hidden_states,
+            language_attentions=GTX_output.language_attentions,
+            kg_attentions=GTX_output.kg_attentions,
+            cross_encoder_attentions=GTX_output.cross_encoder_attentions,
         )
 
-class LxmertForErrorDetection(LxmertPreTrainedModel):
+class GTXForErrorDetection(GTXPreTrainedModel):
     def __init__(self, config):
         super().__init__(config)
         # Configuration
         self.config = config
 
-        # Lxmert backbone
-        self.lxmert = LxmertModel(config)
+        # GTX backbone
+        self.GTX = GTXModel(config)
         self.multilabel_classifier = nn.Sequential(nn.Linear(config.hidden_size, config.hidden_size),
                                                 nn.ReLU(),
                                                 nn.Linear(config.hidden_size, config.num_kg_labels))
@@ -1587,14 +1541,14 @@ class LxmertForErrorDetection(LxmertPreTrainedModel):
         self.init_weights()
 
         # Use Pretrained-LM in Language Part
-        self.lxmert.encoder.re_init_to_pretrained_lang_model()
+        self.GTX.encoder.re_init_to_pretrained_lang_model()
 
         # Warm start KG embedding
         if not config.gcn and config.pretrained_kg_embedding:
-            logger.info("Load pretrained embedding for translation based KG-LXMERT")
+            logger.info("Load pretrained embedding for translation based KG-GTX")
             new_embedding = torch.load(config.pretrained_kg_embedding)
             # new_embedding = loaded_state_dict['ent_embeddings.weight']
-            self.lxmert.set_kg_embeddings(new_embedding)
+            self.GTX.set_kg_embeddings(new_embedding)
             del new_embedding
             #torch.cuda.empty_cache()
 
@@ -1603,8 +1557,8 @@ class LxmertForErrorDetection(LxmertPreTrainedModel):
             "bce": nn.BCEWithLogitsLoss()
         }
 
-    #@add_start_docstrings_to_callable(LXMERT_INPUTS_DOCSTRING.format("batch_size, sequence_length"))
-    @replace_return_docstrings(output_type=LxmertForDownstreamOutput, config_class=_CONFIG_FOR_DOC)
+    #@add_start_docstrings_to_callable(GTX_INPUTS_DOCSTRING.format("batch_size, sequence_length"))
+    @replace_return_docstrings(output_type=GTXForDownstreamOutput, config_class=_CONFIG_FOR_DOC)
     def forward(
         self,
         lang_input_ids=None,
@@ -1646,7 +1600,7 @@ class LxmertForErrorDetection(LxmertPreTrainedModel):
 
         loss_dict = dict()
 
-        lxmert_output = self.lxmert(
+        GTX_output = self.GTX(
             lang_input_ids=lang_input_ids,
             kg_input_ids=kg_input_ids,
             lang_inputs_embeds=lang_inputs_embeds,
@@ -1661,9 +1615,9 @@ class LxmertForErrorDetection(LxmertPreTrainedModel):
         )
 
         lang_output, kg_output, multi_label_score = (
-            lxmert_output.language_output,
-            lxmert_output.kg_output,
-            lxmert_output.pooled_output,
+            GTX_output.language_output,
+            GTX_output.kg_output,
+            GTX_output.pooled_output,
         )
         # total_loss = 0
         if kg_label is not None:
@@ -1689,22 +1643,22 @@ class LxmertForErrorDetection(LxmertPreTrainedModel):
         if not return_dict:
             output = (
                 loss_dict,
-            ) + lxmert_output[3:]
+            ) + GTX_output[3:]
             return ((total_loss,) + output) if total_loss is not None else output
 
-        return LxmertForDownstreamOutput(
+        return GTXForDownstreamOutput(
             loss=total_loss,
             loss_dict=loss_dict,
             pooled_logits=score,
-            language_hidden_states=lxmert_output.language_hidden_states,
-            kg_hidden_states=lxmert_output.kg_hidden_states,
-            language_attentions=lxmert_output.language_attentions,
-            kg_attentions=lxmert_output.kg_attentions,
-            cross_encoder_attentions=lxmert_output.cross_encoder_attentions,
+            language_hidden_states=GTX_output.language_hidden_states,
+            kg_hidden_states=GTX_output.kg_hidden_states,
+            language_attentions=GTX_output.language_attentions,
+            kg_attentions=GTX_output.kg_attentions,
+            cross_encoder_attentions=GTX_output.cross_encoder_attentions,
         )
 
 
-class LxmertForGeneration(LxmertPreTrainedModel):
+class GTXForGeneration(GTXPreTrainedModel):
     def __init__(self, config, tokenizer):
         super().__init__(config)
         
@@ -1713,11 +1667,11 @@ class LxmertForGeneration(LxmertPreTrainedModel):
         self.config = config
         # self.num_kg_labels = config.num_kg_labels
         
-        # Lxmert backbone
-        self.lxmert = LxmertModel(config)
+        # GTX backbone
+        self.GTX = GTXModel(config)
 
         # Pre-training heads
-        self.lm_head = LxmertPreTrainingHeads(config, self.lxmert.lang_embeddings.word_embeddings.weight)
+        self.lm_head = GTXPreTrainingHeads(config, self.GTX.lang_embeddings.word_embeddings.weight)
         
         # Tokenizer
         self.tokenizer = tokenizer
@@ -1729,14 +1683,14 @@ class LxmertForGeneration(LxmertPreTrainedModel):
         self.init_weights()
 
         # Use Pretrained-LM in Language Part
-        self.lxmert.encoder.re_init_to_pretrained_lang_model()
+        self.GTX.encoder.re_init_to_pretrained_lang_model()
         
         # Warm start KG embedding
         if not config.gcn and config.pretrained_kg_embedding:
-            logger.info("Load pretrained embedding for translation based KG-LXMERT")
+            logger.info("Load pretrained embedding for translation based KG-GTX")
             new_embedding = torch.load(config.pretrained_kg_embedding)
             # new_embedding = loaded_state_dict['ent_embeddings.weight']
-            self.lxmert.set_kg_embeddings(new_embedding)
+            self.GTX.set_kg_embeddings(new_embedding)
             del new_embedding
             #torch.cuda.empty_cache()
 
@@ -1880,7 +1834,7 @@ class LxmertForGeneration(LxmertPreTrainedModel):
             if num_db == 2:
                 curr_token_type_ids = self.convert_token_type_ids(curr_ids, curr_token_type_ids)
             
-            lxmert_output = self.lxmert(
+            GTX_output = self.GTX(
                 lang_input_ids=curr_ids,
                 kg_input_ids=kg_input_ids,
                 # lang_inputs_embeds=lang_inputs_embeds,
@@ -1894,9 +1848,9 @@ class LxmertForGeneration(LxmertPreTrainedModel):
                 return_dict=return_dict,
             )
             lang_output, _, _ = (
-                lxmert_output.language_output,
-                lxmert_output.kg_output,
-                lxmert_output.pooled_output,
+                GTX_output.language_output,
+                GTX_output.kg_output,
+                GTX_output.pooled_output,
             )
             
             # predict [MASK] by greedy infer.
@@ -1958,7 +1912,7 @@ class LxmertForGeneration(LxmertPreTrainedModel):
             
             assert curr_ids.shape[-1] == curr_attention_mask.shape[-1]
             
-            lxmert_output = self.lxmert(
+            GTX_output = self.GTX(
                 lang_input_ids=curr_ids,
                 kg_input_ids=kg_input_ids,
                 # lang_inputs_embeds=lang_inputs_embeds,
@@ -1972,9 +1926,9 @@ class LxmertForGeneration(LxmertPreTrainedModel):
                 return_dict=return_dict,
             )
             lang_output, _, _ = (
-                lxmert_output.language_output,
-                lxmert_output.kg_output,
-                lxmert_output.pooled_output,
+                GTX_output.language_output,
+                GTX_output.kg_output,
+                GTX_output.pooled_output,
             )
             
             last_hidden = lang_output[:, -1, :]
@@ -2053,7 +2007,7 @@ class LxmertForGeneration(LxmertPreTrainedModel):
                 curr_token_type_ids = self.convert_token_type_ids(curr_ids, curr_token_type_ids)
             
             # output for current inputs
-            lxmert_output = self.lxmert(
+            GTX_output = self.GTX(
                 lang_input_ids=curr_ids,
                 kg_input_ids=kg_input_ids,
                 lang_attention_mask=curr_attention_mask,
@@ -2064,9 +2018,9 @@ class LxmertForGeneration(LxmertPreTrainedModel):
                 return_dict=True,
             )
             lang_output, _, _ = (
-                lxmert_output.language_output,
-                lxmert_output.kg_output,
-                lxmert_output.pooled_output,
+                GTX_output.language_output,
+                GTX_output.kg_output,
+                GTX_output.pooled_output,
             )
             last_hidden = lang_output[:, -1, :]
             prediction_scores = self.lm_head(last_hidden)

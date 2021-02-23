@@ -12,7 +12,7 @@ import torch
 from utils.parameters import parser
 from utils.dataset import get_dataset
 from utils.data_collator import NegativeSampling_DataCollator, AdmLvlPred_DataCollator, ErrorDetection_DataCollator
-from model import LxmertForRanking, LxmertForKGTokPredAndMaskedLM, LxmertForAdmLvlPrediction, LxmertForErrorDetection
+from model import GTXForRanking, GTXForKGTokPredAndMaskedLM, GTXForAdmLvlPrediction, GTXForErrorDetection
 from trainer import Trainer
 
 # From Huggingface transformers package
@@ -81,7 +81,7 @@ def main():
 
     config.use_ce_pooler=False
     config.pretrained_kg_embedding=""
-    model = LxmertForAdmLvlPrediction.from_pretrained(
+    model = GTXForAdmLvlPrediction.from_pretrained(
         model_args.model_name_or_path,
         from_tf=bool(".ckpt" in model_args.model_name_or_path),
         config=config,

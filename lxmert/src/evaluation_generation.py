@@ -1,6 +1,4 @@
-"""
-Ver 0.3 for KG-LXMERT
-"""
+
 # Base packages
 import logging
 import math
@@ -18,7 +16,7 @@ from torch.utils.data.dataloader import DataLoader
 from utils.parameters import parser
 from utils.dataset import get_dataset
 from utils.data_collator import NegativeSampling_DataCollator
-from model import LxmertForRanking
+from model import GTXForRanking
 from trainer import Trainer
 
 # From Huggingface transformers package
@@ -121,8 +119,8 @@ def main():
 
     if model_args.model_name_or_path:
         if 'generation' in training_args.task:
-            from model import LxmertForGeneration
-            model = LxmertForGeneration.from_pretrained(
+            from model import GTXForGeneration
+            model = GTXForGeneration.from_pretrained(
                 model_args.model_name_or_path,
                 from_tf=bool(".ckpt" in model_args.model_name_or_path),
                 config=config,
