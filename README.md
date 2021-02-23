@@ -24,7 +24,7 @@ pip install transformers wandb
 + Language model
   + BERT base : BERT, BLUE-BERT
 + Cross modal alignment
-  + LXMERT
+  + GTX
 
 ### Training
 + Pretraining methods
@@ -46,9 +46,9 @@ pip install transformers wandb
 + Downstream tasks _TBD_
 
 ## Release Notes
-__v0.1__ : prototype of KG-LXMERT\
+__v0.1__ : prototype of GTX\
 __v0.2__ : support T/V/T data split, add masking only on literals (not for entities)\
-__v0.3__ : support load & initialize pretrained KG embedding, add LxmertForKGTokPredAndMaskedLM in model.py, add NodeMasking_DataCollator, NodeClassification_DataCollator, LiteralRegression_DataCollator (now NCE, literal regression & classification is possible)\
+__v0.3__ : support load & initialize pretrained KG embedding, add GTXForKGTokPredAndMaskedLM in model.py, add NodeMasking_DataCollator, NodeClassification_DataCollator, LiteralRegression_DataCollator (now NCE, literal regression & classification is possible)\
 __v1.0__ : Add pretraining, TVT split code\
 __v1.0.2__ : Fix bugs in v1.0\
 __v1.0.3__ : Fix preprocessing bugs in v1.0.2\
