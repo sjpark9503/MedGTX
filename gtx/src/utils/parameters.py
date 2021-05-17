@@ -62,10 +62,6 @@ class DataTrainingArguments:
             "Very often splitting large files to smaller files can prevent tokenizer going out of memory"
         },
     )
-    chinese_ref_file: Optional[str] = field(
-        default=None,
-        metadata={"help": "An optional input ref data file for whole word mask in Chinees."},
-    )
     line_by_line: bool = field(
         default=False,
         metadata={"help": "Whether distinct lines of text in the dataset are to be handled as distinct sequences."},
@@ -77,7 +73,6 @@ class DataTrainingArguments:
     mlm_probability: float = field(
         default=0.15, metadata={"help": "Ratio of tokens to mask for masked language modeling loss"}
     )
-
     block_size: int = field(
         default=-1,
         metadata={
@@ -86,7 +81,6 @@ class DataTrainingArguments:
             "Default to the model max input length for single sentence inputs (take into account special tokens)."
         },
     )
-
     overwrite_cache: bool = field(
         default=False, metadata={"help": "Overwrite the cached training and evaluation sets"}
     )

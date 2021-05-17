@@ -19,7 +19,9 @@ from transformers.tokenization_utils import PreTrainedTokenizer
 
 from .parameters import DataTrainingArguments
 
-logger = logging.getLogger(__name__)
+from utils.notifier import logging, log_formatter
+notifier = logging.getLogger(__name__)
+notifier.addHandler(log_formatter())
 
 """
 Define Dataset & Load
@@ -59,14 +61,10 @@ class HeadOnlyDataset(Dataset):
     """
     def __init__(self, tokenizer: PreTrainedTokenizer, file_path: str, block_size: int, token_type_vocab: dict = None):
         assert os.path.isdir(file_path), f"Input file path {file_path} not found"
-        # Here, we do not cache the features, operating under the assumption
-        # that we will soon use fast multithreaded tokenizers from the
-        # `tokenizers` repo everywhere =)
         self.token_type_vocab = token_type_vocab
         self.tokenizer = tokenizer
         self.features = list()
-        # if not os.path.isfile(os.path.join(file_path,'cached_feature')):
-        logger.info("Creating features from dataset file at %s", file_path)
+        notifier.warning("Creating features from dataset file at %s", file_path)
         # Loading preprocessed data
         self.batch_encoding = torch.load(os.path.join(file_path,'db'))
         self.batch_encoding['lang'] = dict()
@@ -80,11 +78,6 @@ class HeadOnlyDataset(Dataset):
                     self.batch_encoding['lang'][k] = list()
                 self.batch_encoding['lang'][k].append(v)
         self.batch2feature()
-        #     logger.info("Saving features...")
-        #     torch.save(self.features,os.path.join(file_path,'cached_feature'))
-        # else:
-        #     logger.info("Loading features from dataset file at %s", file_path)
-        #     self.features = torch.load(os.path.join(file_path,'cached_feature'))
 
     def generate_type_ids(self, sections, tokens):
         idx = 0
@@ -133,7 +126,7 @@ def get_dataset(
 
     if evaluate:
         return _dataset(args.eval_data_file)
-    if test:
+    elif test:
         return _dataset(args.test_data_file)
     elif args.train_data_files:
         return ConcatDataset([_dataset(f) for f in glob(args.train_data_files)])

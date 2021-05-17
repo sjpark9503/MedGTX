@@ -184,7 +184,7 @@ class TrainingArguments:
             )
         },
     )
-
+    label_domain: str = field(default=None, metadata={"help": "The domain of target. value must be one of graph or text"})
     do_train: bool = field(default=False, metadata={"help": "Whether to run training."})
     do_eval: bool = field(default=None, metadata={"help": "Whether to run eval on the dev set."})
     do_predict: bool = field(default=False, metadata={"help": "Whether to run predictions on the test set."})

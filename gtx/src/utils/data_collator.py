@@ -490,17 +490,18 @@ class ErrorDetection_DataCollator:
     kg_special_token_ids: dict
     #num_kg_labels: int
     kg_size: int
-    task: str
-    corruption_probability: float = 0.1
+    label_domain: str
     prediction: bool = False
 
     def __call__(self,features: List[InputDataClass]) -> Dict[str, torch.Tensor]:
         if not isinstance(features[0], (dict, BatchEncoding)):
             features = [vars(f) for f in features]
         batch = self._tensorize_batch(features)
-        if 'graph' in self.task:
+        if 'graph' == self.label_domain:
+            self.corruption_probability=0.1
             batch = self.kg_corruption(batch)
-        elif 'text' in self.task:
+        elif 'text' in self.label_domain:
+            self.corruption_probability=0.2
             batch = self.text_corruption(batch)
         else:
             raise ValueError("Task not supported")
