@@ -18,6 +18,8 @@ config = {
     'model' : 'lstm',
     # architecture : both / kg / lm / rand
     'architecture' : 'lm',
+    # label domain : graph / text
+    'label_domain' : 'text',
     'P' : True,
     'A' : True,
     'R' : True,

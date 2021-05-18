@@ -19,12 +19,11 @@ class Configuration():
         self.Var_RC = 'RC_' if config['R'] else ''
 
         # Helper Variables (TASK_POOL, isSingleModel)
-        self.TASK_POOL = {0: 'pretrain', 
-                        1: 'retrieval',
-                        2: 'generation',
-                        3: 'adm_lvl_prediction',
-                        4: 'graph_error_detection',
-                        5: 'text_error_detection'}
+        self.TASK_POOL = {0: 'Pre', 
+                        1: 'Re',
+                        2: 'Gen',
+                        3: 'AdmPred',
+                        4: 'ErrDetect'}
         self.TASK_NAME = self.TASK_POOL[config['task_number']]
 
         self.MODEL_NAME = f'{self.DB}_{self.Var_Unified}{"Uni" if self.MODEL_TYPE in ["both","kg"] else "No"}KGenc'
@@ -52,6 +51,7 @@ class Configuration():
             "save_per_run": (config['num_epochs']//10) if config['task_number']==0 else int(1e2),
             "num_eval_per_epoch": 2,
             "task" : self.TASK_NAME,
+            "label_domain" : config['label_domain'],
             "train_data_file":os.path.join(self.EXP_PATH,f"data/{self.DB}_{self.DB_size}/{self.MODEL_NAME}/train"),
             "eval_data_file": os.path.join(self.EXP_PATH,f"data/{self.DB}_{self.DB_size}/{self.MODEL_NAME}/valid"),
             "test_data_file": os.path.join(self.EXP_PATH,f"data/{self.DB}_{self.DB_size}/{self.MODEL_NAME}/test"),

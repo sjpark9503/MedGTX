@@ -500,7 +500,7 @@ class ErrorDetection_DataCollator:
         if 'graph' == self.label_domain:
             self.corruption_probability=0.1
             batch = self.kg_corruption(batch)
-        elif 'text' in self.label_domain:
+        elif 'text' == self.label_domain:
             self.corruption_probability=0.2
             batch = self.text_corruption(batch)
         else:
