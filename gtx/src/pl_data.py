@@ -97,6 +97,7 @@ class DataModule(pl.LightningDataModule):
             drop_last=self.args.dataloader_drop_last,
             num_workers=self.args.dataloader_num_workers,
             pin_memory=self.args.dataloader_pin_memory,
+            shuffle=True,
         )
 
     def val_dataloader(self):
@@ -104,15 +105,17 @@ class DataModule(pl.LightningDataModule):
             self.eval_dataset,
             batch_size=self.args.eval_batch_size,
             collate_fn=self.data_collator,
-            drop_last=self.args.dataloader_drop_last,
+            drop_last=False,
             num_workers=self.args.dataloader_num_workers,
-            pin_memory=self.args.dataloader_pin_memory,)
+            pin_memory=self.args.dataloader_pin_memory,
+            shuffle=False)
 
-    def test_dataloader(self):
+    def test_dataloader(self, batch_size=None):
         return DataLoader(
             self.test_dataset,
-            batch_size=self.args.eval_batch_size,
+            batch_size=self.args.eval_batch_size if batch_size is None else batch_size,
             collate_fn=self.data_collator,
-            drop_last=self.args.dataloader_drop_last,
+            drop_last=False,
             num_workers=self.args.dataloader_num_workers,
-            pin_memory=self.args.dataloader_pin_memory,)
+            pin_memory=self.args.dataloader_pin_memory,
+            shuffle=False)

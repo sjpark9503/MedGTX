@@ -584,7 +584,7 @@ class ErrorDetection_DataCollator:
         batch_mask = torch.tensor(mask_labels)
         inputs, labels = self.mask_tokens(batch["lang_input_ids"], batch_mask)
         batch['lang_input_ids'] = inputs
-        batch['lang_label'] = labels
+        batch['lm_label'] = labels
         batch['kg_padding_mask'] = ~batch['kg_input_ids'].eq(self.kg_special_token_ids['PAD'])
         return batch
 

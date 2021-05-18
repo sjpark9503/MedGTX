@@ -1207,6 +1207,7 @@ class GTXForKGTokPredAndMaskedLM(GTXPreTrainedModel):
         lang_prediction_scores = self.lm_head(lang_output)
         kg_prediction_scores = self.classifier(self.dropout(kg_output))
 
+        # Loss calculation
         total_loss = (
             None
             if (lm_label is None and kg_label is None)
@@ -1221,15 +1222,9 @@ class GTXForKGTokPredAndMaskedLM(GTXPreTrainedModel):
                 _lm_label,
             )
             total_loss += masked_lm_loss
-            loss_dict['lm_loss']=masked_lm_loss.mean().item()
+            loss_dict['lm_loss']=masked_lm_loss.mean().detach()
+
         if kg_label is not None:
-            # if self.num_kg_labels == 1:
-            #     #  We are doing regression
-            #     kg_intm_loss = self.loss_fcts['mse'](kg_prediction_scores.view(-1), kg_label.view(-1))
-            #     if kg_label_mask is not None:
-            #         kg_intm_loss = torch.where(kg_label_mask.view(-1),kg_intm_loss,0.0)
-            #     kg_loss = kg_intm_loss.mean()
-            # else:
             if kg_label_mask is not None:
                 active_logits = kg_prediction_scores.view(-1, self.num_kg_labels)
                 active_labels = torch.where(
@@ -1240,11 +1235,11 @@ class GTXForKGTokPredAndMaskedLM(GTXPreTrainedModel):
             else:
                 kg_loss = self.loss_fcts['ce'](kg_prediction_scores.view(-1, self.num_kg_labels), kg_label.view(-1))
             total_loss += kg_loss
-            loss_dict['kg_loss']=kg_loss.mean().item()
+            loss_dict['kg_loss']=kg_loss.mean().detach()
         if cross_label is not None:
             cross_loss = self.loss_fcts["ce"](cross_relationship_score, cross_label)
             total_loss += cross_loss
-            loss_dict['align_loss']=cross_loss.mean().item()
+            loss_dict['align_loss']=cross_loss.mean().detach()
         if rc_indeces is not None:
             rc_labels = list()
             rc_inputs = list()
@@ -1255,9 +1250,9 @@ class GTXForKGTokPredAndMaskedLM(GTXPreTrainedModel):
             rc_outputs = self.edge_classifier(torch.stack(rc_inputs,dim=0))
             rc_loss = self.loss_fcts['ce'](rc_outputs,torch.tensor(rc_labels,dtype=torch.long, device=device))
             total_loss += rc_loss
-            loss_dict['rc_loss']=rc_loss.mean().item()
+            loss_dict['rc_loss']=rc_loss.mean().detach()
             
-        loss_dict['loss'] = total_loss.mean().item()
+        loss_dict['loss'] = total_loss.mean().detach()
         if not return_dict:
             output = (
                 loss_dict,
@@ -1271,9 +1266,9 @@ class GTXForKGTokPredAndMaskedLM(GTXPreTrainedModel):
         return GTXForPreTrainingOutput(
             loss=total_loss,
             loss_dict=loss_dict,
-            lang_prediction_logits=lang_prediction_scores,
-            kg_prediction_logits=kg_prediction_scores,
-            cross_relationship_score=cross_relationship_score,
+            lang_prediction_logits=lang_prediction_scores.detach(),
+            kg_prediction_logits=kg_prediction_scores.detach(),
+            cross_relationship_score=cross_relationship_score.detach(),
             language_hidden_states=GTX_output.language_hidden_states,
             kg_hidden_states=GTX_output.kg_hidden_states,
             language_attentions=GTX_output.language_attentions,
@@ -1376,7 +1371,7 @@ class GTXForRanking(GTXPreTrainedModel):
         cross_relationship_score = pooled_output.squeeze()
         if label is not None:
             total_loss = self.loss_fcts["ce"](cross_relationship_score, label)
-            loss_dict['loss']=total_loss.mean().item()
+            loss_dict['loss']=total_loss.mean().detach()
         else:
             total_loss = None
         
@@ -1390,7 +1385,7 @@ class GTXForRanking(GTXPreTrainedModel):
         return GTXForDownstreamOutput(
             loss=total_loss,
             loss_dict=loss_dict,
-            pooled_logits=cross_relationship_score,
+            pooled_logits=cross_relationship_score.detach(),
             language_hidden_states=GTX_output.language_hidden_states,
             kg_hidden_states=GTX_output.kg_hidden_states,
             language_attentions=GTX_output.language_attentions,
@@ -1501,7 +1496,7 @@ class GTXForAdmLvlPrediction(GTXPreTrainedModel):
                 #total_loss = total_loss*focal_weight
 
             total_loss = total_loss.mean()
-            loss_dict['loss']=total_loss.item()
+            loss_dict['loss']=total_loss.detach()
         else:
             total_loss = None
         
@@ -1515,7 +1510,7 @@ class GTXForAdmLvlPrediction(GTXPreTrainedModel):
         return GTXForDownstreamOutput(
             loss=total_loss,
             loss_dict=loss_dict,
-            pooled_logits=multi_label_score,
+            pooled_logits=multi_label_score.detach(),
             language_hidden_states=GTX_output.language_hidden_states,
             kg_hidden_states=GTX_output.kg_hidden_states,
             language_attentions=GTX_output.language_attentions,
@@ -1569,7 +1564,7 @@ class GTXForErrorDetection(GTXPreTrainedModel):
         kg_attention_mask=None,
         kg_padding_mask=None,
         kg_label=None,
-        lang_label=None,
+        lm_label=None,
         token_type_ids=None,
         output_attentions=None,
         output_hidden_states=None,
@@ -1625,18 +1620,18 @@ class GTXForErrorDetection(GTXPreTrainedModel):
                 _size = kg_output.shape[:-1]
                 score = self.token_classifier(kg_output.view(-1, self.config.hidden_size)).view(_size)
                 total_loss = self.loss_fcts["bce"](score, kg_label)
-                loss_dict['loss']=total_loss.mean().item()
+                loss_dict['loss']=total_loss.mean().detach()
             else:
                 score = self.multilabel_classifier(kg_output[:,0])
                 total_loss = self.loss_fcts["bce"](score, kg_label)
-                loss_dict['loss']=total_loss.mean().item()
-        elif lang_label is not None:
+                loss_dict['loss']=total_loss.mean().detach()
+        elif lm_label is not None:
                 _size = lang_output.shape[:-1]
                 score = self.token_classifier(lang_output.view(-1, self.config.hidden_size)).view(_size)
-                total_loss = self.loss_fcts["bce"](score, lang_label)
-                focal_weight = (score.sigmoid()-lang_label).square().abs().detach().clone()
+                total_loss = self.loss_fcts["bce"](score, lm_label)
+                focal_weight = (score.sigmoid()-lm_label).square().abs().detach().clone()
                 total_loss = (total_loss*focal_weight).mean()
-                loss_dict['loss']=total_loss.item()
+                loss_dict['loss']=total_loss.detach()
         else:
             total_loss = None
 
@@ -1649,7 +1644,7 @@ class GTXForErrorDetection(GTXPreTrainedModel):
         return GTXForDownstreamOutput(
             loss=total_loss,
             loss_dict=loss_dict,
-            pooled_logits=score,
+            pooled_logits=score.detach(),
             language_hidden_states=GTX_output.language_hidden_states,
             kg_hidden_states=GTX_output.kg_hidden_states,
             language_attentions=GTX_output.language_attentions,
@@ -1812,7 +1807,7 @@ class GTXForGeneration(GTXPreTrainedModel):
         batch_size, max_length = lang_input_ids.shape
         
         # set output_length for max_length within a batch
-        output_length = torch.max(gt_length).item()
+        output_length = torch.max(gt_length).detach()
         assert output_length <= max_length
         
         # construct initial settings [[CLS], [MASK]]
@@ -1896,7 +1891,7 @@ class GTXForGeneration(GTXPreTrainedModel):
         
         # set output_length for max_length within a batch
         gt_length = torch.sum(lang_input_ids.not_equal(self.pad_token_id), axis=1)
-        output_length = torch.max(gt_length).item()
+        output_length = torch.max(gt_length).detach()
         assert output_length <= max_length
         
         # construct initial settings [[CLS], [MASK]]
@@ -1946,7 +1941,7 @@ class GTXForGeneration(GTXPreTrainedModel):
             next_pos += 1
             
         total_ppl = torch.exp(total_ppl/gt_length)
-        batch_mean_ppl = total_ppl.mean().item()
+        batch_mean_ppl = total_ppl.mean().detach()
         return batch_mean_ppl
             
     def beam_search(
@@ -1974,7 +1969,7 @@ class GTXForGeneration(GTXPreTrainedModel):
         batch_size, max_length = lang_input_ids.shape
 
         # find maximum output_length
-        output_length = torch.max(gt_length).item()
+        output_length = torch.max(gt_length).detach()
         assert output_length <= max_length
         
         # init settings

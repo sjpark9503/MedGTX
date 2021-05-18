@@ -93,8 +93,8 @@ def main():
     ) 
         
     # Train & Validation
-    if training_args.do_train and not (training_args.shot == "zero"):
-        trainer.validate(model=gtx, datamodule = data_module)
+    if training_args.do_train:
+        # trainer.validate(model=gtx, datamodule = data_module)
         trainer.fit(gtx, data_module)
         trainer.save_checkpoint("last_epoch.ckpt")
         

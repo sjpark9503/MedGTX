@@ -65,62 +65,68 @@ class GTXModel(pl.LightningModule):
         notifier.warn(self.model.config)
 
     def forward(self, x):
-        return self.model(x).logits
+        return self.model(x)
     
     def training_step(self, batch, batch_idx):
         if self.global_step==0:
             notifier.critical("Here is the actual input of model")
             notifier.warning(batch)
-        loss = self.model(**batch).loss
-        self.log('train_loss', loss)
-        self.samples_seen+=len(batch['input_ids'])
-        return loss
+        outputs = self.model(**batch)
+        
+        self.log(outputs.loss_dict)
+
+        return outputs.loss
 
     def validation_step(self, batch, batch_idx):
         outputs = self.model(**batch)
-        return outputs.loss, outputs.scores
+        metrics = self.metrics_for_tasks(batch, outputs, stage="valid", task=self.training_args.task)
+        return metrics
 
     def validation_epoch_end(self, val_epoch_outputs):
-        epoch_scores = [v[-1] for v in val_epoch_outputs]
-        epoch_scores = torch.cat(epoch_scores)
-        epoch_loss = sum([v[0] for v in val_epoch_outputs])
-        cur_val_metric = epoch_scores.sum()/epoch_scores.size(0)
-        if self.best_val_metric < cur_val_metric:
-            self.best_val_metric = cur_val_metric
-        self.log(f'valid_loss', epoch_loss/len(self.val_dataloader()))
-        self.log(f'valid_acc', cur_val_metric)
-        if self.global_step == 0:
-            self.log(f'ZeroShot_acc', cur_val_metric)
-        self.log(f'best_valid_acc', self.best_val_metric)
+        keys = val_epoch_outputs[0].keys()
+        epoch_metrics = {k:torch.cat([val_epoch_output[k] for val_epoch_output in val_epoch_outputs]).mean() for k in keys}
+        self.log(epoch_metrics)
+        return epoch_metrics
 
     def test_step(self, batch, batch_idx):
-        outputs = self.model(**batch)
-        return outputs.loss, outputs.scores
+        metrics = dict()
+        if self.training_args.task == "Re":
+            top_k = self.training_args.top_k
+            for label_domain in ["graph", "text"]:
+                for negative_sample in self.test_dataloader(batch_size=128):
+                    scores = list()
+                    for k in batch:
+                        if label_domain == "text":
+                            if 'kg' in k:
+                                batch[k] = torch.stack([batch[k],]*negative_sample.size(0))
+                            else:
+                                batch[k] = negative_sample[k]
+                        else:
+                            if 'kg' not in k:
+                                batch[k] = torch.stack([batch[k],]*negative_sample.size(0))
+                            else:
+                                batch[k] = negative_sample[k]
+
+                    outputs = self.model(**batch)
+                    scores.append(outputs.pooled_logits[:,1])
+
+                scores = torch.cat(scores)
+                hit = (scores.topk(top_k).indices==batch_idx).sum()
+                recrank = 1/((scores.argsort(descending=True)==batch_idx).nonzero()+1)
+                metrics[f"{label_domain}_Hits@{top_k}"] = hit
+                metrics[f"{label_domain}_MRR"] = recrank
+
+        else:
+            outputs = self.model(**batch)
+            metrics = self.metrics_for_tasks(batch, outputs, stage="test", task=self.training_args.task)
+
+        return metrics
     
     def test_epoch_end(self, test_epoch_outputs):
-        epoch_scores = [v[-1] for v in test_epoch_outputs]
-        epoch_scores = torch.cat(epoch_scores)
-        self.log(f'test_acc', epoch_scores.sum()/epoch_scores.size(0))
-
-    def metric_Pre(self, outputs):
-
-        return NotImplementedError()
-
-    def metric_Re(self, outputs):
-
-        return NotImplementedError()
-
-    def metric_AdmPred(self, outputs):
-
-        return NotImplementedError()
-
-    def metric_ErrDetect(self, outputs):
-
-        return NotImplementedError()
-
-    def metric_Gen(self, outputs):
-
-        return NotImplementedError()
+        keys = test_epoch_outputs[0].keys()
+        epoch_metrics = {k:torch.cat([test_epoch_output[k] for test_epoch_output in test_epoch_outputs]).mean() for k in keys}
+        self.log(epoch_metrics)
+        return epoch_metrics
 
     def configure_optimizers(self):
         # Define optimizer
@@ -159,10 +165,8 @@ class GTXModel(pl.LightningModule):
                 optimizer=optimizer,
                 num_warmup_steps=self.training_args.warmup_steps,
                 num_training_steps=max_steps,
-            ),#ReduceLROnPlateau(optimizer),
+            ),
             'interval': 'step',
-            # 'monitor': 'train_loss',
-            # 'frequency': 10,
         }
 
         return {"optimizer": optimizer, "lr_scheduler": lr_scheduler}

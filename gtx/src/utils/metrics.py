@@ -47,3 +47,77 @@ def recall_at_k(labels, scores, k=10):
             sample_recall.append(hit/len(label))
 
     return sum(sample_recall)/len(sample_recall)
+
+def metrics_for_tasks(self, task, stage, batch=None, outputs=None, scores=None):
+    metrics = {stage+k:v for k,v in outputs.loss_dict.items()}
+    if task == "Pre":
+        if batch['lm_label']:
+            lm_pred = torch.max(outputs.lang_prediction_logits, dim=2)[-1][:batch['lm_label'].size(0)][~batch['lm_label'].eq(-100)].view(-1).long()
+            lm_gt = batch['lm_label'][~batch['lm_label'].eq(-100)].view(-1).long()
+            metrics[f"{stage}_lm_acc"] = lm_pred==lm_gt
+        if batch['kg_label']:
+            kg_pred = torch.max(outputs.kg_prediction_logits, dim=2)[-1][:batch['lm_label'].size(0)][~batch['kg_label'].eq(-100)].view(-1).long()
+            kg_gt = batch['kg_label'][~batch['kg_label'].eq(-100)].view(-1).long().detach()
+            metrics[f"{stage}_kg_acc"] = kg_pred==kg_gt
+        
+    elif task == "Re":
+        if stage == "valid":
+            score = torch.max(outputs.pooled_logits,dim=1)[-1]
+            gt = batch['label']
+            metrics[f"{stage}_acc"] = score==gt
+        else:
+            raise ValueError("Test criterion for Retrieval is in pl_data.py. It should not be called here.")
+ 
+    elif task == "AdmPred":
+        pred = F.sigmoid(outputs.pooled_logits)
+        gt = batch['label']
+        metrics[f"{stage}_P@1"] = precision_at_k(gt, pred, k=1)
+        metrics[f"{stage}_P@3"] = precision_at_k(gt, pred, k=3)
+        metrics[f"{stage}_P@5"] = precision_at_k(gt, pred, k=5)
+        metrics[f"{stage}_P@10"] = precision_at_k(gt, pred, k=10)
+
+    elif task == "ErrDetect":
+        pred = F.sigmoid(outputs.pooled_logits)
+        if batch['lm_label']:
+            gt = batch['lm_label']
+        elif batch['kg_label']:
+            gt = batch['kg_label']
+        else:
+            raise ValueError("Label for one of the domain needed to exist")
+
+        metrics[f"{stage}_R@1"] = recall_at_k(gt, pred, k=1)
+        metrics[f"{stage}_R@3"] = recall_at_k(gt, pred, k=3)
+        metrics[f"{stage}_R@5"] = recall_at_k(gt, pred, k=5)
+        metrics[f"{stage}_R@10"] = recall_at_k(gt, pred, k=10)
+
+    elif task == "Gen":
+        if stage == "valid":
+            pred = torch.max(outputs.lang_prediction_logits, dim=2)[-1][~batch['lm_label'].eq(-100)].view(-1).long()
+            gt = batch['lm_label'][~batch['lm_label'].eq(-100)].view(-1).long()
+            metrics[f"{stage}_lm_acc"] = pred==kg
+        else:
+            test_outputs = evaluate_for_generation(model=model,
+                                                    tokenizer=tokenizer,
+                                                    dataset=test_dataset,
+                                                    data_loader=test_dataloader,
+                                                    training_args=training_args,
+                                                    decode_option=decode_option,
+                                                    mode='test')
+            
+            # summarize metrics
+            _ = summarize_bleu_score(results=test_outputs, return_results=False)
+            _ = summarize_ppl(results=test_outputs, return_results=False)
+            
+            # summarize metrics (for now, px)
+            if '/px' in data_args.test_data_file:
+                infos = graph_label_info(data_file=data_args.test_data_file, mimic_dir=MIMIC_TB_PATH, mode='test')
+                _ = compute_and_summarize_refer_ratio(results=test_outputs,
+                                                    tokenizer=tokenizer,
+                                                    id2node=infos['id2node'],
+                                                    db_words_pool=infos['db_words_pool'],
+                                                    num_kg_relations=config.num_relations,
+                                                    return_results=False)
+    else:
+        raise ValueError("Task not exist")
+
+    return metrics
