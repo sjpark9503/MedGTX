@@ -7,6 +7,7 @@ from torch.optim.lr_scheduler import LambdaLR, ReduceLROnPlateau
 from transformers import get_linear_schedule_with_warmup, get_polynomial_decay_schedule_with_warmup
 # Usr defined pkgs
 from model import GTXForKGTokPredAndMaskedLM, GTXForRanking, GTXForAdmLvlPrediction, GTXForErrorDetection, GTXForGeneration
+from utils.metrics import metrics_for_tasks
 # Transformers
 from transformers import (
     CONFIG_MAPPING,
@@ -79,7 +80,7 @@ class GTXModel(pl.LightningModule):
 
     def validation_step(self, batch, batch_idx):
         outputs = self.model(**batch)
-        metrics = self.metrics_for_tasks(batch, outputs, stage="valid", task=self.training_args.task)
+        metrics = metrics_for_tasks(batch, outputs, stage="valid", task=self.training_args.task)
         return metrics
 
     def validation_epoch_end(self, val_epoch_outputs):
@@ -118,7 +119,7 @@ class GTXModel(pl.LightningModule):
 
         else:
             outputs = self.model(**batch)
-            metrics = self.metrics_for_tasks(batch, outputs, stage="test", task=self.training_args.task)
+            metrics = metrics_for_tasks(batch, outputs, stage="test", task=self.training_args.task)
 
         return metrics
     

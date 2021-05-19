@@ -45,7 +45,7 @@ def get_trainer_config(args):
         callbacks.append(early_stop_callback)
 
     if args.use_tpu:
-        tpu_core_id = 8
+        tpu_core_id = [5]
     else:
         tpu_core_id = None
 
