@@ -7,32 +7,35 @@ from Run_configs import Configuration
 
 # GPU setting
 os.environ["CUDA_VISIBLE_DEVICES"] = '0'
+# TPU setting
+TPU = True
 
 config = {
     # task_number : [0] pretrain / [1] retrieval / [2] generation / [3] adm_lvl_prediction / [4] replacement detection
-    'task_number' : 3,
+    'task_number' : 0,
     'db' : 'dx,prx',
     # seed : 1234, 123, 12, 1, 42
     'seed' : 1234,
     # model : cross / single / lstm / transe
-    'model' : 'lstm',
+    'model' : 'cross',
     # architecture : both / kg / lm / rand
-    'architecture' : 'lm',
+    'architecture' : 'both',
     # label domain : graph / text
     'label_domain' : 'text',
     'P' : True,
     'A' : True,
     'R' : True,
-    'scratch' : True,
+    'scratch' : False,
     'evaluation' : False,
     ## Training configs
-    'train_bsize' : 8,
-    'eval_bsize' : 2,
+    'train_bsize' : 32,
+    'eval_bsize' : 4,
     'lr' : 1e-5,
     'num_epochs' : 20,
     'top_k' : 5,
     'dropout' : 0.1,
     'n_negatives' : 1,
+    'use_tpu' : TPU,
 }
 
 # Sanity check

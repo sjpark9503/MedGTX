@@ -41,24 +41,23 @@ def get_trainer_config(args):
         # stopping_threshold=0.9
     )
 
-    if args.shot == "full":
+    if args.task != "Pre":
         callbacks.append(early_stop_callback)
 
-    if args.tpu_id:
+    if args.use_tpu:
         tpu_core_id = 8
     else:
         tpu_core_id = None
 
     config = {
-        "max_epochs":args.num_train_epochs if args.shot=="full" else 1,
-        "max_steps": None if args.shot=="full" else int(20000/args.train_batch_size),
+        "max_epochs":args.num_train_epochs,
         "precision":16 if args.fp16 else 32,
-        "gpus":-1 if args.tpu_id is None else None,
+        "gpus":None if args.use_tpu else -1,
         "tpu_cores":tpu_core_id,
         "accelerator":"ddp" if len(os.environ["CUDA_VISIBLE_DEVICES"])>1 else None,
-        "log_every_n_steps":10 if args.shot=="full" else 1,
-        "callbacks":callbacks,
-        "val_check_interval":0.1 if args.shot=="full" else 1,
+        "log_every_n_steps":50,
+        # "callbacks":callbacks,
+        "val_check_interval":0.2,
     }
     if not args.do_eval:
         config["val_check_interval"]=1e10
@@ -76,7 +75,7 @@ def main():
     wandb_config = dict()
     wandb_config.update(vars(training_args))
     wandb_config.update(vars(model_args))
-    logger = pl.loggers.WandbLogger(config=wandb_config, entity="edlab_sjpark", project='CoNLL2021_0518', name=training_args.run_name, save_dir=None)
+    logger = pl.loggers.WandbLogger(config=wandb_config, entity="edlab_sjpark", project='NeurIPS2021', name=training_args.run_name, save_dir=None)
 
     # Call Model
     gtx = GTXModel(model_args, training_args)

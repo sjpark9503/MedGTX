@@ -51,6 +51,7 @@ class Configuration():
             "save_per_run": (config['num_epochs']//10) if config['task_number']==0 else int(1e2),
             "num_eval_per_epoch": 2,
             "task" : self.TASK_NAME,
+            "use_tpu" : config['use_tpu'],
             "label_domain" : config['label_domain'],
             "train_data_file":os.path.join(self.EXP_PATH,f"data/{self.DB}_{self.DB_size}/{self.MODEL_NAME}/train"),
             "eval_data_file": os.path.join(self.EXP_PATH,f"data/{self.DB}_{self.DB_size}/{self.MODEL_NAME}/valid"),
@@ -59,13 +60,14 @@ class Configuration():
         }
 
     def get_configuration(self):
+        SRC_PATH = os.path.join(self.EXP_PATH, 'src/main.py')
         if (self.config['task_number']==0 or self.config['scratch']) and not self.config['evaluation']:
             if self.config['scratch']:
-                SRC_PATH = os.path.join(self.EXP_PATH, 'src/finetune.py')
+                # SRC_PATH = os.path.join(self.EXP_PATH, 'src/finetune.py')
                 self.TRAINING_CONFIG['run_name'] = f"scratch/{self.TASK_NAME}/{self.config['model']}/{self.RUN_NAME}_RNG{self.config['seed']}"
                 self.TRAINING_CONFIG['output_dir'] = os.path.join(self.EXP_PATH,f"pretrained_models/scratch/{self.TASK_NAME}/{self.config['model']}/{self.RUN_NAME}_RNG{self.config['seed']}")
             else:
-                SRC_PATH = os.path.join(self.EXP_PATH, 'src/pretrain.py')
+                # SRC_PATH = os.path.join(self.EXP_PATH, 'src/pretrain.py')
                 self.TRAINING_CONFIG['run_name'] = f"{self.TASK_NAME}/{self.config['model']}/{self.RUN_NAME}"
                 self.TRAINING_CONFIG['output_dir'] = os.path.join(self.EXP_PATH,f"pretrained_models/{self.TASK_NAME}/{self.config['model']}/{self.RUN_NAME}")
             self.TRAINING_CONFIG['tokenizer_name'] = "bert-base-uncased"
@@ -110,10 +112,10 @@ class Configuration():
             self.TRAINING_CONFIG['model_name_or_path'] = os.path.join(self.EXP_PATH,f"pretrained_models/{'scratch' if self.config['scratch'] else 'pretrained'}/{self.TASK_NAME}/{self.config['model']}/{self.RUN_NAME}_RNG{self.config['seed']}")
             # Setting for Eval
             if self.config['evaluation']:
-                if self.config['task_number']==1:
-                    SRC_PATH = os.path.join(self.EXP_PATH, f'src/evaluation.py')
-                elif self.config['task_number']==2:
-                    SRC_PATH = os.path.join(self.EXP_PATH, 'src/evaluation_generation.py')
+                # if self.config['task_number']==1:
+                    # SRC_PATH = os.path.join(self.EXP_PATH, f'src/evaluation.py')
+                if self.config['task_number']==2:
+                    # SRC_PATH = os.path.join(self.EXP_PATH, 'src/evaluation_generation.py')
                     self.TRAINING_CONFIG['decode_option'] = {"perturb_type" : None,
                                                         "given_lang_tokens": 1,
                                                         "clean_outputs": True,
@@ -124,12 +126,12 @@ class Configuration():
                     for k in self.TRAINING_CONFIG:
                         if 'file' in k:
                             self.TRAINING_CONFIG[k] = self.TRAINING_CONFIG[k].replace('data','data/adm')
-                    SRC_PATH = os.path.join(self.EXP_PATH, f'src/adm_lvl_prediction.py')
+                    # SRC_PATH = os.path.join(self.EXP_PATH, f'src/adm_lvl_prediction.py')
                 self.TRAINING_CONFIG['output_dir'] = os.path.join(self.EXP_PATH,f"eval_output/{'scratch' if self.config['scratch'] else 'pretrained'}/{self.TASK_NAME}/{self.config['model']}/{self.RUN_NAME}_RNG{self.config['seed']}")
 
 
             else:
-                SRC_PATH = os.path.join(self.EXP_PATH, 'src/finetune.py')
+                # SRC_PATH = os.path.join(self.EXP_PATH, 'src/finetune.py')
                 self.TRAINING_CONFIG['model_name_or_path'] = os.path.join(self.EXP_PATH,f"pretrained_models/pretrain/{self.config['model']}/{self.RUN_NAME}")
                 self.TRAINING_CONFIG['run_name'] = f"pretrained/{self.TASK_NAME}/{self.config['model']}/{self.RUN_NAME}_RNG{self.config['seed']}"
                 self.TRAINING_CONFIG['output_dir'] = os.path.join(self.EXP_PATH,f"pretrained_models/pretrained/{self.TASK_NAME}/{self.config['model']}/{self.RUN_NAME}_RNG{self.config['seed']}")
