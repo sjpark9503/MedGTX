@@ -6,7 +6,7 @@ from torch.optim import Adadelta, Adagrad, Adam, AdamW
 from torch.optim.lr_scheduler import LambdaLR, ReduceLROnPlateau
 from transformers import get_linear_schedule_with_warmup, get_polynomial_decay_schedule_with_warmup
 # Usr defined pkgs
-from utils.model import ProbingEncModel
+from model import GTXForKGTokPredAndMaskedLM, GTXForRanking, GTXForAdmLvlPrediction, GTXForErrorDetection, GTXForGeneration
 # Transformers
 from transformers import (
     CONFIG_MAPPING,

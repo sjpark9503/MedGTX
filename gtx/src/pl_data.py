@@ -7,7 +7,7 @@ from typing import Any, Callable, Dict, List, NewType, Optional, Tuple, Union
 
 # User defined pkgs
 from utils.dataset import get_dataset
-from utils.data_collator import GenDataCollator,PredDataCollator
+from utils.data_collator import NodeClassification_DataCollator, NegativeSampling_DataCollator, UniLM_DataCollator, AdmLvlPred_DataCollator, ErrorDetection_DataCollator, Evaluation_DataCollator
 
 # Huggingface Transformers Module
 from transformers import (
@@ -29,7 +29,7 @@ class DataModule(pl.LightningDataModule):
         # Load Tokenizer
         os.environ['TOKENIZERS_PARALLELISM'] = 'false'
         if model_args.tokenizer_name:
-            tokenizer = AutoTokenizer.from_pretrained(self.model_args.model_args.tokenizer_name)
+            tokenizer = AutoTokenizer.from_pretrained(self.model_args.tokenizer_name)
         elif model_args.model_name_or_path:
             tokenizer = AutoTokenizer.from_pretrained(self.model_args.model_name_or_path)
         else:
@@ -41,9 +41,9 @@ class DataModule(pl.LightningDataModule):
 
         # Set block size for padding & truncating inputs
         if data_args.block_size <= 0:
-            data_args.block_size = tokenizer.max_len
+            data_args.block_size = tokenizer.model_max_length
         else:
-            data_args.block_size = min(data_args.block_size, tokenizer.max_len)
+            data_args.block_size = min(data_args.block_size, tokenizer.model_max_length)
 
     def prepare_data(self):
         self.train_dataset = get_dataset(
@@ -67,7 +67,7 @@ class DataModule(pl.LightningDataModule):
 
     def setup(self, stage): 
         COLLATORS = {
-            "Pre": {(True,True):NodeClassification_DataCollator, (True,False):UnimodalLM_DataCollator, (False,True):UnimodalKG_DataCollator},
+            "Pre": NodeClassification_DataCollator,
             "Re":NegativeSampling_DataCollator,
             "Gen":UniLM_DataCollator,
             "AdmPred":AdmLvlPred_DataCollator,
@@ -84,10 +84,7 @@ class DataModule(pl.LightningDataModule):
             "num_kg_labels": self.config.num_kg_labels,
             "label_domain": self.args.label_domain
         }
-        if self.args.task == "Pre":
-            self.data_collator = COLLATORS["Pre"][(self.config.task_mask_lm, self.config.task_mask_kg)](**collator_args, prediction=self.do_prediction)
-        else:
-            self.data_collator = COLLATORS[self.args.task](**collator_args, prediction=self.do_prediction)
+        self.data_collator = COLLATORS[self.args.task](**{k:v for k,v in collator_args.items() if k in COLLATORS[self.args.task].__annotations__}, prediction=self.args.do_predict)
 
     def train_dataloader(self):
         return DataLoader(

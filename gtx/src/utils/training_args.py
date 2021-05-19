@@ -206,10 +206,10 @@ class TrainingArguments:
     eval_criterion: Optional[str] = field(
         default=None,
     )
-    per_device_train_batch_size: int = field(
+    train_batch_size: int = field(
         default=8, metadata={"help": "Batch size per GPU/TPU core/CPU for training."}
     )
-    per_device_eval_batch_size: int = field(
+    eval_batch_size: int = field(
         default=8, metadata={"help": "Batch size per GPU/TPU core/CPU for evaluation."}
     )
 
@@ -305,7 +305,10 @@ class TrainingArguments:
             "help": "Number of subprocesses to use for data loading (PyTorch only). 0 means that the data will be loaded in the main process."
         },
     )
-
+    optimizer: str = field(default="Adam", metadata={"help": "Whether or not to replace AdamW by Adafactor."})
+    dataloader_pin_memory: bool = field(
+        default=True, metadata={"help": "Whether or not to pin memory for DataLoader."}
+    )
     past_index: int = field(
         default=-1,
         metadata={"help": "If >=0, uses the corresponding part of the output as the past state for next step."},
@@ -336,129 +339,129 @@ class TrainingArguments:
         default=None, metadata={"help": "Whether the `metric_for_best_model` should be maximized or not."}
     )
 
-    def __post_init__(self):
-        if self.disable_tqdm is None:
-            self.disable_tqdm = logger.getEffectiveLevel() > logging.WARN
-        if self.evaluate_during_training is True:
-            self.evaluation_strategy = EvaluationStrategy.STEPS
-            warnings.warn(
-                "The `evaluate_during_training` argument is deprecated in favor of `evaluation_strategy` (which has more options)",
-                FutureWarning,
-            )
-        self.evaluation_strategy = EvaluationStrategy(self.evaluation_strategy)
-        if self.do_eval is False and self.evaluation_strategy != EvaluationStrategy.NO:
-            self.do_eval = True
-        if self.load_best_model_at_end and self.metric_for_best_model is None:
-            self.metric_for_best_model = "loss"
-        if self.greater_is_better is None and self.metric_for_best_model is not None:
-            self.greater_is_better = self.metric_for_best_model not in ["loss", "eval_loss"]
-        if self.run_name is None:
-            self.run_name = self.output_dir
+    # def __post_init__(self):
+    #     if self.disable_tqdm is None:
+    #         self.disable_tqdm = logger.getEffectiveLevel() > logging.WARN
+    #     if self.evaluate_during_training is True:
+    #         self.evaluation_strategy = EvaluationStrategy.STEPS
+    #         warnings.warn(
+    #             "The `evaluate_during_training` argument is deprecated in favor of `evaluation_strategy` (which has more options)",
+    #             FutureWarning,
+    #         )
+    #     self.evaluation_strategy = EvaluationStrategy(self.evaluation_strategy)
+    #     if self.do_eval is False and self.evaluation_strategy != EvaluationStrategy.NO:
+    #         self.do_eval = True
+    #     if self.load_best_model_at_end and self.metric_for_best_model is None:
+    #         self.metric_for_best_model = "loss"
+    #     if self.greater_is_better is None and self.metric_for_best_model is not None:
+    #         self.greater_is_better = self.metric_for_best_model not in ["loss", "eval_loss"]
+    #     if self.run_name is None:
+    #         self.run_name = self.output_dir
 
-        if is_torch_available() and self.device.type != "cuda" and self.fp16:
-            raise ValueError("AMP (`--fp16`) can only be used on CUDA devices.")
+    #     if is_torch_available() and self.device.type != "cuda" and self.fp16:
+    #         raise ValueError("AMP (`--fp16`) can only be used on CUDA devices.")
 
-    @property
-    def train_batch_size(self) -> int:
-        """
-        The actual batch size for training (may differ from :obj:`per_gpu_train_batch_size` in distributed training).
-        """
-        if self.per_gpu_train_batch_size:
-            logger.warning(
-                "Using deprecated `--per_gpu_train_batch_size` argument which will be removed in a future "
-                "version. Using `--per_device_train_batch_size` is preferred."
-            )
-        per_device_batch_size = self.per_gpu_train_batch_size or self.per_device_train_batch_size
-        return per_device_batch_size * max(1, self.n_gpu)
+    # # @property
+    # # def train_batch_size(self) -> int:
+    # #     """
+    # #     The actual batch size for training (may differ from :obj:`per_gpu_train_batch_size` in distributed training).
+    # #     """
+    # #     if self.per_gpu_train_batch_size:
+    # #         logger.warning(
+    # #             "Using deprecated `--per_gpu_train_batch_size` argument which will be removed in a future "
+    # #             "version. Using `--per_device_train_batch_size` is preferred."
+    # #         )
+    # #     per_device_batch_size = self.per_gpu_train_batch_size or self.per_device_train_batch_size
+    # #     return per_device_batch_size * max(1, self.n_gpu)
 
-    @property
-    def eval_batch_size(self) -> int:
-        """
-        The actual batch size for evaluation (may differ from :obj:`per_gpu_eval_batch_size` in distributed training).
-        """
-        if self.per_gpu_eval_batch_size:
-            logger.warning(
-                "Using deprecated `--per_gpu_eval_batch_size` argument which will be removed in a future "
-                "version. Using `--per_device_eval_batch_size` is preferred."
-            )
-        per_device_batch_size = self.per_gpu_eval_batch_size or self.per_device_eval_batch_size
-        return per_device_batch_size * max(1, self.n_gpu)
+    # # @property
+    # # def eval_batch_size(self) -> int:
+    # #     """
+    # #     The actual batch size for evaluation (may differ from :obj:`per_gpu_eval_batch_size` in distributed training).
+    # #     """
+    # #     if self.per_gpu_eval_batch_size:
+    # #         logger.warning(
+    # #             "Using deprecated `--per_gpu_eval_batch_size` argument which will be removed in a future "
+    # #             "version. Using `--per_device_eval_batch_size` is preferred."
+    # #         )
+    # #     per_device_batch_size = self.per_gpu_eval_batch_size or self.per_device_eval_batch_size
+    # #     return per_device_batch_size * max(1, self.n_gpu)
 
-    @cached_property
-    @torch_required
-    def _setup_devices(self) -> Tuple["torch.device", int]:
-        logger.info("PyTorch: setting up devices")
-        if self.no_cuda:
-            device = torch.device("cpu")
-            n_gpu = 0
-        elif is_torch_tpu_available():
-            device = xm.xla_device()
-            n_gpu = 0
-        elif self.local_rank == -1:
-            # if n_gpu is > 1 we'll use nn.DataParallel.
-            # If you only want to use a specific subset of GPUs use `CUDA_VISIBLE_DEVICES=0`
-            # Explicitly set CUDA to the first (index 0) CUDA device, otherwise `set_device` will
-            # trigger an error that a device index is missing. Index 0 takes into account the
-            # GPUs available in the environment, so `CUDA_VISIBLE_DEVICES=1,2` with `cuda:0`
-            # will use the first GPU in that env, i.e. GPU#1
-            device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-            n_gpu = torch.cuda.device_count()
-        else:
-            # Here, we'll use torch.distributed.
-            # Initializes the distributed backend which will take care of synchronizing nodes/GPUs
-            torch.distributed.init_process_group(backend="nccl")
-            device = torch.device("cuda", self.local_rank)
-            n_gpu = 1
+    # @cached_property
+    # @torch_required
+    # def _setup_devices(self) -> Tuple["torch.device", int]:
+    #     logger.info("PyTorch: setting up devices")
+    #     if self.no_cuda:
+    #         device = torch.device("cpu")
+    #         n_gpu = 0
+    #     # elif is_torch_tpu_available():
+    #     #     device = xm.xla_device()
+    #     #     n_gpu = 0
+    #     elif self.local_rank == -1:
+    #         # if n_gpu is > 1 we'll use nn.DataParallel.
+    #         # If you only want to use a specific subset of GPUs use `CUDA_VISIBLE_DEVICES=0`
+    #         # Explicitly set CUDA to the first (index 0) CUDA device, otherwise `set_device` will
+    #         # trigger an error that a device index is missing. Index 0 takes into account the
+    #         # GPUs available in the environment, so `CUDA_VISIBLE_DEVICES=1,2` with `cuda:0`
+    #         # will use the first GPU in that env, i.e. GPU#1
+    #         device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    #         n_gpu = torch.cuda.device_count()
+    #     else:
+    #         # Here, we'll use torch.distributed.
+    #         # Initializes the distributed backend which will take care of synchronizing nodes/GPUs
+    #         torch.distributed.init_process_group(backend="nccl")
+    #         device = torch.device("cuda", self.local_rank)
+    #         n_gpu = 1
 
-        if device.type == "cuda":
-            torch.cuda.set_device(device)
+    #     if device.type == "cuda":
+    #         torch.cuda.set_device(device)
 
-        return device, n_gpu
+    #     return device, n_gpu
 
-    @property
-    @torch_required
-    def device(self) -> "torch.device":
-        """
-        The device used by this process.
-        """
-        return self._setup_devices[0]
+    # @property
+    # @torch_required
+    # def device(self) -> "torch.device":
+    #     """
+    #     The device used by this process.
+    #     """
+    #     return self._setup_devices[0]
 
-    @property
-    @torch_required
-    def n_gpu(self):
-        """
-        The number of GPUs used by this process.
-        Note:
-            This will only be greater than one when you have multiple GPUs available but are not using distributed
-            training. For distributed training, it will always be 1.
-        """
-        return self._setup_devices[1]
+    # @property
+    # @torch_required
+    # def n_gpu(self):
+    #     """
+    #     The number of GPUs used by this process.
+    #     Note:
+    #         This will only be greater than one when you have multiple GPUs available but are not using distributed
+    #         training. For distributed training, it will always be 1.
+    #     """
+    #     return self._setup_devices[1]
 
-    def to_dict(self):
-        """
-        Serializes this instance while replace `Enum` by their values (for JSON serialization support).
-        """
-        d = dataclasses.asdict(self)
-        for k, v in d.items():
-            if isinstance(v, Enum):
-                d[k] = v.value
-        return d
+    # def to_dict(self):
+    #     """
+    #     Serializes this instance while replace `Enum` by their values (for JSON serialization support).
+    #     """
+    #     d = dataclasses.asdict(self)
+    #     for k, v in d.items():
+    #         if isinstance(v, Enum):
+    #             d[k] = v.value
+    #     return d
 
-    def to_json_string(self):
-        """
-        Serializes this instance to a JSON string.
-        """
-        return json.dumps(self.to_dict(), indent=2)
+    # def to_json_string(self):
+    #     """
+    #     Serializes this instance to a JSON string.
+    #     """
+    #     return json.dumps(self.to_dict(), indent=2)
 
-    def to_sanitized_dict(self) -> Dict[str, Any]:
-        """
-        Sanitized serialization to use with TensorBoard’s hparams
-        """
-        d = self.to_dict()
-        d = {**d, **{"train_batch_size": self.train_batch_size, "eval_batch_size": self.eval_batch_size}}
+    # def to_sanitized_dict(self) -> Dict[str, Any]:
+    #     """
+    #     Sanitized serialization to use with TensorBoard’s hparams
+    #     """
+    #     d = self.to_dict()
+    #     d = {**d, **{"train_batch_size": self.train_batch_size, "eval_batch_size": self.eval_batch_size}}
 
-        valid_types = [bool, int, float, str]
-        if is_torch_available():
-            valid_types.append(torch.Tensor)
+    #     valid_types = [bool, int, float, str]
+    #     if is_torch_available():
+    #         valid_types.append(torch.Tensor)
 
-        return {k: v if type(v) in valid_types else str(v) for k, v in d.items()}
+    #     return {k: v if type(v) in valid_types else str(v) for k, v in d.items()}

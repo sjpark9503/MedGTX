@@ -11,12 +11,12 @@ from utils.notifier import logging, log_formatter
 notifier = logging.getLogger(__name__)
 notifier.addHandler(log_formatter())
 
-def get_deepspeed_config(path):
-    if path:
-        ds_config = pl.plugins.DeepSpeedPlugin(config=path)
-        return ds_config
-    else:
-        return None
+# def get_deepspeed_config(path):
+#     if path:
+#         ds_config = pl.plugins.DeepSpeedPlugin(config=path)
+#         return ds_config
+#     else:
+#         return None
 
 def get_trainer_config(args):
     callbacks = list()
@@ -54,7 +54,7 @@ def get_trainer_config(args):
         "precision":16 if args.fp16 else 32,
         "gpus":None if args.use_tpu else -1,
         "tpu_cores":tpu_core_id,
-        "accelerator":"ddp" if len(os.environ["CUDA_VISIBLE_DEVICES"])>1 else None,
+        "accelerator": "ddp" if len(os.environ["CUDA_VISIBLE_DEVICES"])>1 else None,
         "log_every_n_steps":50,
         # "callbacks":callbacks,
         "val_check_interval":0.2,
@@ -75,7 +75,7 @@ def main():
     wandb_config = dict()
     wandb_config.update(vars(training_args))
     wandb_config.update(vars(model_args))
-    logger = pl.loggers.WandbLogger(config=wandb_config, entity="edlab_sjpark", project='NeurIPS2021', name=training_args.run_name, save_dir=None)
+    logger = pl.loggers.WandbLogger(config=wandb_config, project='NeurIPS2021', name=training_args.run_name, save_dir=None)
 
     # Call Model
     gtx = GTXModel(model_args, training_args)
@@ -88,7 +88,7 @@ def main():
         **get_trainer_config(training_args),
         num_sanity_val_steps=4,
         logger=logger,
-        plugins=get_deepspeed_config(training_args.deepspeed),
+        # plugins=get_deepspeed_config(training_args.deepspeed),
     ) 
         
     # Train & Validation

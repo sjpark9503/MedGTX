@@ -25,8 +25,8 @@ from torch import nn
 from torch.nn import CrossEntropyLoss, MSELoss, SmoothL1Loss
 import torch.nn.functional as F
 
+from configuration import GTXConfig
 from transformers.activations import ACT2FN, gelu
-from transformers.configuration_lxmert import LxmertConfig
 from transformers.file_utils import (
     ModelOutput,
     add_code_sample_docstrings,
@@ -35,12 +35,10 @@ from transformers.file_utils import (
     replace_return_docstrings,
 )
 from transformers.modeling_utils import PreTrainedModel
-from transformers.utils import logging
-
-logger = logging.get_logger(__name__)
-
-_CONFIG_FOR_DOC = "LxmertConfig"
-_TOKENIZER_FOR_DOC = "LxmertTokenizer"
+# Logging tool
+from utils.notifier import logging, log_formatter
+notifier = logging.getLogger(__name__)
+notifier.addHandler(log_formatter())
 
 class GeLU(nn.Module):
     def __init__(self):
@@ -198,19 +196,19 @@ def load_tf_weights_in_GTX(model, config, tf_checkpoint_path):
         import numpy as np
         import tensorflow as tf
     except ImportError:
-        logger.error(
+        notifier.error(
             "Loading a TensorFlow model in PyTorch, requires TensorFlow to be installed. Please see "
             "https://www.tensorflow.org/install/ for installation instructions."
         )
         raise
     tf_path = os.path.abspath(tf_checkpoint_path)
-    logger.info("Converting TensorFlow checkpoint from {}".format(tf_path))
+    notifier.info("Converting TensorFlow checkpoint from {}".format(tf_path))
     # Load weights from TF model
     init_vars = tf.train.list_variables(tf_path)
     names = []
     arrays = []
     for name, shape in init_vars:
-        logger.info("Loading TF weight {} with shape {}".format(name, shape))
+        notifier.info("Loading TF weight {} with shape {}".format(name, shape))
         array = tf.train.load_variable(tf_path, name)
         names.append(name)
         arrays.append(array)
@@ -230,7 +228,7 @@ def load_tf_weights_in_GTX(model, config, tf_checkpoint_path):
             ]
             for n in name
         ):
-            logger.info("Skipping {}".format("/".join(name)))
+            notifier.info("Skipping {}".format("/".join(name)))
             continue
         pointer = model
         for m_name in name:
@@ -250,7 +248,7 @@ def load_tf_weights_in_GTX(model, config, tf_checkpoint_path):
                 try:
                     pointer = getattr(pointer, scope_names[0])
                 except AttributeError:
-                    logger.info("Skipping {}".format("/".join(name)))
+                    notifier.info("Skipping {}".format("/".join(name)))
                     continue
             if len(scope_names) >= 2:
                 num = int(scope_names[1])
@@ -264,7 +262,7 @@ def load_tf_weights_in_GTX(model, config, tf_checkpoint_path):
         except AssertionError as e:
             e.args += (pointer.shape, array.shape)
             raise
-        logger.info("Initialize PyTorch weight {}".format(name))
+        notifier.info("Initialize PyTorch weight {}".format(name))
         pointer.data = torch.from_numpy(array)
     return model
 
@@ -473,7 +471,6 @@ class GTXXLayer(nn.Module):
         super().__init__()
         
         self.cross_att_type = config.cross_att_type if 'cross_att_type' in vars(config).keys() else 'cross'
-        logger.info(f"This model has a {self.cross_att_type} type of x_attention architecture.")
 
         # The cross-attention Layer
         self.cross_attention = GTXCrossAttentionLayer(config)
@@ -638,7 +635,7 @@ class GTXEncoder(nn.Module):
 
         self.config = config
         if 'encoder_type' not in vars(config).keys():
-            logger.info("You have not specific encoder type in config, so that you don't use any kinds of LSTM")
+            notifier.warning("You have not specific encoder type in config, so that you don't use any kinds of LSTM")
             self.config.encoder_type = {'lang': ''}
         self.encoder_type = self.config.encoder_type['lang'].lower()
 
@@ -650,6 +647,7 @@ class GTXEncoder(nn.Module):
         # Layers
         # Using self.layer instead of self.l_layer to support loading BERT weights.
         self.layer = nn.ModuleList([GTXLayer(config) for _ in range(self.num_l_layers)])
+        notifier.warning(f"This model has a {config.cross_att_type if 'cross_att_type' in vars(config).keys() else 'cross'} type of x_attention architecture.")
         self.x_layers = nn.ModuleList([GTXXLayer(config) for _ in range(self.num_x_layers)])
         self.r_layers = nn.ModuleList([GTXLayer(config) for _ in range(self.num_r_layers)])
         
@@ -660,22 +658,22 @@ class GTXEncoder(nn.Module):
 
     def re_init_to_pretrained_lang_model(self):
         if isinstance(self.layer, nn.LSTM):
-            logger.info("You've already used RNN-Style Architecture so that cannot re-init with PLMs.")
+            notifier.critical("You've already used RNN-Style Architecture so that cannot re-init with PLMs.")
         else:
             """ If we use lm to language part, then we re-init our encoder.layer """
             plm_usage = self.config.pretrained_lang_model
             from transformers import AutoModel, AutoConfig
             if plm_usage['use_weight']:
-                logger.info("Load weight of pretrained model for language part")
+                notifier.critical("Load weight of pretrained model for language part")
                 self.layer = AutoModel.from_pretrained(plm_usage['model_name']).encoder.layer
             else:
-                logger.info("Load only configuration of pretrained model for language part")
+                notifier.critical("Load only configuration of pretrained model for language part")
                 plm_config = AutoConfig.from_pretrained(plm_usage['model_name'])
                 self.layer = AutoModel.from_config(plm_config).encoder.layer
             
     def convert_lang_encoder_to_RNN(self):
         if self.encoder_type == 'lstm':
-            logger.info("Use LSTM Decoder instead of BERT")
+            notifier.critical("Use LSTM Decoder instead of BERT")
             self.layer = nn.LSTM(input_size=self.config.hidden_size,
                                  hidden_size=self.config.hidden_size,
                                  num_layers=1,
@@ -683,7 +681,7 @@ class GTXEncoder(nn.Module):
                                  batch_first=True,
                                  bidirectional=False)
         elif self.encoder_type == 'bilstm':
-            logger.info("Use BiLSTM Encoder instead of BERT")
+            notifier.critical("Use BiLSTM Encoder instead of BERT")
             self.layer = nn.LSTM(input_size=self.config.hidden_size,
                                  hidden_size=self.config.hidden_size,
                                  num_layers=1,
@@ -964,12 +962,6 @@ class GTXModel(GTXPreTrainedModel):
         else:
             self.kg_embeddings.word_embeddings.weight.data = new_embeddings.data
 
-    #@add_start_docstrings_to_callable(LXMERT_INPUTS_DOCSTRING.format("batch_size, sequence_length"))
-    @add_code_sample_docstrings(
-        tokenizer_class=_TOKENIZER_FOR_DOC,
-        output_type=LxmertModelOutput,
-        config_class=_CONFIG_FOR_DOC,
-    )
     def forward(
         self,
         lang_input_ids=None,
@@ -1124,7 +1116,7 @@ class GTXForKGTokPredAndMaskedLM(GTXPreTrainedModel):
 
         # Warm start KG embedding
         if not config.gcn and config.pretrained_kg_embedding:
-            logger.info("Load pretrained embedding for translation based KG-GTX")
+            notifier.critical("Load pretrained embedding for translation based KG-GTX")
             new_embedding = torch.load(config.pretrained_kg_embedding)
             # new_embedding = loaded_state_dict['ent_embeddings.weight']
             self.GTX.set_kg_embeddings(new_embedding)
@@ -1142,8 +1134,6 @@ class GTXForKGTokPredAndMaskedLM(GTXPreTrainedModel):
             "tri": nn.TripletMarginLoss()#(margin=config.margin)
         }
 
-    #@add_start_docstrings_to_callable(GTX_INPUTS_DOCSTRING.format("batch_size, sequence_length"))
-    @replace_return_docstrings(output_type=GTXForPreTrainingOutput, config_class=_CONFIG_FOR_DOC)
     def forward(
         self,
         lang_input_ids=None,
@@ -1294,7 +1284,7 @@ class GTXForRanking(GTXPreTrainedModel):
 
         # Warm start KG embedding
         if not config.gcn and config.pretrained_kg_embedding:
-            logger.info("Load pretrained embedding for translation based KG-GTX")
+            notifier.critical("Load pretrained embedding for translation based KG-GTX")
             new_embedding = torch.load(config.pretrained_kg_embedding)
             # new_embedding = loaded_state_dict['ent_embeddings.weight']
             self.GTX.set_kg_embeddings(new_embedding)
@@ -1307,8 +1297,6 @@ class GTXForRanking(GTXPreTrainedModel):
             "tri": nn.TripletMarginLoss(),
         }
 
-    #@add_start_docstrings_to_callable(GTX_INPUTS_DOCSTRING.format("batch_size, sequence_length"))
-    @replace_return_docstrings(output_type=GTXForDownstreamOutput, config_class=_CONFIG_FOR_DOC)
     def forward(
         self,
         lang_input_ids=None,
@@ -1411,7 +1399,7 @@ class GTXForAdmLvlPrediction(GTXPreTrainedModel):
 
         # Warm start KG embedding
         if not config.gcn and config.pretrained_kg_embedding:
-            logger.info("Load pretrained embedding for translation based KG-GTX")
+            notifier.critical("Load pretrained embedding for translation based KG-GTX")
             new_embedding = torch.load(config.pretrained_kg_embedding)
             # new_embedding = loaded_state_dict['ent_embeddings.weight']
             self.GTX.set_kg_embeddings(new_embedding)
@@ -1426,8 +1414,6 @@ class GTXForAdmLvlPrediction(GTXPreTrainedModel):
         }
         self.class_weight = None
 
-    #@add_start_docstrings_to_callable(GTX_INPUTS_DOCSTRING.format("batch_size, sequence_length"))
-    @replace_return_docstrings(output_type=GTXForDownstreamOutput, config_class=_CONFIG_FOR_DOC)
     def forward(
         self,
         lang_input_ids=None,
@@ -1540,7 +1526,7 @@ class GTXForErrorDetection(GTXPreTrainedModel):
 
         # Warm start KG embedding
         if not config.gcn and config.pretrained_kg_embedding:
-            logger.info("Load pretrained embedding for translation based KG-GTX")
+            notifier.critical("Load pretrained embedding for translation based KG-GTX")
             new_embedding = torch.load(config.pretrained_kg_embedding)
             # new_embedding = loaded_state_dict['ent_embeddings.weight']
             self.GTX.set_kg_embeddings(new_embedding)
@@ -1552,8 +1538,6 @@ class GTXForErrorDetection(GTXPreTrainedModel):
             "bce": nn.BCEWithLogitsLoss()
         }
 
-    #@add_start_docstrings_to_callable(GTX_INPUTS_DOCSTRING.format("batch_size, sequence_length"))
-    @replace_return_docstrings(output_type=GTXForDownstreamOutput, config_class=_CONFIG_FOR_DOC)
     def forward(
         self,
         lang_input_ids=None,
@@ -1682,7 +1666,7 @@ class GTXForGeneration(GTXPreTrainedModel):
         
         # Warm start KG embedding
         if not config.gcn and config.pretrained_kg_embedding:
-            logger.info("Load pretrained embedding for translation based KG-GTX")
+            notifier.critical("Load pretrained embedding for translation based KG-GTX")
             new_embedding = torch.load(config.pretrained_kg_embedding)
             # new_embedding = loaded_state_dict['ent_embeddings.weight']
             self.GTX.set_kg_embeddings(new_embedding)
