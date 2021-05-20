@@ -28,8 +28,8 @@ config = {
     'scratch' : False,
     'evaluation' : False,
     ## Training configs
-    'train_bsize' : 32,
-    'eval_bsize' : 4,
+    'train_bsize' : 4,
+    'eval_bsize' : 2,
     'lr' : 1e-5,
     'num_epochs' : 20,
     'top_k' : 5,

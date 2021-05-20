@@ -48,14 +48,14 @@ def recall_at_k(labels, scores, k=10):
 
     return sum(sample_recall)/len(sample_recall)
 
-def metrics_for_tasks(self, task, stage, batch=None, outputs=None, scores=None):
-    metrics = {stage+k:v for k,v in outputs.loss_dict.items()}
+def metrics_for_tasks(task, stage, batch=None, outputs=None, scores=None):
+    metrics = {f"{stage}_{k}":v for k,v in outputs.loss_dict.items()}
     if task == "Pre":
-        if batch['lm_label']:
+        if batch['lm_label'] is not None:
             lm_pred = torch.max(outputs.lang_prediction_logits, dim=2)[-1][:batch['lm_label'].size(0)][~batch['lm_label'].eq(-100)].view(-1).long()
             lm_gt = batch['lm_label'][~batch['lm_label'].eq(-100)].view(-1).long()
             metrics[f"{stage}_lm_acc"] = lm_pred==lm_gt
-        if batch['kg_label']:
+        if batch['kg_label'] is not None:
             kg_pred = torch.max(outputs.kg_prediction_logits, dim=2)[-1][:batch['lm_label'].size(0)][~batch['kg_label'].eq(-100)].view(-1).long()
             kg_gt = batch['kg_label'][~batch['kg_label'].eq(-100)].view(-1).long().detach()
             metrics[f"{stage}_kg_acc"] = kg_pred==kg_gt
@@ -78,9 +78,9 @@ def metrics_for_tasks(self, task, stage, batch=None, outputs=None, scores=None):
 
     elif task == "ErrDetect":
         pred = F.sigmoid(outputs.pooled_logits)
-        if batch['lm_label']:
+        if batch['lm_label'] is not None:
             gt = batch['lm_label']
-        elif batch['kg_label']:
+        elif batch['kg_label'] is not None:
             gt = batch['kg_label']
         else:
             raise ValueError("Label for one of the domain needed to exist")

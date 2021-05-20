@@ -69,24 +69,34 @@ class GTXModel(pl.LightningModule):
         return self.model(x)
     
     def training_step(self, batch, batch_idx):
-        if self.global_step==0:
+        if (self.global_step==0) and (self.local_rank==1):
             notifier.critical("Here is the actual input of model")
             notifier.warning(batch)
         outputs = self.model(**batch)
         
-        self.log(outputs.loss_dict)
+        self.log_dict(outputs.loss_dict)
 
         return outputs.loss
 
     def validation_step(self, batch, batch_idx):
         outputs = self.model(**batch)
-        metrics = metrics_for_tasks(batch, outputs, stage="valid", task=self.training_args.task)
+        metrics = metrics_for_tasks(task=self.training_args.task, stage="valid", batch=batch, outputs=outputs)
         return metrics
 
     def validation_epoch_end(self, val_epoch_outputs):
         keys = val_epoch_outputs[0].keys()
-        epoch_metrics = {k:torch.cat([val_epoch_output[k] for val_epoch_output in val_epoch_outputs]).mean() for k in keys}
-        self.log(epoch_metrics)
+        # k = list(keys)[0]
+        # for i in val_epoch_outputs[0]:
+        #     notifier.warning(f"{i} : {val_epoch_outputs[0][i].size()}")
+        # epoch_metrics = dict()
+        # for k in keys:
+        #     epoch_metric_tensor = torch.cat([val_epoch_output[k] if len(val_epoch_output[k].size())>0 else val_epoch_output[k].unsqueeze(0) for val_epoch_output in val_epoch_outputs])
+        #     try:
+        #         epoch_metrics[k] = epoch_metric_tensor.mean()
+        #     except:
+        #         notifier.warning(f"{k}, {epoch_metric_tensor[:5]}, {epoch_metric_tensor.size()}")
+        epoch_metrics = {k:torch.cat([val_epoch_output[k].float() if len(val_epoch_output[k].size())>0 else val_epoch_output[k].unsqueeze(0) for val_epoch_output in val_epoch_outputs]).mean() for k in keys}
+        self.log_dict(epoch_metrics)
         return epoch_metrics
 
     def test_step(self, batch, batch_idx):
@@ -119,14 +129,14 @@ class GTXModel(pl.LightningModule):
 
         else:
             outputs = self.model(**batch)
-            metrics = metrics_for_tasks(batch, outputs, stage="test", task=self.training_args.task)
+            metrics = metrics_for_tasks(task=self.training_args.task, stage="test", batch=batch, outputs=outputs)
 
         return metrics
     
     def test_epoch_end(self, test_epoch_outputs):
         keys = test_epoch_outputs[0].keys()
-        epoch_metrics = {k:torch.cat([test_epoch_output[k] for test_epoch_output in test_epoch_outputs]).mean() for k in keys}
-        self.log(epoch_metrics)
+        epoch_metrics = {k:torch.cat([test_epoch_output[k] if len(test_epoch_output[k].size())!=0 else test_epoch_output[k].unsqueeze(0) for test_epoch_output in test_epoch_outputs]).mean() for k in keys}
+        self.log_dict(epoch_metrics)
         return epoch_metrics
 
     def configure_optimizers(self):
