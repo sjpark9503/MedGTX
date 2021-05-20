@@ -98,7 +98,7 @@ def main():
         trainer.save_checkpoint("last_epoch.ckpt")
         
     # Test
-    if training_args.do_test:
+    if training_args.do_predict:
         trainer.test()
 
 if __name__ == "__main__":
