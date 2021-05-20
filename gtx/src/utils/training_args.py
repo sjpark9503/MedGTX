@@ -300,7 +300,7 @@ class TrainingArguments:
     )
     num_eval_per_epoch: int = field(default=None, metadata={"help": "Run an evaluation every X steps."})
     dataloader_num_workers: int = field(
-        default=0,
+        default=8,
         metadata={
             "help": "Number of subprocesses to use for data loading (PyTorch only). 0 means that the data will be loaded in the main process."
         },

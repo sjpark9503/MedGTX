@@ -161,10 +161,10 @@ class NodeClassification_DataCollator:
             raise ValueError(
                 "This tokenizer does not have a mask token which is necessary for masked language modeling. Remove the --mlm flag if you want to use this tokenizer."
             )
-        ignore_masking = ~torch.tensor(entity_mask, dtype=torch.bool)
         # We sample a few tokens in each sequence for masked-LM training (with probability args.mlm_probability defaults to 0.15 in Bert/RoBERTa)
         probability_matrix = torch.full(inputs.shape, self.mlm_probability)
         if entity_mask is not None:
+            ignore_masking = ~(entity_mask.detach().clone().bool())
             probability_matrix.masked_fill_(ignore_masking, value=0.0)
         padding_mask = ~inputs.eq(self.kg_special_token_ids['PAD'])
         masked_indices = torch.bernoulli(probability_matrix).bool()

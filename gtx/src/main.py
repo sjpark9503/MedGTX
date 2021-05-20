@@ -54,8 +54,8 @@ def get_trainer_config(args):
         "precision":16 if args.fp16 else 32,
         "gpus":None if args.use_tpu else -1,
         "tpu_cores":tpu_core_id,
-        "accelerator": "ddp" if len(os.environ["CUDA_VISIBLE_DEVICES"])>1 else None,
-        "log_every_n_steps":50,
+        "accelerator": "ddp",
+        # "log_every_n_steps":50,
         # "callbacks":callbacks,
         "val_check_interval":0.2,
     }

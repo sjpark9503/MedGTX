@@ -68,13 +68,16 @@ class GTXModel(pl.LightningModule):
     def forward(self, x):
         return self.model(x)
     
+    # def on_training_epoch_start(self):
+        # batch = next(self.train_dataloader())
+
     def training_step(self, batch, batch_idx):
-        if (self.global_step==0) and (self.local_rank==1):
-            notifier.critical("Here is the actual input of model")
-            notifier.warning(batch)
+        # if (self.global_step==0) and (self.local_rank==1):
+        #     notifier.critical("Here is the actual input of model")
+        #     notifier.warning(batch)
         outputs = self.model(**batch)
         
-        self.log_dict(outputs.loss_dict)
+        # self.log_dict(outputs.loss_dict, on_step=False, on_epoch=True)
 
         return outputs.loss
 

@@ -52,6 +52,7 @@ class Configuration():
             "num_eval_per_epoch": 2,
             "task" : self.TASK_NAME,
             "use_tpu" : config['use_tpu'],
+            "dataloader_pin_memory" : False if not config['use_tpu'] else True,
             "label_domain" : config['label_domain'],
             "train_data_file":os.path.join(self.EXP_PATH,f"data/{self.DB}_{self.DB_size}/{self.MODEL_NAME}/train"),
             "eval_data_file": os.path.join(self.EXP_PATH,f"data/{self.DB}_{self.DB_size}/{self.MODEL_NAME}/valid"),
