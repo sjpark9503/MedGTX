@@ -6,13 +6,13 @@ import itertools
 from Run_configs import Configuration
 
 # GPU setting
-os.environ["CUDA_VISIBLE_DEVICES"] = '0'
+os.environ["CUDA_VISIBLE_DEVICES"] = '7'
 # TPU setting
 TPU = False
 
 config = {
     # task_number : [0] pretrain / [1] retrieval / [2] generation / [3] adm_lvl_prediction / [4] replacement detection
-    'task_number' : 0,
+    'task_number' : 2,
     'db' : 'dx,prx',
     # seed : 1234, 123, 12, 1, 42
     'seed' : 1234,
@@ -23,9 +23,9 @@ config = {
     # label domain : graph / text
     'label_domain' : 'text',
     'P' : True,
-    'A' : True,
-    'R' : True,
-    'scratch' : False,
+    'A' : False,
+    'R' : False,
+    'scratch' : True,  # False
     'evaluation' : False,
     ## Training configs
     'train_bsize' : 16,

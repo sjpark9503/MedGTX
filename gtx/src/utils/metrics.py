@@ -91,19 +91,18 @@ def metrics_for_tasks(task, stage, batch=None, outputs=None, scores=None):
         metrics[f"{stage}_R@10"] = recall_at_k(gt, pred, k=10)
 
     elif task == "Gen":
-        if stage == "valid":
+        if stage == "valid":  # measure the token-level accuracy
             pred = torch.max(outputs.lang_prediction_logits, dim=2)[-1][~batch['lm_label'].eq(-100)].view(-1).long()
             gt = batch['lm_label'][~batch['lm_label'].eq(-100)].view(-1).long()
-            # metrics[f"{stage}_lm_acc"] = pred==kg
             metrics[f"{stage}_lm_acc"] = pred==gt
-        else:
+        else:  # finally, decoding
             test_outputs = evaluate_for_generation(model=model,
-                                                    tokenizer=tokenizer,
-                                                    dataset=test_dataset,
-                                                    data_loader=test_dataloader,
-                                                    training_args=training_args,
-                                                    decode_option=decode_option,
-                                                    mode='test')
+                                                   tokenizer=tokenizer,
+                                                   dataset=test_dataset,
+                                                   data_loader=test_dataloader,
+                                                   training_args=training_args,
+                                                   decode_option=decode_option,
+                                                   mode='test')
             
             # summarize metrics
             _ = summarize_bleu_score(results=test_outputs, return_results=False)
