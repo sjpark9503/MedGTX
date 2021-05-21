@@ -1,5 +1,7 @@
 # Base pkgs
+import os
 import math
+import time
 import pytorch_lightning as pl
 import torch
 from torch.optim import Adadelta, Adagrad, Adam, AdamW
@@ -71,13 +73,26 @@ class GTXModel(pl.LightningModule):
     # def on_training_epoch_start(self):
         # batch = next(self.train_dataloader())
 
+    # def on_before_zero_grad(self,out):
+    #     self.t1 = time.time()
+
+    # def on_after_backward(self):
+    #     self.t2 = time.time()
+
+    # def on_train_batch_end(self, out, out2, out3, out4):
+    #     self.t3 = time.time()
+    #     if self.local_rank in [1,2,3]:
+    #         notifier.warning(f"Backward Time : {self.t2-self.t1:3f}s")
+    #         notifier.warning(f"Opt. Step Time : {self.t3-self.t2:3f}s")
+
     def training_step(self, batch, batch_idx):
-        # if (self.global_step==0) and (self.local_rank==1):
-        #     notifier.critical("Here is the actual input of model")
-        #     notifier.warning(batch)
+        if (self.global_step==0) and (self.local_rank==1):
+            notifier.critical("Here is the actual input of model")
+            notifier.warning(batch)
+
         outputs = self.model(**batch)
-        
-        # self.log_dict(outputs.loss_dict, on_step=False, on_epoch=True)
+
+        self.log_dict(outputs.loss_dict, on_step=False if self.training_args.use_tpu else True, on_epoch=True if self.training_args.use_tpu else False)
 
         return outputs.loss
 
@@ -88,16 +103,6 @@ class GTXModel(pl.LightningModule):
 
     def validation_epoch_end(self, val_epoch_outputs):
         keys = val_epoch_outputs[0].keys()
-        # k = list(keys)[0]
-        # for i in val_epoch_outputs[0]:
-        #     notifier.warning(f"{i} : {val_epoch_outputs[0][i].size()}")
-        # epoch_metrics = dict()
-        # for k in keys:
-        #     epoch_metric_tensor = torch.cat([val_epoch_output[k] if len(val_epoch_output[k].size())>0 else val_epoch_output[k].unsqueeze(0) for val_epoch_output in val_epoch_outputs])
-        #     try:
-        #         epoch_metrics[k] = epoch_metric_tensor.mean()
-        #     except:
-        #         notifier.warning(f"{k}, {epoch_metric_tensor[:5]}, {epoch_metric_tensor.size()}")
         epoch_metrics = {k:torch.cat([val_epoch_output[k].float() if len(val_epoch_output[k].size())>0 else val_epoch_output[k].unsqueeze(0) for val_epoch_output in val_epoch_outputs]).mean() for k in keys}
         self.log_dict(epoch_metrics)
         return epoch_metrics
@@ -184,3 +189,10 @@ class GTXModel(pl.LightningModule):
         }
 
         return {"optimizer": optimizer, "lr_scheduler": lr_scheduler}
+    
+    def save(self):
+        output_dir = self.training_args.output_dir
+        os.makedirs(output_dir, exist_ok=True)
+        if (self.training_args.use_tpu and self.local_rank == 0) or not self.training_args.use_tpu:
+            notifier.warning(f"Save model to {output_dir}")
+            self.model.save_pretrained(output_dir)

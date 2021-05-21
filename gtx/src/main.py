@@ -22,20 +22,20 @@ def get_trainer_config(args):
     callbacks = list()
 
     # Checkpointing Criteria
-    callbacks.append(pl.callbacks.ModelCheckpoint(
-        monitor='',
-        dirpath=args.output_dir,
-        save_top_k=1,
-        filename='best',
-        mode='min',
-        )
-    )  
+    # callbacks.append(pl.callbacks.ModelCheckpoint(
+    #     monitor='',
+    #     dirpath=args.output_dir,
+    #     save_top_k=1,
+    #     filename='best',
+    #     mode='min',
+    #     )
+    # )  
 
     # Early stop Criteria
     early_stop_callback = pl.callbacks.EarlyStopping(
-        monitor="best_valid_Inter_acc",
+        monitor="valid_acc",
         min_delta=0.01,
-        patience=5,
+        patience=3,
         mode="max",
         # check_finite=True,
         # stopping_threshold=0.9
@@ -55,9 +55,9 @@ def get_trainer_config(args):
         "gpus":None if args.use_tpu else -1,
         "tpu_cores":tpu_core_id,
         "accelerator": "ddp",
-        # "log_every_n_steps":50,
+        "log_every_n_steps":None if args.use_tpu else 50,
         # "callbacks":callbacks,
-        "val_check_interval":0.2,
+        "val_check_interval":0.2 if args.task != "Pre" else 1.0,
     }
     if not args.do_eval:
         config["val_check_interval"]=1e10
@@ -88,6 +88,8 @@ def main():
         **get_trainer_config(training_args),
         num_sanity_val_steps=4,
         logger=logger,
+        # profiler='advanced',
+        # fast_dev_run=10,
         # plugins=get_deepspeed_config(training_args.deepspeed),
     ) 
         
@@ -95,10 +97,12 @@ def main():
     if training_args.do_train:
         # trainer.validate(model=gtx, datamodule = data_module)
         trainer.fit(gtx, data_module)
-        trainer.save_checkpoint("last_epoch.ckpt")
+        if training_args.task == "Pre":
+            gtx.save()
+            data_module.save()
         
     # Test
-    if training_args.do_predict:
+    if training_args.do_eval:
         trainer.test()
 
 if __name__ == "__main__":

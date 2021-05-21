@@ -450,7 +450,6 @@ class GTXOutput(nn.Module):
         hidden_states = self.LayerNorm(hidden_states + input_tensor)
         return hidden_states
 
-
 class GTXLayer(nn.Module):
     def __init__(self, config):
         super().__init__()
@@ -617,6 +616,81 @@ class GTXXLayer(nn.Module):
             else (lang_output, visual_output)
         )
 
+class GTXKnowMixLayer(nn.Module):
+    def __init__(self, config):
+        super().__init__()
+
+        # The cross-attention Layer
+        self.cross_attention = GTXCrossAttentionLayer(config)
+
+        # Self-attention Layers
+        self.self_att = GTXSelfAttentionLayer(config)
+
+        # Intermediate and Output Layers (FFNs)
+        self.inter = GTXIntermediate(config)
+        self.output = GTXOutput(config)
+
+    def mixup(
+        self,
+        inputs,
+        attention_masks,
+        contexts,
+        output_x_attentions=False,
+    ):
+        att_output = self.cross_attention(
+            inputs,
+            contexts,
+            ctx_att_mask=attention_masks,
+            output_attentions=output_x_attentions,
+        )
+
+        return att_output
+
+    def self_att(self, inputs, attention_masks):
+        # Self Attention
+        att_output = self.self_att(inputs, attention_masks, output_attentions=False)
+        return att_output[0]
+
+    def output_fc(self, inputs):
+        # FC layers
+        inter_output = self.inter(inputs)
+
+        # Layer output
+        output = self.output(inter_output, inputs)
+
+        return output
+
+    def forward(
+        self,
+        inputs,
+        attention_masks,
+        contexts,
+        context_attention_masks,
+        output_attentions=False,
+    ):
+        att_output = self.mixup(
+                inputs=visual_feats,
+                attention_mask=context_attention_mask,
+                contexts=contexts,
+                output_x_attentions=output_attentions,
+            )
+        attention_probs = {'kg->txt':att_output[-1]}
+        
+        att_output = self.self_att(
+            att_output[0],
+            attention_masks,
+        )
+
+        output = self.output_fc(att_output)
+        return (
+            (
+                output,
+                attention_probs,
+            )
+            if output_attentions
+            else output
+        )
+
 
 # class GTXKGFeatureEncoder(nn.Module):
 #     def __init__(self, config):
@@ -638,6 +712,7 @@ class GTXEncoder(nn.Module):
             notifier.warning("You have not specific encoder type in config, so that you don't use any kinds of LSTM")
             self.config.encoder_type = {'lang': ''}
         self.encoder_type = self.config.encoder_type['lang'].lower()
+        self.knowmix = config['KnowMix'] if 'KnowMix' in config else False
 
         # Number of layers
         self.num_l_layers = config.l_layers
@@ -649,7 +724,12 @@ class GTXEncoder(nn.Module):
         self.layer = nn.ModuleList([GTXLayer(config) for _ in range(self.num_l_layers)])
         notifier.warning(f"This model has a {config.cross_att_type if 'cross_att_type' in vars(config).keys() else 'cross'} type of x_attention architecture.")
         self.x_layers = nn.ModuleList([GTXXLayer(config) for _ in range(self.num_x_layers)])
-        self.r_layers = nn.ModuleList([GTXLayer(config) for _ in range(self.num_r_layers)])
+        if self.knowmix:
+            notifier.warning("Use Knowledge Mixup Layer")
+            self.r_layers = nn.ModuleList([GTXKnowMixLayer(config) for _ in range(self.num_r_layers)])
+        else:
+            notifier.warning("Use Standard GAT Layer")
+            self.r_layers = nn.ModuleList([GTXLayer(config) for _ in range(self.num_r_layers)])            
         
         # Lang Encoder Architecture
         # LSTM for generation, BiLSTM for pretraining/other donwstream tasks
@@ -698,6 +778,8 @@ class GTXEncoder(nn.Module):
         kg_feats,
         kg_attention_mask,
         kg_padding_mask,
+        ex_know_inputs=None,
+        ex_know_attention_masks=None,
         output_attentions=None,
     ):
 
@@ -727,7 +809,10 @@ class GTXEncoder(nn.Module):
 
         # Run relational layers
         for layer_module in self.r_layers:
-            kg_outputs = layer_module(kg_feats, kg_attention_mask, output_attentions=output_attentions)
+            if self.knowmix:
+                kg_outputs = layer_module(kg_feats, kg_attention_mask, contexts=ex_know_inputs, context_attention_masks=ex_know_attention_masks, output_attentions=output_attentions)
+            else:
+                kg_outputs = layer_module(kg_feats, kg_attention_mask, output_attentions=output_attentions)
             kg_feats = kg_outputs[0]
             kg_hidden_states = kg_hidden_states + (kg_feats,)
             if kg_attentions is not None:
@@ -971,6 +1056,8 @@ class GTXModel(GTXPreTrainedModel):
         lang_attention_mask=None,
         kg_attention_mask=None,
         kg_padding_mask=None,
+        ex_know_inputs = None,
+        ex_know_attention_masks = None,
         token_type_ids=None,
         output_attentions=None,
         output_hidden_states=None,
@@ -1054,6 +1141,8 @@ class GTXModel(GTXPreTrainedModel):
             kg_feats=kg_embedding_output,
             kg_attention_mask=extended_kg_attention_mask,
             kg_padding_mask=extended_kg_padding_mask,
+            ex_know_inputs = ex_know_inputs,
+            ex_know_attention_masks = ex_know_attention_masks,
             output_attentions=output_attentions,
         )
 
@@ -1149,6 +1238,8 @@ class GTXForKGTokPredAndMaskedLM(GTXPreTrainedModel):
         cross_label=None,
         token_type_ids=None,
         rc_indeces=None,
+        ex_know_inputs = None,
+        ex_know_attention_masks = None,
         output_attentions=None,
         output_hidden_states=None,
         return_dict=True,
@@ -1184,6 +1275,8 @@ class GTXForKGTokPredAndMaskedLM(GTXPreTrainedModel):
             kg_attention_mask=kg_attention_mask,
             kg_padding_mask=kg_padding_mask,
             token_type_ids=token_type_ids,
+            ex_know_inputs = ex_know_inputs,
+            ex_know_attention_masks = ex_know_attention_masks,
             output_attentions=output_attentions,
             output_hidden_states=output_hidden_states,
             return_dict=return_dict,
@@ -1308,6 +1401,8 @@ class GTXForRanking(GTXPreTrainedModel):
         kg_padding_mask=None,
         label=None,
         token_type_ids=None,
+        ex_know_inputs = None,
+        ex_know_attention_masks = None,
         output_attentions=None,
         output_hidden_states=None,
         return_dict=True,
@@ -1346,6 +1441,8 @@ class GTXForRanking(GTXPreTrainedModel):
             kg_attention_mask=kg_attention_mask,
             kg_padding_mask=kg_padding_mask,
             token_type_ids=token_type_ids,
+            ex_know_inputs = ex_know_inputs,
+            ex_know_attention_masks = ex_know_attention_masks,
             output_attentions=output_attentions,
             output_hidden_states=output_hidden_states,
             return_dict=return_dict,
@@ -1425,6 +1522,8 @@ class GTXForAdmLvlPrediction(GTXPreTrainedModel):
         kg_padding_mask=None,
         label=None,
         token_type_ids=None,
+        ex_know_inputs = None,
+        ex_know_attention_masks = None,
         output_attentions=None,
         output_hidden_states=None,
         return_dict=True,
@@ -1463,6 +1562,8 @@ class GTXForAdmLvlPrediction(GTXPreTrainedModel):
             kg_attention_mask=kg_attention_mask,
             kg_padding_mask=kg_padding_mask,
             token_type_ids=token_type_ids,
+            ex_know_inputs = ex_know_inputs,
+            ex_know_attention_masks = ex_know_attention_masks,
             output_attentions=output_attentions,
             output_hidden_states=output_hidden_states,
             return_dict=return_dict,
@@ -1550,6 +1651,8 @@ class GTXForErrorDetection(GTXPreTrainedModel):
         kg_label=None,
         lm_label=None,
         token_type_ids=None,
+        ex_know_inputs = None,
+        ex_know_attention_masks = None,
         output_attentions=None,
         output_hidden_states=None,
         return_dict=True,
@@ -1588,6 +1691,8 @@ class GTXForErrorDetection(GTXPreTrainedModel):
             kg_attention_mask=kg_attention_mask,
             kg_padding_mask=kg_padding_mask,
             token_type_ids=token_type_ids,
+            ex_know_inputs = ex_know_inputs,
+            ex_know_attention_masks = ex_know_attention_masks,
             output_attentions=output_attentions,
             output_hidden_states=output_hidden_states,
             return_dict=return_dict,
@@ -1691,6 +1796,8 @@ class GTXForGeneration(GTXPreTrainedModel):
         lm_label=None,
         kg_label=None,
         token_type_ids=None,
+        ex_know_inputs = None,
+        ex_know_attention_masks = None,
         output_attentions=None,
         output_hidden_states=None,
         return_dict=True,
@@ -1822,6 +1929,8 @@ class GTXForGeneration(GTXPreTrainedModel):
                 kg_attention_mask=kg_attention_mask,
                 kg_padding_mask=kg_padding_mask,
                 token_type_ids=curr_token_type_ids,
+                ex_know_inputs = ex_know_inputs,
+                ex_know_attention_masks = ex_know_attention_masks,
                 output_attentions=output_attentions,
                 output_hidden_states=output_hidden_states,
                 return_dict=return_dict,
@@ -1900,6 +2009,8 @@ class GTXForGeneration(GTXPreTrainedModel):
                 kg_attention_mask=kg_attention_mask,
                 kg_padding_mask=kg_padding_mask,
                 token_type_ids=curr_token_type_ids,
+                ex_know_inputs = ex_know_inputs,
+                ex_know_attention_masks = ex_know_attention_masks,
                 output_attentions=output_attentions,
                 output_hidden_states=output_hidden_states,
                 return_dict=return_dict,
@@ -1992,6 +2103,8 @@ class GTXForGeneration(GTXPreTrainedModel):
                 lang_attention_mask=curr_attention_mask,
                 kg_padding_mask=kg_padding_mask,
                 token_type_ids=curr_token_type_ids,
+                ex_know_inputs = ex_know_inputs,
+                ex_know_attention_masks = ex_know_attention_masks,
                 output_attentions=False,
                 output_hidden_states=False,
                 return_dict=True,

@@ -178,6 +178,8 @@ class Configuration():
     def assertion(self):
         if self.config['seed'] not in [1234, 1, 12, 123, 42]:
             return False, "Seed out of range"
+        elif os.path.isdir(self.TRAINING_CONFIG['output_dir']):
+            return False, "Output dir"
         elif self.config['architecture'] not in self.Var_MODEL:
             return False, "Model not supported"
         elif self.config['model'] not in ['cross','single','lstm','transe']:

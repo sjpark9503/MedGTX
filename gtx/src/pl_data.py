@@ -116,3 +116,9 @@ class DataModule(pl.LightningDataModule):
             num_workers=self.args.dataloader_num_workers,
             pin_memory=self.args.dataloader_pin_memory,
             shuffle=False)
+
+    def save(self):
+        output_dir = self.args.output_dir
+        if (self.args.use_tpu and self.local_rank == 0) or not self.args.use_tpu:
+            notifier.warning(f"Save tokenizer to {output_dir}")
+            self.tokenizer.save_pretrained(output_dir)
