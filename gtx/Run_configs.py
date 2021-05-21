@@ -117,12 +117,13 @@ class Configuration():
                     # SRC_PATH = os.path.join(self.EXP_PATH, f'src/evaluation.py')
                 if self.config['task_number']==2:
                     # SRC_PATH = os.path.join(self.EXP_PATH, 'src/evaluation_generation.py')
-                    self.TRAINING_CONFIG['decode_option'] = {"perturb_type" : None,
-                                                        "given_lang_tokens": 1,
-                                                        "clean_outputs": True,
-                                                        "given_gt_length": False,
-                                                        "search_beam_size": 1,
-                                                        }
+                    self.TRAINING_CONFIG['decode_option'] = {
+                        "perturb_type" : None,
+                        "given_lang_tokens": 1,
+                        "clean_outputs": True,
+                        "given_gt_length": False,
+                        "search_beam_size": 1,
+                    }
                 elif self.config['task_number']==3:
                     for k in self.TRAINING_CONFIG:
                         if 'file' in k:
