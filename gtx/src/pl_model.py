@@ -196,3 +196,50 @@ class GTXModel(pl.LightningModule):
         if (self.training_args.use_tpu and self.local_rank == 0) or not self.training_args.use_tpu:
             notifier.warning(f"Save model to {output_dir}")
             self.model.save_pretrained(output_dir)
+            
+    def configure_callbacks(self):
+        # model_ckpt_callback = pl.callbacks.ModelCheckpoint(
+        #             monitor='',
+        #             dirpath=self.training_args.output_dir,
+        #             save_top_k=1,
+        #             filename='best',
+        #             mode='min',
+        # )
+        
+        if self.training_args.task == "Pre":
+            return None 
+        
+        elif self.training_args.task == "Gen":
+            monitor_metric = 'valid_lm_acc'
+            early_stop_callback = pl.callbacks.EarlyStopping(
+                    monitor=monitor_metric,
+                    min_delta=0.01,
+                    patience=3,
+                    mode="max",
+                    # check_finite=True,
+                    # stopping_threshold=0.9
+            )
+            lr_monitor_callback = pl.callbacks.LearningRateMonitor(
+                logging_interval="step",
+            ) 
+            early_stop_callback = pl.callbacks.EarlyStopping(
+                monitor=monitor_metric,
+                min_delta=0.01,
+                patience=3,
+                mode="max",
+                # check_finite=True,
+                # stopping_threshold=0.9
+            )
+            
+            return [lr_monitor_callback, early_stop_callback]
+        
+        else:
+            early_stop_callback = pl.callbacks.EarlyStopping(
+                    monitor='val_acc',
+                    min_delta=0.01,
+                    patience=3,
+                    mode="max",
+                    # check_finite=True,
+                    # stopping_threshold=0.9
+            )
+            return [early_stop_callback]

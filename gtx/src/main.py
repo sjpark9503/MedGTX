@@ -19,49 +19,19 @@ notifier.addHandler(log_formatter())
 #         return None
 
 def get_trainer_config(args):
-    callbacks = list()
-
-    # Checkpointing Criteria
-    # callbacks.append(pl.callbacks.ModelCheckpoint(
-    #     monitor='',
-    #     dirpath=args.output_dir,
-    #     save_top_k=1,
-    #     filename='best',
-    #     mode='min',
-    #     )
-    # )  
-
-    # Early stop Criteria
-    early_stop_callback = pl.callbacks.EarlyStopping(
-        monitor="valid_acc",
-        min_delta=0.01,
-        patience=3,
-        mode="max",
-        # check_finite=True,
-        # stopping_threshold=0.9
-    )
-
-    if args.task != "Pre":
-        callbacks.append(early_stop_callback)
-
-    if args.use_tpu:
-        tpu_core_id = 8
-    else:
-        tpu_core_id = None
-
+    # configuration for `pl.Trainer`
     config = {
         "max_epochs":args.num_train_epochs,
         "precision":16 if args.fp16 else 32,
         "gpus":None if args.use_tpu else -1,
-        "tpu_cores":tpu_core_id,
+        "tpu_cores":8 if args.use_tpu else None,
         "accelerator": "ddp",
         "log_every_n_steps":None if args.use_tpu else 50,
-        # "callbacks":callbacks,
         "val_check_interval":0.2 if args.task != "Pre" else 1.0,
     }
     if not args.do_eval:
         config["val_check_interval"]=1e10
-
+        
     return config
 
 def main():
