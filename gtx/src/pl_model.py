@@ -112,7 +112,7 @@ class GTXModel(pl.LightningModule):
     def on_test_epoch_start(self):
         if self.training_args.task == "Re":
             self.negative_sampler = list()
-            for negative_sample in self.test_dataloader(batch_size=int(len(self.test_dataloader(batch_size=1)/4))):
+            for negative_sample in self.test_dataloader(batch_size=int(len(self.test_dataloader(batch_size=1))/4)):
                 self.negative_sampler.append({k:v.cuda() for k,v in negative_sample.items()})
 
     def test_step(self, batch, batch_idx):
