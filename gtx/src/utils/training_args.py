@@ -300,7 +300,7 @@ class TrainingArguments:
     )
     num_eval_per_epoch: int = field(default=None, metadata={"help": "Run an evaluation every X steps."})
     dataloader_num_workers: int = field(
-        default=4,
+        default=32,
         metadata={
             "help": "Number of subprocesses to use for data loading (PyTorch only). 0 means that the data will be loaded in the main process."
         },
@@ -334,6 +334,9 @@ class TrainingArguments:
     )
     metric_for_best_model: Optional[str] = field(
         default=None, metadata={"help": "The metric to use to compare two different models."}
+    )
+    knowmix: Optional[str] = field(
+    default="", metadata={"help": "Decide how to mix external knowledge into KG encoder"}
     )
     greater_is_better: Optional[bool] = field(
         default=None, metadata={"help": "Whether the `metric_for_best_model` should be maximized or not."}

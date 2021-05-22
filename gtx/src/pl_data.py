@@ -108,9 +108,20 @@ class DataModule(pl.LightningDataModule):
             shuffle=False)
 
     def test_dataloader(self, batch_size=None):
+        if batch_size is None:
+            if self.args.task == "Re":
+                bsize = 1
+            else:
+                bsize = self.args.eval_batch_size
+        else:
+            bsize = batch_size
+        
+        if self.args.task == "Re":
+            self.data_collator.n_negatives=0
+
         return DataLoader(
             self.test_dataset,
-            batch_size=self.args.eval_batch_size if batch_size is None else batch_size,
+            batch_size=bsize,
             collate_fn=self.data_collator,
             drop_last=False,
             num_workers=self.args.dataloader_num_workers,

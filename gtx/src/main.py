@@ -19,14 +19,52 @@ notifier.addHandler(log_formatter())
 #         return None
 
 def get_trainer_config(args):
-    # configuration for `pl.Trainer`
+    callbacks = list()
+
+    # Checkpointing Criteria
+    # callbacks.append(pl.callbacks.ModelCheckpoint(
+    #     monitor='',
+    #     dirpath=args.output_dir,
+    #     save_top_k=1,
+    #     filename='best',
+    #     mode='min',
+    #     )
+    # )  
+
+    monitoring_target = {
+        "Pre":None,
+        "Re":"valid_acc",
+        "AdmPred":"valid_P@1",
+        "ErrDetect":"valid_R@1",
+        "Gen":"<TBD>!!", 
+    }
+
+    # Early stop Criteria
+    early_stop_callback = pl.callbacks.EarlyStopping(
+        monitor=monitoring_target[args.task],
+        min_delta=0.001,
+        patience=3,
+        mode="max",
+        # check_finite=True,
+        # stopping_threshold=0.9
+    )
+
+    if args.task != "Pre":
+        callbacks.append(early_stop_callback)
+
+    if args.use_tpu:
+        tpu_core_id = 8
+    else:
+        tpu_core_id = None
+
     config = {
         "max_epochs":args.num_train_epochs,
         "precision":16 if args.fp16 else 32,
         "gpus":None if args.use_tpu else -1,
-        "tpu_cores":8 if args.use_tpu else None,
-        "accelerator": "ddp",
+        "tpu_cores":tpu_core_id,
+        "accelerator": None, #"ddp",
         "log_every_n_steps":None if args.use_tpu else 50,
+        "callbacks":callbacks,
         "val_check_interval":0.2 if args.task != "Pre" else 1.0,
     }
     if not args.do_eval:
@@ -45,7 +83,7 @@ def main():
     wandb_config = dict()
     wandb_config.update(vars(training_args))
     wandb_config.update(vars(model_args))
-    logger = pl.loggers.WandbLogger(config=wandb_config, project='NeurIPS2021', name=training_args.run_name, save_dir=None)
+    logger = pl.loggers.WandbLogger(config=wandb_config, entity='kgtxt', project='NeurIPS2021', name=training_args.run_name, save_dir=None)
 
     # Call Model
     gtx = GTXModel(model_args, training_args)

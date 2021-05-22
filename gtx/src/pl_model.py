@@ -2,6 +2,7 @@
 import os
 import math
 import time
+from tqdm import tqdm
 import pytorch_lightning as pl
 import torch
 from torch.optim import Adadelta, Adagrad, Adam, AdamW
@@ -43,6 +44,7 @@ class GTXModel(pl.LightningModule):
             config.use_ce_pooler = False
         else:
             config.use_ce_pooler = True
+        config.KnowMix = training_args.knowmix
 
         # Load model
         MODEL_CLASSES = {
@@ -53,14 +55,14 @@ class GTXModel(pl.LightningModule):
             "ErrDetect":GTXForErrorDetection,
         }
         if model_args.model_name_or_path:
-            notifier.critical("Load pretrained parameters")
             self.model = MODEL_CLASSES[training_args.task].from_pretrained(
                 model_args.model_name_or_path,
                 config=config,
             )
+            notifier.critical(f"Load pretrained parameters from {model_args.model_name_or_path}")
         else:
-            notifier.critical("Training new model from scratch")
             self.model = MODEL_CLASSES[training_args.task](config)
+            notifier.critical("Training new model from scratch")
 
         self.model.training_args = training_args
         
@@ -103,30 +105,38 @@ class GTXModel(pl.LightningModule):
 
     def validation_epoch_end(self, val_epoch_outputs):
         keys = val_epoch_outputs[0].keys()
-        epoch_metrics = {k:torch.cat([val_epoch_output[k].float() if len(val_epoch_output[k].size())>0 else val_epoch_output[k].unsqueeze(0) for val_epoch_output in val_epoch_outputs]).mean() for k in keys}
+        epoch_metrics = {k:torch.cat([val_epoch_output[k].float() if len(val_epoch_output[k].size())>0 else val_epoch_output[k].unsqueeze(0) for val_epoch_output in val_epoch_outputs]).float().mean() for k in keys}
         self.log_dict(epoch_metrics)
         return epoch_metrics
 
+    def on_test_epoch_start(self):
+        self.negative_sampler = self.test_dataloader(batch_size=64)
+
     def test_step(self, batch, batch_idx):
         metrics = dict()
+        
         if self.training_args.task == "Re":
+            device = batch['kg_input_ids'].device
             top_k = self.training_args.top_k
             for label_domain in ["graph", "text"]:
-                for negative_sample in self.test_dataloader(batch_size=128):
-                    scores = list()
+                scores = list()
+                for negative_sample in self.negative_sampler:
+                    temp_batch_size = negative_sample['kg_input_ids'].size(0)
+                    temp_batch = dict()
                     for k in batch:
                         if label_domain == "text":
                             if 'kg' in k:
-                                batch[k] = torch.stack([batch[k],]*negative_sample.size(0))
+                                temp_batch[k] = torch.cat([batch[k],]*temp_batch_size, dim=0)
                             else:
-                                batch[k] = negative_sample[k]
+                                temp_batch[k] = negative_sample[k].to(device=device)
                         else:
                             if 'kg' not in k:
-                                batch[k] = torch.stack([batch[k],]*negative_sample.size(0))
+                                temp_batch[k] = torch.cat([batch[k],]*temp_batch_size, dim=0)
                             else:
-                                batch[k] = negative_sample[k]
-
-                    outputs = self.model(**batch)
+                                temp_batch[k] = negative_sample[k].to(device=device)
+                    # for k in batch:
+                    #     notifier.warning(f"{k}, {batch[k].size()}")
+                    outputs = self.model(**temp_batch)
                     scores.append(outputs.pooled_logits[:,1])
 
                 scores = torch.cat(scores)
@@ -143,7 +153,7 @@ class GTXModel(pl.LightningModule):
     
     def test_epoch_end(self, test_epoch_outputs):
         keys = test_epoch_outputs[0].keys()
-        epoch_metrics = {k:torch.cat([test_epoch_output[k] if len(test_epoch_output[k].size())!=0 else test_epoch_output[k].unsqueeze(0) for test_epoch_output in test_epoch_outputs]).mean() for k in keys}
+        epoch_metrics = {k:torch.cat([test_epoch_output[k] if len(test_epoch_output[k].size())!=0 else test_epoch_output[k].unsqueeze(0) for test_epoch_output in test_epoch_outputs]).float().mean() for k in keys}
         self.log_dict(epoch_metrics)
         return epoch_metrics
 

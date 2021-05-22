@@ -1,5 +1,6 @@
 import random
 import json
+import gc
 import os
 import logging
 import pickle
@@ -43,8 +44,10 @@ class InputFeatures:
 
     lang_input_ids: List[int]
     kg_input_ids: List[int]
+    kg_ext_input_ids: Optional[List[List[int]]] = None
     lang_attention_mask: Optional[List[int]] = None
     kg_attention_mask: Optional[List[int]] = None
+    kg_ext_attention_mask: Optional[List[List[int]]] = None
     kg_label_mask: Optional[List[int]] = None
     kg_label: Optional[List[int]] = None
     label: Optional[List[int]] = None
@@ -77,7 +80,10 @@ class HeadOnlyDataset(Dataset):
                 if k not in self.batch_encoding['lang']:
                     self.batch_encoding['lang'][k] = list()
                 self.batch_encoding['lang'][k].append(v)
+
         self.batch2feature()
+        del self.batch_encoding
+        gc.collect()
 
     def generate_type_ids(self, sections, tokens):
         idx = 0
@@ -104,6 +110,10 @@ class HeadOnlyDataset(Dataset):
                     inputs['label'] = self.batch_encoding['label'][idx]
             if 'rc_index' in self.batch_encoding:
                 inputs['rc_indeces'] = self.batch_encoding['rc_index'][idx]
+            if 'knowledge' in self.batch_encoding:
+                tokenized_knowledge = self.tokenizer(self.batch_encoding['knowledge'][idx], add_special_tokens=False, padding='max_length', max_length=64, return_token_type_ids=False)
+                inputs['kg_ext_input_ids'] = tokenized_knowledge['input_ids']
+                inputs['kg_ext_attention_mask'] = tokenized_knowledge['attention_mask']
 
             feature = InputFeatures(**inputs)
             self.features.append(feature)

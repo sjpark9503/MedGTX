@@ -1,6 +1,6 @@
 import torch
 import torch.nn.functional as F
-
+from tqdm import tqdm
 
 '''
 metric for note generation
