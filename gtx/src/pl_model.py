@@ -8,6 +8,7 @@ import torch
 from torch.optim import Adadelta, Adagrad, Adam, AdamW
 from torch.optim.lr_scheduler import LambdaLR, ReduceLROnPlateau
 from transformers import get_linear_schedule_with_warmup, get_polynomial_decay_schedule_with_warmup
+from transformers.models.auto.tokenization_auto import AutoTokenizer
 # Usr defined pkgs
 from model import GTXForKGTokPredAndMaskedLM, GTXForRanking, GTXForAdmLvlPrediction, GTXForErrorDetection, GTXForGeneration
 from utils.metrics import metrics_for_tasks
@@ -50,7 +51,8 @@ class GTXModel(pl.LightningModule):
         MODEL_CLASSES = {
             "Pre":GTXForKGTokPredAndMaskedLM,
             "Re":GTXForRanking,
-            "Gen":GTXForKGTokPredAndMaskedLM,
+            # "Gen":GTXForKGTokPredAndMaskedLM,
+            "Gen":GTXForGeneration,
             "AdmPred":GTXForAdmLvlPrediction,
             "ErrDetect":GTXForErrorDetection,
         }
@@ -65,6 +67,8 @@ class GTXModel(pl.LightningModule):
             notifier.critical("Training new model from scratch")
 
         self.model.training_args = training_args
+        
+        self.load_bert_tokenizer()
         
         notifier.warn("## Model Configuration ##")
         notifier.warn(self.model.config)
@@ -92,20 +96,33 @@ class GTXModel(pl.LightningModule):
             notifier.critical("Here is the actual input of model")
             notifier.warning(batch)
 
-        outputs = self.model(**batch)
-
-        self.log_dict(outputs.loss_dict, on_step=False if self.training_args.use_tpu else True, on_epoch=True if self.training_args.use_tpu else False)
+        outputs = self.model(**batch)        
+        self.log_dict(
+            outputs.loss_dict,
+            on_step=False if self.training_args.use_tpu else True,
+            on_epoch=True if self.training_args.use_tpu else False,
+        )
 
         return outputs.loss
 
     def validation_step(self, batch, batch_idx):
         outputs = self.model(**batch)
-        metrics = metrics_for_tasks(task=self.training_args.task, stage="valid", batch=batch, outputs=outputs)
+        metrics = metrics_for_tasks(
+            task=self.training_args.task,
+            stage="valid",
+            batch=batch,
+            outputs=outputs,
+            model=self.model if self.training_args.task == "Gen" else None,
+            tokenizer=self.tokenizer,
+            current_epoch=self.current_epoch,
+        )
         return metrics
 
     def validation_epoch_end(self, val_epoch_outputs):
         keys = val_epoch_outputs[0].keys()
-        epoch_metrics = {k:torch.cat([val_epoch_output[k].float() if len(val_epoch_output[k].size())>0 else val_epoch_output[k].unsqueeze(0) for val_epoch_output in val_epoch_outputs]).float().mean() for k in keys}
+        epoch_metrics = {k:torch.cat([val_epoch_output[k].float() \
+            if len(val_epoch_output[k].size())>0 else val_epoch_output[k].unsqueeze(0) \
+                for val_epoch_output in val_epoch_outputs]).float().mean() for k in keys}
         self.log_dict(epoch_metrics)
         return epoch_metrics
 
@@ -144,16 +161,23 @@ class GTXModel(pl.LightningModule):
                 recrank = 1/((scores.argsort(descending=True)==batch_idx).nonzero()+1)
                 metrics[f"{label_domain}_Hits@{top_k}"] = hit
                 metrics[f"{label_domain}_MRR"] = recrank
-
         else:
             outputs = self.model(**batch)
-            metrics = metrics_for_tasks(task=self.training_args.task, stage="test", batch=batch, outputs=outputs)
-
+            metrics = metrics_for_tasks(
+                task=self.training_args.task,
+                stage="test",
+                batch=batch,
+                outputs=outputs,
+                model=self.model if self.training_args.task == "Gen" else None,
+                tokenizer=self.tokenizer
+            )
         return metrics
     
     def test_epoch_end(self, test_epoch_outputs):
         keys = test_epoch_outputs[0].keys()
-        epoch_metrics = {k:torch.cat([test_epoch_output[k] if len(test_epoch_output[k].size())!=0 else test_epoch_output[k].unsqueeze(0) for test_epoch_output in test_epoch_outputs]).float().mean() for k in keys}
+        epoch_metrics = {k:torch.cat([test_epoch_output[k] \
+            if len(test_epoch_output[k].size())!=0 else test_epoch_output[k].unsqueeze(0) \
+                for test_epoch_output in test_epoch_outputs]).float().mean() for k in keys}
         self.log_dict(epoch_metrics)
         return epoch_metrics
 
@@ -207,49 +231,8 @@ class GTXModel(pl.LightningModule):
             notifier.warning(f"Save model to {output_dir}")
             self.model.save_pretrained(output_dir)
             
-    def configure_callbacks(self):
-        # model_ckpt_callback = pl.callbacks.ModelCheckpoint(
-        #             monitor='',
-        #             dirpath=self.training_args.output_dir,
-        #             save_top_k=1,
-        #             filename='best',
-        #             mode='min',
-        # )
-        
-        if self.training_args.task == "Pre":
-            return None 
-        
-        elif self.training_args.task == "Gen":
-            monitor_metric = 'valid_lm_acc'
-            early_stop_callback = pl.callbacks.EarlyStopping(
-                    monitor=monitor_metric,
-                    min_delta=0.01,
-                    patience=3,
-                    mode="max",
-                    # check_finite=True,
-                    # stopping_threshold=0.9
-            )
-            lr_monitor_callback = pl.callbacks.LearningRateMonitor(
-                logging_interval="step",
-            ) 
-            early_stop_callback = pl.callbacks.EarlyStopping(
-                monitor=monitor_metric,
-                min_delta=0.01,
-                patience=3,
-                mode="max",
-                # check_finite=True,
-                # stopping_threshold=0.9
-            )
-            
-            return [lr_monitor_callback, early_stop_callback]
-        
+    def load_bert_tokenizer(self):
+        if self.training_args.task == "Gen":
+            self.tokenizer = AutoTokenizer.from_pretrained('bert-base-uncased')
         else:
-            early_stop_callback = pl.callbacks.EarlyStopping(
-                    monitor='val_acc',
-                    min_delta=0.01,
-                    patience=3,
-                    mode="max",
-                    # check_finite=True,
-                    # stopping_threshold=0.9
-            )
-            return [early_stop_callback]
+            self.tokenizer = AutoTokenizer.from_pretrained('bert-base-uncased')

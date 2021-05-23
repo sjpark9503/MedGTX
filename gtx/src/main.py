@@ -36,7 +36,7 @@ def get_trainer_config(args):
         "Re":"valid_acc",
         "AdmPred":"valid_P@1",
         "ErrDetect":"valid_R@1",
-        "Gen":"<TBD>!!", 
+        "Gen":"valid_lm_acc",
     }
 
     # Early stop Criteria
@@ -44,13 +44,21 @@ def get_trainer_config(args):
         monitor=monitoring_target[args.task],
         min_delta=0.001,
         patience=3,
+        verbose=True,
         mode="max",
         # check_finite=True,
         # stopping_threshold=0.9
     )
+    
+    lr_monitor_callback = pl.callbacks.LearningRateMonitor(
+        logging_interval="step"
+    )
 
     if args.task != "Pre":
         callbacks.append(early_stop_callback)
+        
+    if args.task == "Gen":
+        callbacks.append(lr_monitor_callback)
 
     if args.use_tpu:
         tpu_core_id = 8
@@ -70,6 +78,10 @@ def get_trainer_config(args):
     if not args.do_eval:
         config["val_check_interval"]=1e10
         
+    if args.task == "Gen":
+        config["val_check_interval"]=1.0
+        config["check_val_every_n_epoch"]=5
+
     return config
 
 def main():
@@ -83,7 +95,11 @@ def main():
     wandb_config = dict()
     wandb_config.update(vars(training_args))
     wandb_config.update(vars(model_args))
-    logger = pl.loggers.WandbLogger(config=wandb_config, entity='kgtxt', project='NeurIPS2021', name=training_args.run_name, save_dir=None)
+    logger = pl.loggers.WandbLogger(config=wandb_config,
+                                    # entity='kgtxt',
+                                    project='NeurIPS2021',
+                                    name=training_args.run_name,
+                                    save_dir=None)
 
     # Call Model
     gtx = GTXModel(model_args, training_args)
@@ -108,10 +124,17 @@ def main():
         if training_args.task == "Pre":
             gtx.save()
             data_module.save()
+        # TODO: save models
+        elif training_args.task == "Gen":
+            gtx.save()
+            data_module.save()
         
     # Test
     if training_args.do_eval:
-        trainer.test()
+        if not training_args.do_train:
+            data_module.prepare_data()
+            data_module.setup('test')
+        trainer.test(model=gtx, datamodule=data_module)
 
 if __name__ == "__main__":
     main()

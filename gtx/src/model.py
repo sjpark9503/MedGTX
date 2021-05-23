@@ -1772,33 +1772,529 @@ class GTXForErrorDetection(GTXPreTrainedModel):
         )
 
 
+# class GTXForGeneration(GTXPreTrainedModel):
+#     def __init__(self, config, tokenizer):
+#         super().__init__(config)
+        
+#         # Configuration
+#         config.use_ce_pooler = True
+#         self.config = config
+#         # self.num_kg_labels = config.num_kg_labels
+        
+#         # GTX backbone
+#         self.GTX = GTXModel(config)
+
+#         # Pre-training heads
+#         self.lm_head = GTXPreTrainingHeads(config, self.GTX.lang_embeddings.word_embeddings.weight)
+        
+#         # Tokenizer
+#         self.tokenizer = tokenizer
+#         self.pad_token_id = tokenizer.pad_token_id
+#         self.sep_token_id = tokenizer.sep_token_id
+#         self.mask_token_id = tokenizer.mask_token_id
+        
+#         # Weight initialization
+#         self.init_weights()
+
+#         # Use Pretrained-LM in Language Part
+#         self.GTX.encoder.re_init_to_pretrained_lang_model()
+        
+#         # Warm start KG embedding
+#         if not config.gcn and config.pretrained_kg_embedding:
+#             notifier.critical("Load pretrained embedding for translation based KG-GTX")
+#             new_embedding = torch.load(config.pretrained_kg_embedding)
+#             # new_embedding = loaded_state_dict['ent_embeddings.weight']
+#             self.GTX.set_kg_embeddings(new_embedding)
+#             del new_embedding
+#             #torch.cuda.empty_cache()
+        
+#         # To measure the PPL score
+#         self.ce_loss = nn.CrossEntropyLoss(reduction='none')
+        
+#     def forward(
+#         self,
+#         lang_input_ids=None,
+#         kg_input_ids=None,
+#         lang_inputs_embeds=None,
+#         kg_inputs_embeds=None,
+#         lang_attention_mask=None,
+#         kg_attention_mask=None,
+#         kg_padding_mask=None,
+#         kg_label_mask=None,
+#         lm_label=None,
+#         kg_label=None,
+#         token_type_ids=None,
+#         kg_ext_input_ids = None,
+#         kg_ext_attention_mask = None,
+#         output_attentions=None,
+#         output_hidden_states=None,
+#         return_dict=True,
+#         given_lang_tokens=1,
+#         clean_outputs=True,
+#         given_gt_length=False,
+#         search_beam_size=1,
+#         ):
+        
+#         device = lang_input_ids.device if lang_input_ids is not None else lang_inputs_embeds.device
+
+#         # num_db: dx,prx(2) / px(1)
+#         num_db = len(torch.bincount(token_type_ids[0]))
+#         gt_length = torch.sum(lang_input_ids.not_equal(self.pad_token_id), axis=1)
+        
+#         # 1. Greedy Decoding
+#         if search_beam_size == 1:
+#             output_ids = self.greedy_decode(
+#                 lang_input_ids=lang_input_ids,
+#                 kg_input_ids=kg_input_ids,
+#                 # lang_inputs_embeds=None,
+#                 kg_inputs_embeds=kg_inputs_embeds,
+#                 lang_attention_mask=lang_attention_mask,
+#                 kg_attention_mask=kg_attention_mask,
+#                 kg_padding_mask=kg_padding_mask,
+#                 token_type_ids=token_type_ids,
+#                 output_attentions=output_attentions,
+#                 output_hidden_states=output_hidden_states,
+#                 return_dict=True,
+#                 num_db=num_db,
+#                 gt_length=gt_length,
+#                 given_lang_tokens=1,
+#             )
+            
+#         # # 2. Beam Search Decoding    
+#         # else:
+#         #     output_ids = self.beam_search(
+#         #         lang_input_ids=lang_input_ids,
+#         #         kg_input_ids=kg_input_ids,
+#         #         # lang_inputs_embeds=lang_inputs_embeds,
+#         #         kg_inputs_embeds=kg_inputs_embeds,
+#         #         lang_attention_mask=lang_attention_mask,
+#         #         kg_attention_mask=kg_attention_mask,
+#         #         kg_padding_mask=kg_padding_mask,
+#         #         token_type_ids=token_type_ids,
+#         #         output_attentions=output_attentions,
+#         #         output_hidden_states=output_hidden_states,
+#         #         return_dict=return_dict,
+#         #         search_beam_size=search_beam_size,      
+#         #         num_db=num_db,
+#         #         gt_length=gt_length,
+#         #         given_lang_tokens=1,
+#         #     )
+                                                      
+#         if clean_outputs:
+#             output_ids = self.clean_output_ids(output_ids=output_ids,
+#                                                gt_length=gt_length,
+#                                                num_sep_id=num_db,
+#                                                given_gt_length=given_gt_length)
+        
+#         outputs = (output_ids, kg_input_ids, lang_input_ids)
+#         return outputs
+    
+#     def greedy_decode(
+#         self,
+#         lang_input_ids=None,
+#         kg_input_ids=None,
+#         # lang_inputs_embeds=None,
+#         kg_inputs_embeds=None,
+#         lang_attention_mask=None,
+#         kg_attention_mask=None,
+#         kg_padding_mask=None,
+#         kg_label_mask=None,
+#         lm_label=None,
+#         kg_label=None,
+#         kg_ext_input_ids = None,
+#         kg_ext_attention_mask = None,
+#         token_type_ids=None,
+#         output_attentions=None,
+#         output_hidden_states=None,
+#         return_dict=True,
+#         num_db=1,
+#         gt_length=None,
+#         given_lang_tokens=1,
+#         ):
+        
+#         assert len(lang_input_ids.shape) == 2
+#         batch_size, max_length = lang_input_ids.shape
+        
+#         # set output_length for max_length within a batch
+#         output_length = torch.max(gt_length).detach()
+#         assert output_length <= max_length
+        
+#         # construct initial settings [[CLS], [MASK]]
+#         output_ids = []
+#         curr_ids = lang_input_ids[:, :given_lang_tokens]
+#         mask_ids = lang_input_ids.new(batch_size, 1).fill_(self.mask_token_id)
+#         output_ids.append(curr_ids)
+        
+#         next_pos = given_lang_tokens
+#         while next_pos < output_length:
+            
+#             curr_length = list(curr_ids.size())[1]
+#             curr_ids = torch.cat([curr_ids, mask_ids], axis=1)
+#             curr_attention_mask = lang_attention_mask[:, :curr_length+1, :curr_length+1]
+#             curr_token_type_ids = token_type_ids[:, :curr_length+1]
+#             assert curr_ids.shape[-1] == curr_attention_mask.shape[-1]
+            
+#             # when dx, prx case, we should consider token_type_ids
+#             if num_db == 2:
+#                 curr_token_type_ids = self.convert_token_type_ids(curr_ids, curr_token_type_ids)
+            
+#             GTX_output = self.GTX(
+#                 lang_input_ids=curr_ids,
+#                 kg_input_ids=kg_input_ids,
+#                 # lang_inputs_embeds=lang_inputs_embeds,
+#                 kg_inputs_embeds=kg_inputs_embeds,
+#                 lang_attention_mask=curr_attention_mask,
+#                 kg_attention_mask=kg_attention_mask,
+#                 kg_padding_mask=kg_padding_mask,
+#                 token_type_ids=curr_token_type_ids,
+#                 kg_ext_input_ids = kg_ext_input_ids,
+#                 kg_ext_attention_mask = kg_ext_attention_mask,
+#                 output_attentions=output_attentions,
+#                 output_hidden_states=output_hidden_states,
+#                 return_dict=return_dict,
+#             )
+#             lang_output, _, _ = (
+#                 GTX_output.language_output,
+#                 GTX_output.kg_output,
+#                 GTX_output.pooled_output,
+#             )
+            
+#             # predict [MASK] by greedy infer.
+#             last_hidden = lang_output[:, -1, :]
+#             prediction_scores = self.lm_head(last_hidden)
+#             _, max_ids = torch.max(prediction_scores, dim=1)
+#             output_ids.append(max_ids.unsqueeze(1))
+            
+#             # setup for next loop
+#             curr_ids[:, curr_length] = max_ids
+#             next_pos += 1
+            
+#         output_ids = torch.cat(output_ids, dim=1)
+#         return output_ids
+    
+#     def decode_for_ppl(
+#         self,
+#         lang_input_ids=None,
+#         kg_input_ids=None,
+#         lang_inputs_embeds=None,
+#         kg_inputs_embeds=None,
+#         lang_attention_mask=None,
+#         kg_attention_mask=None,
+#         kg_padding_mask=None,
+#         kg_label_mask=None,
+#         lm_label=None,
+#         kg_label=None,
+#         kg_ext_input_ids = None,
+#         kg_ext_attention_mask = None,
+#         token_type_ids=None,
+#         output_attentions=None,
+#         output_hidden_states=None,
+#         return_dict=True,
+#         given_lang_tokens=1,
+#         clean_outputs=True,
+#         given_gt_length=False,
+#         search_beam_size=1,
+#         ):
+        
+#         total_ppl = 0.0
+        
+#         assert len(lang_input_ids.shape) == 2
+#         batch_size, max_length = lang_input_ids.shape
+        
+#         # set output_length for max_length within a batch
+#         gt_length = torch.sum(lang_input_ids.not_equal(self.pad_token_id), axis=1)
+#         output_length = torch.max(gt_length).detach()
+#         assert output_length <= max_length
+        
+#         # construct initial settings [[CLS], [MASK]]
+#         mask_ids = lang_input_ids.new(batch_size, 1).fill_(self.mask_token_id)
+        
+#         next_pos = 1
+#         while next_pos < output_length:
+            
+#             curr_ids = torch.cat([lang_input_ids[:, :next_pos], mask_ids], axis=1)
+#             curr_length = list(curr_ids.size())[1]
+#             curr_attention_mask = lang_attention_mask[:, :curr_length, :curr_length]
+#             curr_token_type_ids = token_type_ids[:, :curr_length]
+            
+#             assert curr_ids.shape[-1] == curr_attention_mask.shape[-1]
+            
+#             GTX_output = self.GTX(
+#                 lang_input_ids=curr_ids,
+#                 kg_input_ids=kg_input_ids,
+#                 # lang_inputs_embeds=lang_inputs_embeds,
+#                 kg_inputs_embeds=kg_inputs_embeds,
+#                 lang_attention_mask=curr_attention_mask,
+#                 kg_attention_mask=kg_attention_mask,
+#                 kg_padding_mask=kg_padding_mask,
+#                 token_type_ids=curr_token_type_ids,
+#                 kg_ext_input_ids = kg_ext_input_ids,
+#                 kg_ext_attention_mask = kg_ext_attention_mask,
+#                 output_attentions=output_attentions,
+#                 output_hidden_states=output_hidden_states,
+#                 return_dict=return_dict,
+#             )
+#             lang_output, _, _ = (
+#                 GTX_output.language_output,
+#                 GTX_output.kg_output,
+#                 GTX_output.pooled_output,
+#             )
+            
+#             last_hidden = lang_output[:, -1, :]
+#             prediction_scores = self.lm_head(last_hidden)
+#             _lm_label = lang_input_ids[:, next_pos]        
+#             # log_scores = F.log_softmax(prediction_scores, dim=-1)
+            
+#             masked_lm_loss = self.ce_loss(
+#                 prediction_scores.view(-1, self.config.vocab_size['lang']),
+#                 _lm_label,
+#             )
+#             loss_mask = (curr_length <= gt_length)
+#             total_ppl += masked_lm_loss * loss_mask
+            
+#             next_pos += 1
+            
+#         total_ppl = torch.exp(total_ppl/gt_length)
+#         batch_mean_ppl = total_ppl.mean().detach()
+#         return batch_mean_ppl
+            
+#     def beam_search(
+#         self,
+#         lang_input_ids=None,
+#         kg_input_ids=None,
+#         # lang_inputs_embeds=None,
+#         kg_inputs_embeds=None,
+#         lang_attention_mask=None,
+#         kg_attention_mask=None,
+#         kg_padding_mask=None,
+#         kg_label_mask=None,
+#         lm_label=None,
+#         kg_label=None,
+#         kg_ext_input_ids = None,
+#         kg_ext_attention_mask = None,
+#         token_type_ids=None,
+#         output_attentions=None,
+#         output_hidden_states=None,
+#         return_dict=True,
+#         search_beam_size=5,
+#         num_db=1,
+#         gt_length=None,
+#         given_lang_tokens=1,
+#         ):
+        
+#         batch_size, max_length = lang_input_ids.shape
+
+#         # find maximum output_length
+#         output_length = torch.max(gt_length).detach()
+#         assert output_length <= max_length
+        
+#         # init settings
+#         curr_ids = lang_input_ids[:, :1]
+#         mask_ids = curr_ids.new(batch_size, 1).fill_(self.mask_token_id)
+#         # output_ids = []
+#         # output_ids.append(curr_ids)
+
+#         next_pos = 1
+#         K = search_beam_size
+
+#         total_scores = []
+#         beam_masks = []
+#         step_ids = []
+#         step_back_ptrs = []
+#         # partial_seqs = []
+#         # forbid_word_mask = None
+#         # buf_matrix = None
+
+#         while next_pos < output_length:
+            
+#             # construct current inputs
+#             curr_length = list(curr_ids.size())[1]
+#             curr_ids = torch.cat([curr_ids, mask_ids], axis=1)    
+#             curr_token_type_ids = token_type_ids[:, :curr_length+1]
+#             curr_attention_mask = lang_attention_mask[:, :curr_length+1, :curr_length+1]
+            
+#             # when dx,prx case, we should consider token_type_ids
+#             if num_db == 2:
+#                 curr_token_type_ids = self.convert_token_type_ids(curr_ids, curr_token_type_ids)
+            
+#             # output for current inputs
+#             GTX_output = self.GTX(
+#                 lang_input_ids=curr_ids,
+#                 kg_input_ids=kg_input_ids,
+#                 lang_attention_mask=curr_attention_mask,
+#                 kg_padding_mask=kg_padding_mask,
+#                 token_type_ids=curr_token_type_ids,
+#                 kg_ext_input_ids = kg_ext_input_ids,
+#                 kg_ext_attention_mask = kg_ext_attention_mask,
+#                 output_attentions=False,
+#                 output_hidden_states=False,
+#                 return_dict=True,
+#             )
+#             lang_output, _, _ = (
+#                 GTX_output.language_output,
+#                 GTX_output.kg_output,
+#                 GTX_output.pooled_output,
+#             )
+#             last_hidden = lang_output[:, -1, :]
+#             prediction_scores = self.lm_head(last_hidden)
+#             log_scores = F.log_softmax(prediction_scores, dim=-1)
+            
+#             # choose top-k logits and indices
+#             kk_scores, kk_ids = torch.topk(log_scores, k=K) # (batch_size, beam_size) / (batch_size*beam_size, beam_size)
+            
+#             def first_expand(x):
+#                 input_shape = list(x.size())
+#                 expanded_shape = input_shape[:1] + [1] + input_shape[1:]
+#                 x = torch.reshape(x, expanded_shape)
+#                 repeat_count = [1, K] + [1] * (len(input_shape) - 1)
+#                 x = x.repeat(*repeat_count)
+#                 x = torch.reshape(x, [input_shape[0] * K] + input_shape[1:])
+#                 return x
+            
+#             def select_beam_items(x, ids):
+#                 id_shape = list(ids.size())
+#                 id_rank = len(id_shape)
+#                 assert len(id_shape) == 2
+#                 x_shape = list(x.size())
+#                 x = torch.reshape(x, [batch_size, K] + x_shape[1:])
+#                 x_rank = len(x_shape) + 1
+#                 assert x_rank >= 2
+#                 if id_rank < x_rank:
+#                     ids = torch.reshape(
+#                         ids, id_shape + [1] * (x_rank - id_rank))
+#                     ids = ids.expand(id_shape + x_shape[1:])
+#                 y = torch.gather(x, 1, ids)
+#                 y = torch.reshape(y, x_shape)
+#                 return y
+            
+#             if len(total_scores) == 0: # for the first time,
+#                 k_ids = torch.reshape(kk_ids, [batch_size, K])
+#                 back_ptrs = torch.zeros(batch_size, K, dtype=torch.long)
+#                 k_scores = torch.reshape(kk_scores, [batch_size, K])
+#                 print('start:', k_scores, k_ids)
+#             else:
+#                 last_eos = torch.reshape(beam_masks[-1], [batch_size * K, 1])
+#                 last_seq_scores = torch.reshape(total_scores[-1], [batch_size * K, 1])
+#                 kk_scores += last_eos * (-10000.0) + last_seq_scores
+#                 kk_scores = torch.reshape(kk_scores, [batch_size, K * K])
+#                 k_scores, k_ids = torch.topk(kk_scores, k=K)
+#                 back_ptrs = torch.floor_divide(k_ids, K)
+#                 kk_ids = torch.reshape(kk_ids, [batch_size, K * K])
+#                 print('kk_ids', kk_ids[0])
+#                 print(k_ids[0])
+#                 k_ids = torch.gather(kk_ids, 1, k_ids)
+#                 print('gather 이후:', k_ids[0])
+#                 curr_ids = select_beam_items(curr_ids, back_ptrs.long())
+#                 print(curr_ids.shape)
+#                 for idx in range(curr_ids.shape[0]):
+#                     print(self.tokenizer.decode(curr_ids[idx]))
+#                 print()
+                
+#             step_back_ptrs.append(back_ptrs)
+#             step_ids.append(k_ids)
+#             beam_masks.append(torch.eq(k_ids, self.sep_token_id).float())
+#             total_scores.append(k_scores)
+
+#             if next_pos == 1: # for the first time,
+#                 curr_ids = first_expand(curr_ids)
+#                 kg_input_ids = first_expand(kg_input_ids)
+#                 token_type_ids = first_expand(token_type_ids)
+#                 lang_attention_mask = first_expand(lang_attention_mask)
+#                 kg_padding_mask = first_expand(kg_padding_mask)
+#                 mask_ids = first_expand(mask_ids)
+            
+#             # fill out the [MASK]'s position with stretched ids
+#             curr_ids[:, curr_length] = torch.reshape(k_ids, [batch_size * K])
+#             next_pos += 1
+            
+#         output_ids = curr_ids.reshape(batch_size, K, -1)
+        
+#         for idx in range(K):
+#             print(f'batch_idx:0, beam_idx:{idx}:', self.tokenizer.decode(output_ids[0][idx], skip_special_tokens=True))
+#             print()
+#         print('original text:', self.tokenizer.decode(lang_input_ids[0], skip_special_tokens=True))
+        
+#         return output_ids
+    
+#     def clean_output_ids(self, output_ids, gt_length, num_sep_id, given_gt_length):
+#         c_output_ids = []
+#         if given_gt_length:
+#             for i, o in enumerate(output_ids):
+#                 l_gt = gt_length[i]
+#                 sep_idx = o.eq(self.sep_token_id)
+#                 l_sep = torch.nonzero(sep_idx)[num_sep_id-1] if sep_idx.sum() >= num_sep_id else 512
+#                 c_output_ids.append(o[:min(l_gt, l_sep)])
+#         else:
+#             for o in output_ids:
+#                 if len(o.shape) == 1: # greedy
+#                     sep_idx = o.eq(self.sep_token_id)
+#                     l_sep = torch.nonzero(sep_idx)[num_sep_id-1] if sep_idx.sum() >= num_sep_id else 512
+#                     c_output_ids.append(o[:min(512, l_sep)])
+#                 else: # beam search
+#                     c_output_id = []
+#                     for oo in o:
+#                         sep_idx = oo.eq(self.sep_token_id)
+#                         l_sep = torch.nonzero(sep_idx)[num_sep_id-1] if sep_idx.sum() >= num_sep_id else 512
+#                         c_output_id.append(oo[:min(512, l_sep)])
+#                     assert len(c_output_id) == o.shape[0] # beam size
+#                     c_output_ids.append(c_output_id)
+#         return c_output_ids
+    
+#     def convert_token_type_ids(self, curr_ids, curr_token_type_ids):
+#         for idx in range(len(curr_ids)):
+#             if self.sep_token_id in curr_ids[idx][-2]:
+#                 first_sep_idx = torch.nonzero(curr_ids[idx].eq(self.sep_token_id))[0]
+#                 curr_token_type_ids[idx][first_sep_idx+1:] = 1        
+#         return curr_token_type_ids
+        
+#     # def perturb_graph_part(self,
+#     #                        kg_input_ids,
+#     #                        kg_inputs_embeds,
+#     #                        kg_attention_mask,
+#     #                        kg_padding_mask,
+#     #                        perturb_type):
+#     #     self.rand_embeds = nn.Embedding(config.vocab_size['kg'], config.hidden_size)
+#     #     if perturb_type == 'init_all':
+#     #         kg_inputs_embeds = self.rand_embeds(kg_input_ids) # make random kg_embeds
+#     #         kg_input_ids = None # remove kg_input_ids
+            
+#     #     elif perturb_type == 'pad_all':
+#     #         kg_input_ids[kg_input_ids>0] = 0 # remove kg_input_ids
+#     #         kg_padding_mask[kg_padding_mask>0] = 0.0 # all maksed
+            
+#     #     elif perturb_type == 'init_literal':
+#     #         raise NotImplementedError("Not yet")
+        
+#     #     return (
+#     #         kg_input_ids,
+#     #         kg_inputs_embeds,
+#     #         kg_attention_mask,
+#     #         kg_padding_mask
+#     #         )
+    
+    
+    
 class GTXForGeneration(GTXPreTrainedModel):
-    def __init__(self, config, tokenizer):
+    def __init__(self, config):
         super().__init__(config)
-        
         # Configuration
-        config.use_ce_pooler = True
         self.config = config
-        # self.num_kg_labels = config.num_kg_labels
-        
+        self.num_kg_labels = config.num_kg_labels
+
         # GTX backbone
         self.GTX = GTXModel(config)
+        self.dropout = nn.Dropout(config.hidden_dropout_prob)
+        # self.classifier = nn.Linear(config.hidden_size, config.num_kg_labels)
+        # self.edge_classifier = nn.Sequential(nn.Linear(config.hidden_size*2, config.hidden_size*2),
+        #                                     nn.Tanh(),
+        #                                     nn.Linear(config.hidden_size*2, config.num_relations))
 
         # Pre-training heads
         self.lm_head = GTXPreTrainingHeads(config, self.GTX.lang_embeddings.word_embeddings.weight)
-        
-        # Tokenizer
-        self.tokenizer = tokenizer
-        self.pad_token_id = tokenizer.pad_token_id
-        self.sep_token_id = tokenizer.sep_token_id
-        self.mask_token_id = tokenizer.mask_token_id
-        
+
         # Weight initialization
         self.init_weights()
 
-        # Use Pretrained-LM in Language Part
-        self.GTX.encoder.re_init_to_pretrained_lang_model()
-        
         # Warm start KG embedding
         if not config.gcn and config.pretrained_kg_embedding:
             notifier.critical("Load pretrained embedding for translation based KG-GTX")
@@ -1808,11 +2304,23 @@ class GTXForGeneration(GTXPreTrainedModel):
             del new_embedding
             #torch.cuda.empty_cache()
 
-        self.rand_embeds = nn.Embedding(config.vocab_size['kg'], config.hidden_size)
-        
-        # for ppl
+        # Use Pretrained-LM in Language Part
+        self.GTX.encoder.re_init_to_pretrained_lang_model()
+
+        # Loss functions
         self.ce_loss = nn.CrossEntropyLoss(reduction='none')
+        self.loss_fcts = {
+            "l2": SmoothL1Loss(reduction="none"),
+            "mse": MSELoss(reduction="none"),
+            "ce": CrossEntropyLoss(),
+            "tri": nn.TripletMarginLoss()#(margin=config.margin)
+        }
         
+        # Rules for special_token_ids: bert-base-uncased
+        self.sep_token_id = 102
+        self.mask_token_id = 103
+        self.pad_token_id = 0
+
     def forward(
         self,
         lang_input_ids=None,
@@ -1825,41 +2333,220 @@ class GTXForGeneration(GTXPreTrainedModel):
         kg_label_mask=None,
         lm_label=None,
         kg_label=None,
+        cross_label=None,
         token_type_ids=None,
+        rc_indeces=None,
         kg_ext_input_ids = None,
         kg_ext_attention_mask = None,
         output_attentions=None,
         output_hidden_states=None,
         return_dict=True,
+    ):
+        device = lang_input_ids.device #if lang_input_ids is not None else inputs_embeds.device
+        GTX_output = self.GTX(
+            lang_input_ids=lang_input_ids,
+            kg_input_ids=kg_input_ids,
+            lang_inputs_embeds=lang_inputs_embeds,
+            kg_inputs_embeds=kg_inputs_embeds,
+            lang_attention_mask=lang_attention_mask,
+            kg_attention_mask=kg_attention_mask,
+            kg_padding_mask=kg_padding_mask,
+            token_type_ids=token_type_ids,
+            kg_ext_input_ids = kg_ext_input_ids,
+            kg_ext_attention_mask = kg_ext_attention_mask,
+            output_attentions=output_attentions,
+            output_hidden_states=output_hidden_states,
+            return_dict=return_dict,
+        )
+
+        lang_output, kg_output, cross_relationship_score = (
+            GTX_output.language_output,
+            GTX_output.kg_output,
+            GTX_output.pooled_output,
+        )
+        lang_prediction_scores = self.lm_head(lang_output)
+
+        # Loss calculation
+        total_loss = (
+            None
+            if (lm_label is None and kg_label is None)
+            else torch.tensor(0.0, device=device)
+        )
+        loss_dict = dict()
+        if lm_label is not None:
+            _lm_label = lm_label.view(-1)
+            positive_batch_size = _lm_label.size(0)
+            masked_lm_loss = self.loss_fcts["ce"](
+                lang_prediction_scores.view(-1, self.config.vocab_size['lang'])[:positive_batch_size],
+                _lm_label,
+            )
+            total_loss += masked_lm_loss
+            loss_dict['lm_loss']=masked_lm_loss.mean().detach()
+
+        loss_dict['loss'] = total_loss.mean().detach()
+        if not return_dict:
+            output = (
+                loss_dict,
+                lang_prediction_scores,
+                # kg_prediction_scores,
+                cross_relationship_score,
+
+            ) + GTX_output[3:]
+            return ((total_loss,) + output) if total_loss is not None else output
+
+        # return GTXForDownstreamOutput(
+        #     loss=total_loss,
+        #     loss_dict=loss_dict,
+        #     pooled_logits=cross_relationship_score.detach(),
+        #     language_hidden_states=GTX_output.language_hidden_states,
+        #     kg_hidden_states=GTX_output.kg_hidden_states,
+        #     language_attentions=GTX_output.language_attentions,
+        #     kg_attentions=GTX_output.kg_attentions,
+        #     cross_encoder_attentions=GTX_output.cross_encoder_attentions,
+        # )
+        return GTXForPreTrainingOutput(
+            loss=total_loss,
+            loss_dict=loss_dict,
+            lang_prediction_logits=lang_prediction_scores.detach(),
+            # kg_prediction_logits=kg_prediction_scores.detach(),
+            cross_relationship_score=cross_relationship_score.detach(),
+            language_hidden_states=GTX_output.language_hidden_states,
+            kg_hidden_states=GTX_output.kg_hidden_states,
+            language_attentions=GTX_output.language_attentions,
+            kg_attentions=GTX_output.kg_attentions,
+            cross_encoder_attentions=GTX_output.cross_encoder_attentions,
+        )
+        
+    def decode_for_ppl(
+        self,
+        lang_input_ids=None,
+        kg_input_ids=None,
+        lang_inputs_embeds=None,
+        kg_inputs_embeds=None,
+        lang_attention_mask=None,
+        kg_attention_mask=None,
+        kg_padding_mask=None,
+        kg_label_mask=None,
+        lm_label=None,
+        kg_label=None,
+        kg_ext_input_ids = None,
+        kg_ext_attention_mask = None,
+        token_type_ids=None,
+        output_attentions=None,
+        output_hidden_states=None,
+        return_dict=True,
+        ):
+        
+        total_ppl = 0.0
+        
+        # when model is trained, we treat the original language input ids as the labels
+        if lm_label is not None:
+            ignore_index = -100
+            lm_label = lm_label.eq(ignore_index) * lang_input_ids.clone() + \
+                lm_label.not_equal(ignore_index) * lm_label.clone()
+        
+        assert len(lang_input_ids.shape) == 2
+        batch_size, max_seq_length = lang_input_ids.shape
+        
+        # set `max_output_length` for max length within a batch
+        gt_length = torch.sum(lang_input_ids.not_equal(self.pad_token_id), axis=1)
+        max_output_length = torch.max(gt_length).detach()
+        assert max_output_length <= max_seq_length
+        
+        # construct initial settings [[CLS], [MASK]]
+        mask_ids = lang_input_ids.new(batch_size, 1).fill_(self.mask_token_id)
+        
+        next_pos = 1
+        while next_pos < max_output_length:
+            
+            curr_ids = torch.cat([lang_input_ids[:, :next_pos], mask_ids], axis=1)
+            curr_length = list(curr_ids.size())[1]
+            curr_attention_mask = lang_attention_mask[:, :curr_length, :curr_length]
+            curr_token_type_ids = token_type_ids[:, :curr_length]
+            
+            assert curr_ids.shape[-1] == curr_attention_mask.shape[-1]
+
+            GTX_output = self.GTX(
+                lang_input_ids=curr_ids,
+                kg_input_ids=kg_input_ids,
+                lang_inputs_embeds=lang_inputs_embeds,
+                kg_inputs_embeds=kg_inputs_embeds,
+                lang_attention_mask=curr_attention_mask,
+                kg_attention_mask=kg_attention_mask,
+                kg_padding_mask=kg_padding_mask,
+                token_type_ids=curr_token_type_ids,
+                kg_ext_input_ids = kg_ext_input_ids,
+                kg_ext_attention_mask = kg_ext_attention_mask,
+                output_attentions=output_attentions,
+                output_hidden_states=output_hidden_states,
+                return_dict=return_dict,
+            )
+            lang_output, _, _ = (
+                GTX_output.language_output,
+                GTX_output.kg_output,
+                GTX_output.pooled_output,
+            )
+        
+            last_hidden = lang_output[:, -1, :]
+            prediction_scores = self.lm_head(last_hidden)
+            _lm_label = lm_label[:, next_pos]
+            # log_scores = F.log_softmax(prediction_scores, dim=-1)
+            
+            masked_lm_loss = self.ce_loss(
+                prediction_scores.view(-1, self.config.vocab_size['lang']),
+                _lm_label,
+            )
+            loss_mask = (curr_length <= gt_length)
+            total_ppl += masked_lm_loss * loss_mask
+            
+            next_pos += 1
+            
+        total_ppl = torch.exp(total_ppl/gt_length)
+        batch_mean_ppl = total_ppl.mean().detach()
+        return batch_mean_ppl, lm_label
+    
+    def decode(
+        self,
+        lang_input_ids=None,
+        kg_input_ids=None,
+        lang_inputs_embeds=None,
+        kg_inputs_embeds=None,
+        lang_attention_mask=None,
+        kg_attention_mask=None,
+        kg_padding_mask=None,
+        kg_label_mask=None,
+        lm_label=None,
+        kg_label=None,
+        kg_ext_input_ids = None,
+        kg_ext_attention_mask = None,
+        token_type_ids=None,
+        output_attentions=None,
+        output_hidden_states=None,
+        return_dict=True,
         given_lang_tokens=1,
-        perturb_type=None,
         clean_outputs=True,
         given_gt_length=False,
         search_beam_size=1,
         ):
         
         device = lang_input_ids.device if lang_input_ids is not None else lang_inputs_embeds.device
-        
-        # if perturbation exists
-        if perturb_type:
-            org_kg_input_ids = kg_input_ids.clone()
-            kg_input_ids, kg_inputs_embeds, kg_attention_mask, kg_padding_mask = \
-                self.perturb_graph_part(kg_input_ids=kg_input_ids,
-                                        kg_inputs_embeds=kg_inputs_embeds,
-                                        kg_attention_mask=kg_attention_mask,
-                                        kg_padding_mask=kg_padding_mask,
-                                        perturb_type=perturb_type)
+
+        # if lm_label is not None:
+        #     ignore_index = -100
+        #     lm_label = lm_label.eq(ignore_index) * lang_input_ids.clone() + \
+        #         lm_label.not_equal(ignore_index) * lm_label.clone()
                 
-        # num_db: dx,prx(2) / px(1)
-        num_db = len(torch.bincount(token_type_ids.flatten()))
+        # Choose the database (dx/px, rx)
+        num_db = len(torch.bincount(token_type_ids[0]))
+        # Calcuate ground truth length
         gt_length = torch.sum(lang_input_ids.not_equal(self.pad_token_id), axis=1)
         
-        # 1. Greedy decoding
+        # 1. Greedy Decoding
         if search_beam_size == 1:
-            output_ids = self.greedy_decode(
+            output_ids = self._greedy_decode(
                 lang_input_ids=lang_input_ids,
                 kg_input_ids=kg_input_ids,
-                # lang_inputs_embeds=None,
+                lang_inputs_embeds=None,
                 kg_inputs_embeds=kg_inputs_embeds,
                 lang_attention_mask=lang_attention_mask,
                 kg_attention_mask=kg_attention_mask,
@@ -1873,41 +2560,42 @@ class GTXForGeneration(GTXPreTrainedModel):
                 given_lang_tokens=1,
             )
             
-        # 2. Beam Search Decoding    
-        else:
-            output_ids = self.beam_search(
-                lang_input_ids=lang_input_ids,
-                kg_input_ids=kg_input_ids,
-                # lang_inputs_embeds=lang_inputs_embeds,
-                kg_inputs_embeds=kg_inputs_embeds,
-                lang_attention_mask=lang_attention_mask,
-                kg_attention_mask=kg_attention_mask,
-                kg_padding_mask=kg_padding_mask,
-                token_type_ids=token_type_ids,
-                output_attentions=output_attentions,
-                output_hidden_states=output_hidden_states,
-                return_dict=return_dict,
-                search_beam_size=search_beam_size,      
-                num_db=num_db,
-                gt_length=gt_length,
-                given_lang_tokens=1,
-            )
-                                                      
+        # # 2. Beam Search Decoding    
+        # else:
+        #     output_ids = self._beam_search(
+        #         lang_input_ids=lang_input_ids,
+        #         kg_input_ids=kg_input_ids,
+        #         # lang_inputs_embeds=lang_inputs_embeds,
+        #         kg_inputs_embeds=kg_inputs_embeds,
+        #         lang_attention_mask=lang_attention_mask,
+        #         kg_attention_mask=kg_attention_mask,
+        #         kg_padding_mask=kg_padding_mask,
+        #         token_type_ids=token_type_ids,
+        #         output_attentions=output_attentions,
+        #         output_hidden_states=output_hidden_states,
+        #         return_dict=return_dict,
+        #         search_beam_size=search_beam_size,      
+        #         num_db=num_db,
+        #         gt_length=gt_length,
+        #         given_lang_tokens=1,
+        #     )
+        
+        #TODO: checkout clean_outputs
+        
         if clean_outputs:
             output_ids = self.clean_output_ids(output_ids=output_ids,
                                                gt_length=gt_length,
                                                num_sep_id=num_db,
                                                given_gt_length=given_gt_length)
         
-        outputs = (output_ids, kg_input_ids, lang_input_ids) if perturb_type is None \
-            else (output_ids, org_kg_input_ids, lang_input_ids, kg_input_ids)
+        outputs = (output_ids, kg_input_ids, lang_input_ids)
         return outputs
     
-    def greedy_decode(
+    def _greedy_decode(
         self,
         lang_input_ids=None,
         kg_input_ids=None,
-        # lang_inputs_embeds=None,
+        lang_inputs_embeds=None,
         kg_inputs_embeds=None,
         lang_attention_mask=None,
         kg_attention_mask=None,
@@ -1927,11 +2615,11 @@ class GTXForGeneration(GTXPreTrainedModel):
         ):
         
         assert len(lang_input_ids.shape) == 2
-        batch_size, max_length = lang_input_ids.shape
+        batch_size, max_seq_length = lang_input_ids.shape
         
         # set output_length for max_length within a batch
-        output_length = torch.max(gt_length).detach()
-        assert output_length <= max_length
+        max_output_length = torch.max(gt_length).detach()
+        assert max_output_length <= max_seq_length
         
         # construct initial settings [[CLS], [MASK]]
         output_ids = []
@@ -1940,7 +2628,7 @@ class GTXForGeneration(GTXPreTrainedModel):
         output_ids.append(curr_ids)
         
         next_pos = given_lang_tokens
-        while next_pos < output_length:
+        while next_pos < max_output_length:
             
             curr_length = list(curr_ids.size())[1]
             curr_ids = torch.cat([curr_ids, mask_ids], axis=1)
@@ -1955,7 +2643,7 @@ class GTXForGeneration(GTXPreTrainedModel):
             GTX_output = self.GTX(
                 lang_input_ids=curr_ids,
                 kg_input_ids=kg_input_ids,
-                # lang_inputs_embeds=lang_inputs_embeds,
+                lang_inputs_embeds=lang_inputs_embeds,
                 kg_inputs_embeds=kg_inputs_embeds,
                 lang_attention_mask=curr_attention_mask,
                 kg_attention_mask=kg_attention_mask,
@@ -1986,94 +2674,7 @@ class GTXForGeneration(GTXPreTrainedModel):
         output_ids = torch.cat(output_ids, dim=1)
         return output_ids
     
-    def decode_for_ppl(
-        self,
-        lang_input_ids=None,
-        kg_input_ids=None,
-        lang_inputs_embeds=None,
-        kg_inputs_embeds=None,
-        lang_attention_mask=None,
-        kg_attention_mask=None,
-        kg_padding_mask=None,
-        kg_label_mask=None,
-        lm_label=None,
-        kg_label=None,
-        kg_ext_input_ids = None,
-        kg_ext_attention_mask = None,
-        token_type_ids=None,
-        output_attentions=None,
-        output_hidden_states=None,
-        return_dict=True,
-        given_lang_tokens=1,
-        perturb_type=None,
-        clean_outputs=True,
-        given_gt_length=False,
-        search_beam_size=1,
-        ):
-        
-        total_ppl = 0.0
-        
-        assert len(lang_input_ids.shape) == 2
-        batch_size, max_length = lang_input_ids.shape
-        
-        # set output_length for max_length within a batch
-        gt_length = torch.sum(lang_input_ids.not_equal(self.pad_token_id), axis=1)
-        output_length = torch.max(gt_length).detach()
-        assert output_length <= max_length
-        
-        # construct initial settings [[CLS], [MASK]]
-        mask_ids = lang_input_ids.new(batch_size, 1).fill_(self.mask_token_id)
-        
-        next_pos = 1
-        while next_pos < output_length:
-            
-            curr_ids = torch.cat([lang_input_ids[:, :next_pos], mask_ids], axis=1)
-            curr_length = list(curr_ids.size())[1]
-            curr_attention_mask = lang_attention_mask[:, :curr_length, :curr_length]
-            curr_token_type_ids = token_type_ids[:, :curr_length]
-            
-            assert curr_ids.shape[-1] == curr_attention_mask.shape[-1]
-            
-            GTX_output = self.GTX(
-                lang_input_ids=curr_ids,
-                kg_input_ids=kg_input_ids,
-                # lang_inputs_embeds=lang_inputs_embeds,
-                kg_inputs_embeds=kg_inputs_embeds,
-                lang_attention_mask=curr_attention_mask,
-                kg_attention_mask=kg_attention_mask,
-                kg_padding_mask=kg_padding_mask,
-                token_type_ids=curr_token_type_ids,
-                kg_ext_input_ids = kg_ext_input_ids,
-                kg_ext_attention_mask = kg_ext_attention_mask,
-                output_attentions=output_attentions,
-                output_hidden_states=output_hidden_states,
-                return_dict=return_dict,
-            )
-            lang_output, _, _ = (
-                GTX_output.language_output,
-                GTX_output.kg_output,
-                GTX_output.pooled_output,
-            )
-            
-            last_hidden = lang_output[:, -1, :]
-            prediction_scores = self.lm_head(last_hidden)
-            _lm_label = lang_input_ids[:, next_pos]        
-            # log_scores = F.log_softmax(prediction_scores, dim=-1)
-            
-            masked_lm_loss = self.ce_loss(
-                prediction_scores.view(-1, self.config.vocab_size['lang']),
-                _lm_label,
-            )
-            loss_mask = (curr_length <= gt_length)
-            total_ppl += masked_lm_loss * loss_mask
-            
-            next_pos += 1
-            
-        total_ppl = torch.exp(total_ppl/gt_length)
-        batch_mean_ppl = total_ppl.mean().detach()
-        return batch_mean_ppl
-            
-    def beam_search(
+    def _beam_search(
         self,
         lang_input_ids=None,
         kg_input_ids=None,
@@ -2261,162 +2862,3 @@ class GTXForGeneration(GTXPreTrainedModel):
                 first_sep_idx = torch.nonzero(curr_ids[idx].eq(self.sep_token_id))[0]
                 curr_token_type_ids[idx][first_sep_idx+1:] = 1        
         return curr_token_type_ids
-        
-    def perturb_graph_part(self,
-                           kg_input_ids,
-                           kg_inputs_embeds,
-                           kg_attention_mask,
-                           kg_padding_mask,
-                           perturb_type):
-        
-        if perturb_type == 'init_all':
-            kg_inputs_embeds = self.rand_embeds(kg_input_ids) # make random kg_embeds
-            kg_input_ids = None # remove kg_input_ids
-            
-        elif perturb_type == 'pad_all':
-            kg_input_ids[kg_input_ids>0] = 0 # remove kg_input_ids
-            kg_padding_mask[kg_padding_mask>0] = 0.0 # all maksed
-            
-        elif perturb_type == 'init_literal':
-            raise NotImplementedError("Not yet")
-        
-        return (
-            kg_input_ids,
-            kg_inputs_embeds,
-            kg_attention_mask,
-            kg_padding_mask
-            )
-            
-            
-            
-            # if forbid_word_mask is not None:
-            #     log_scores += (forbid_word_mask * -10000.0)
-            # if self.min_len and (next_pos-input_length+1 <= self.min_len):
-            #     log_scores[:, :, self.eos_id].fill_(-10000.0)
-            # if self.not_predict_set:
-            #     for token_id in self.not_predict_set:
-            #         log_scores[:, :, token_id].fill_(-10000.0)    
-            
-    #         if self.forbid_duplicate_ngrams:
-    #             wids = step_ids[-1].tolist()
-    #             ptrs = step_back_ptrs[-1].tolist()
-    #             if is_first:
-    #                 partial_seqs = []
-    #                 for b in range(batch_size):
-    #                     for k in range(K):
-    #                         partial_seqs.append([wids[b][k]])
-    #             else:
-    #                 new_partial_seqs = []
-    #                 for b in range(batch_size):
-    #                     for k in range(K):
-    #                         new_partial_seqs.append(
-    #                             partial_seqs[ptrs[b][k] + b * K] + [wids[b][k]])
-    #                 partial_seqs = new_partial_seqs
-
-    #             def get_dup_ngram_candidates(seq, n):
-    #                 cands = set()
-    #                 if len(seq) < n:
-    #                     return []
-    #                 tail = seq[-(n-1):]
-    #                 if self.forbid_ignore_set and any(tk in self.forbid_ignore_set for tk in tail):
-    #                     return []
-    #                 for i in range(len(seq) - (n - 1)):
-    #                     mismatch = False
-    #                     for j in range(n - 1):
-    #                         if tail[j] != seq[i + j]:
-    #                             mismatch = True
-    #                             break
-    #                     if (not mismatch) and not(self.forbid_ignore_set and (seq[i + n - 1] in self.forbid_ignore_set)):
-    #                         cands.add(seq[i + n - 1])
-    #                 return list(sorted(cands))
-
-    #             if len(partial_seqs[0]) >= self.ngram_size:
-    #                 dup_cands = []
-    #                 for seq in partial_seqs:
-    #                     dup_cands.append(
-    #                         get_dup_ngram_candidates(seq, self.ngram_size))
-    #                 if max(len(x) for x in dup_cands) > 0:
-    #                     if buf_matrix is None:
-    #                         vocab_size = list(log_scores.size())[-1]
-    #                         buf_matrix = np.zeros(
-    #                             (batch_size * K, vocab_size), dtype=float)
-    #                     else:
-    #                         buf_matrix.fill(0)
-    #                     for bk, cands in enumerate(dup_cands):
-    #                         for i, wid in enumerate(cands):
-    #                             buf_matrix[bk, wid] = 1.0
-    #                     forbid_word_mask = torch.tensor(
-    #                         buf_matrix, dtype=log_scores.dtype)
-    #                     forbid_word_mask = torch.reshape(
-    #                         forbid_word_mask, [batch_size * K, 1, vocab_size]).cuda()
-    #                 else:
-    #                     forbid_word_mask = None
-    #         next_pos += 1
-
-    #     # [(batch, beam)]
-    #     total_scores = [x.tolist() for x in total_scores]
-    #     step_ids = [x.tolist() for x in step_ids]
-    #     step_back_ptrs = [x.tolist() for x in step_back_ptrs]
-    #     # back tracking
-    #     traces = {'pred_seq': [], 'scores': [], 'wids': [], 'ptrs': []}
-    #     for b in range(batch_size):
-    #         # [(beam,)]
-    #         scores = [x[b] for x in total_scores]
-    #         wids_list = [x[b] for x in step_ids]
-    #         ptrs = [x[b] for x in step_back_ptrs]
-    #         traces['scores'].append(scores)
-    #         traces['wids'].append(wids_list)
-    #         traces['ptrs'].append(ptrs)
-    #         # first we need to find the eos frame where all symbols are eos
-    #         # any frames after the eos frame are invalid
-    #         last_frame_id = len(scores) - 1
-    #         for i, wids in enumerate(wids_list):
-    #             if all(wid == self.eos_id for wid in wids):
-    #                 last_frame_id = i
-    #                 break
-    #         max_score = -math.inf
-    #         frame_id = -1
-    #         pos_in_frame = -1
-
-    #         for fid in range(last_frame_id + 1):
-    #             for i, wid in enumerate(wids_list[fid]):
-    #                 if wid == self.eos_id or fid == last_frame_id:
-    #                     s = scores[fid][i]
-    #                     if self.length_penalty > 0:
-    #                         s /= math.pow((5 + fid + 1) / 6.0,
-    #                                       self.length_penalty)
-    #                     if s > max_score:
-    #                         max_score = s
-    #                         frame_id = fid
-    #                         pos_in_frame = i
-    #         if frame_id == -1:
-    #             traces['pred_seq'].append([0])
-    #         else:
-    #             seq = [wids_list[frame_id][pos_in_frame]]
-    #             for fid in range(frame_id, 0, -1):
-    #                 pos_in_frame = ptrs[fid][pos_in_frame]
-    #                 seq.append(wids_list[fid - 1][pos_in_frame])
-    #             seq.reverse()
-    #             traces['pred_seq'].append(seq)
-
-    #     def _pad_sequence(sequences, max_len, padding_value=0):
-    #         trailing_dims = sequences[0].size()[1:]
-    #         out_dims = (len(sequences), max_len) + trailing_dims
-
-    #         out_tensor = sequences[0].data.new(*out_dims).fill_(padding_value)
-    #         for i, tensor in enumerate(sequences):
-    #             length = tensor.size(0)
-    #             # use index notation to prevent duplicate references to the tensor
-    #             out_tensor[i, :length, ...] = tensor
-    #         return out_tensor
-
-    #     # convert to tensors for DataParallel
-    #     for k in ('pred_seq', 'scores', 'wids', 'ptrs'):
-    #         ts_list = traces[k]
-    #         if not isinstance(ts_list[0], torch.Tensor):
-    #             dt = torch.float if k == 'scores' else torch.long
-    #             ts_list = [torch.tensor(it, dtype=dt) for it in ts_list]
-    #         traces[k] = _pad_sequence(
-    #             ts_list, output_length, padding_value=0).to(input_ids.device)
-
-    #     return traces
