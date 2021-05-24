@@ -161,6 +161,19 @@ class GTXModel(pl.LightningModule):
                 recrank = 1/((scores.argsort(descending=True)==batch_idx).nonzero()+1)
                 metrics[f"{label_domain}_Hits@{top_k}"] = hit
                 metrics[f"{label_domain}_MRR"] = recrank
+                
+        elif self.training_args.task == "Gen":
+            outputs = self.model(**batch)
+            metrics, decode_outputs = metrics_for_tasks(
+                task=self.training_args.task,
+                stage="test",
+                batch=batch,
+                outputs=outputs,
+                model=self.model, 
+                tokenizer=self.tokenizer
+            )
+            return [metrics, decode_outputs]
+            
         else:
             outputs = self.model(**batch)
             metrics = metrics_for_tasks(
@@ -168,12 +181,20 @@ class GTXModel(pl.LightningModule):
                 stage="test",
                 batch=batch,
                 outputs=outputs,
-                model=self.model if self.training_args.task == "Gen" else None,
-                tokenizer=self.tokenizer
+                # model=None,
+                # tokenizer=self.tokenizer
             )
         return metrics
     
     def test_epoch_end(self, test_epoch_outputs):
+        # preprocessing for `test_epoch_outputs`
+        if self.training_args.task == "Gen":  # For generation task, they might have decode_outputs together in `test_epoch_outputs`
+            test_decode_outputs = [output[1] for output in test_epoch_outputs] # only save decode outputs
+            test_epoch_outputs = [output[0] for output in test_epoch_outputs] # only save metrics
+            if not self.training_args.do_train and self.training_args.do_eval: # when only do generation
+                self.save_decode_files(test_decode_outputs)
+        
+        # final logging
         keys = test_epoch_outputs[0].keys()
         epoch_metrics = {k:torch.cat([test_epoch_output[k] \
             if len(test_epoch_output[k].size())!=0 else test_epoch_output[k].unsqueeze(0) \
@@ -236,3 +257,20 @@ class GTXModel(pl.LightningModule):
             self.tokenizer = AutoTokenizer.from_pretrained('bert-base-uncased')
         else:
             self.tokenizer = AutoTokenizer.from_pretrained('bert-base-uncased')
+            
+    def save_decode_files(self, decode_outputs):
+        output_dir = self.training_args.output_dir
+        assert self.training_args.task == "Gen"  # only for generation task
+        assert 'eval_output/' in output_dir  # only for evaluation mode
+        os.makedirs(output_dir, exist_ok=True)
+        
+        final_outputs = []
+        if isinstance(decode_outputs, list):
+            for decode_output in decode_outputs:
+                gt_graph, gt_text, pred = decode_output
+                data = {'graph': gt_graph, 'text': gt_text, 'pred': pred}
+                final_outputs.append(data)
+
+        import json
+        with open(output_dir, 'w') as fout:
+            json.dump(final_outputs, fout)

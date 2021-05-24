@@ -2382,7 +2382,10 @@ class GTXForGeneration(GTXPreTrainedModel):
             )
             total_loss += masked_lm_loss
             loss_dict['lm_loss']=masked_lm_loss.mean().detach()
-
+        
+        if lm_label is None and kg_label is None:
+            total_loss = torch.tensor(0.0, device=device)
+            
         loss_dict['loss'] = total_loss.mean().detach()
         if not return_dict:
             output = (
@@ -2442,8 +2445,11 @@ class GTXForGeneration(GTXPreTrainedModel):
         # when model is trained, we treat the original language input ids as the labels
         if lm_label is not None:
             ignore_index = -100
-            lm_label = lm_label.eq(ignore_index) * lang_input_ids.clone() + \
+            lang_input_ids = lm_label.eq(ignore_index) * lang_input_ids.clone() + \
                 lm_label.not_equal(ignore_index) * lm_label.clone()
+            lm_label = lang_input_ids.clone()
+        else:
+            lm_label = lang_input_ids.clone()
         
         assert len(lang_input_ids.shape) == 2
         batch_size, max_seq_length = lang_input_ids.shape

@@ -114,8 +114,11 @@ class Configuration():
                 json.dump(Config,g)
                 
         else:
-            self.TRAINING_CONFIG['run_name'] = 'evaluation/' + self.TRAINING_CONFIG['run_name'] 
+            _run_name = f"evaluation/{'scratch' if self.config['scratch'] else 'pretrained'}/{self.TASK_NAME}/{'KnowMix,{}/'.format(self.config['KnowMix']) if self.config['KnowMix'] else ''}{self.config['model']}/{self.RUN_NAME}_RNG{self.config['seed']}"
+            self.TRAINING_CONFIG['run_name'] = _run_name
+            # self.TRAINING_CONFIG['run_name'] = 'evaluation/' + self.TRAINING_CONFIG['run_name'] 
             self.TRAINING_CONFIG['model_name_or_path'] = os.path.join(self.EXP_PATH,f"pretrained_models/{'scratch' if self.config['scratch'] else 'pretrained'}/{self.TASK_NAME}/{'KnowMix,{}/'.format(self.config['KnowMix']) if self.config['KnowMix'] else ''}{self.config['model']}/{self.RUN_NAME}_RNG{self.config['seed']}")
+            
             # Setting for Eval
             if self.config['evaluation']:
                 # if self.config['task_number']==1:

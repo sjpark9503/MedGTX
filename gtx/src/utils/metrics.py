@@ -173,10 +173,14 @@ def metrics_for_tasks(task,
             bleu_tot_scores = bleu_all(list_of_references=batch_gt_strings_list, hypotheses=batch_pred_strings)
             for bleu_metric in bleu_tot_scores.keys():
                 metrics[f"{stage}_{bleu_metric}"] = torch.tensor(bleu_tot_scores[bleu_metric])
-        
                         
             # save eval_output files
+            batch_kg_input_ids = batch['kg_input_ids'].cpu()
+            org_lang_input_ids = org_lang_input_ids.cpu()
+            pred_output_ids = [tensor_ids.cpu() for tensor_ids in pred]
             
+            decode_outputs = (batch_kg_input_ids, org_lang_input_ids, pred_output_ids)
+            return metrics, decode_outputs
     else:
         raise ValueError("Task not exist")
 
