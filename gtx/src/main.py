@@ -96,7 +96,7 @@ def main():
     wandb_config.update(vars(training_args))
     wandb_config.update(vars(model_args))
     logger = pl.loggers.WandbLogger(config=wandb_config,
-                                    # entity='kgtxt',
+                                    entity='kgtxt',
                                     project='NeurIPS2021',
                                     name=training_args.run_name,
                                     save_dir=None)
@@ -127,7 +127,7 @@ def main():
         # TODO: save models
         elif training_args.task == "Gen":
             gtx.save()
-            data_module.save()
+            # data_module.save()
         
     # Test
     if training_args.do_eval:

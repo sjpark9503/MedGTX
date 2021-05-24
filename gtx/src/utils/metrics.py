@@ -126,31 +126,31 @@ def metrics_for_tasks(task,
             gt = batch['lm_label'][~batch['lm_label'].eq(-100)].view(-1).long()
             metrics[f"{stage}_lm_acc"] = pred==gt
             
-            IGNORE_EARLY_EPOCHS = 15
-            VAL_INTERVAL_EPOCHS = 5
-            if current_epoch >= IGNORE_EARLY_EPOCHS and \
-                (current_epoch+1) % VAL_INTERVAL_EPOCHS == 0:  # ignore ealry trials (\because time issue matters)
+            # IGNORE_EARLY_EPOCHS = 30
+            # VAL_INTERVAL_EPOCHS = 5
+            # if current_epoch >= IGNORE_EARLY_EPOCHS and \
+            #     (current_epoch+1) % VAL_INTERVAL_EPOCHS == 0:  # ignore ealry trials (\because time issue matters)
                 
-                # measure the ppl score
-                batch_mean_ppl, org_lang_input_ids = model.decode_for_ppl(**batch)  # (teacher-forcing like) autrogressive
-                metrics[f"{stage}_ppl"] = batch_mean_ppl
+            #     # measure the ppl score
+            #     batch_mean_ppl, org_lang_input_ids = model.decode_for_ppl(**batch)  # (teacher-forcing like) autrogressive
+            #     metrics[f"{stage}_ppl"] = batch_mean_ppl
                 
-                # measure the rouge score
-                pred, _, _ = model.decode(**batch)  # fully autorgressive
+            #     # measure the rouge score
+            #     pred, _, _ = model.decode(**batch)  # fully autorgressive
                 
-                batch_gt_strings = tokenizer.batch_decode(org_lang_input_ids, skip_special_tokens=True)
-                batch_pred_strings = tokenizer.batch_decode(pred, skip_special_tokens=True)
+            #     batch_gt_strings = tokenizer.batch_decode(org_lang_input_ids, skip_special_tokens=True)
+            #     batch_pred_strings = tokenizer.batch_decode(pred, skip_special_tokens=True)
                 
-                rouge_tot_scores = rouge_all(references=batch_gt_strings, hypotheses=batch_pred_strings)
-                for rouge_metric in ['rouge-1', 'rouge-2', 'rouge-l']:
-                    for rouge_sub_metric in ['f', 'p', 'r']:
-                        metrics[f"{stage}_{rouge_metric}_{rouge_sub_metric}"] = torch.tensor(rouge_tot_scores[rouge_metric][rouge_sub_metric])
+            #     rouge_tot_scores = rouge_all(references=batch_gt_strings, hypotheses=batch_pred_strings)
+            #     for rouge_metric in ['rouge-1', 'rouge-2', 'rouge-l']:
+            #         for rouge_sub_metric in ['f', 'p', 'r']:
+            #             metrics[f"{stage}_{rouge_metric}_{rouge_sub_metric}"] = torch.tensor(rouge_tot_scores[rouge_metric][rouge_sub_metric])
                         
-                # measure the bleu score
-                batch_gt_strings_list = [[b] for b in batch_gt_strings]
-                bleu_tot_scores = bleu_all(list_of_references=batch_gt_strings_list, hypotheses=batch_pred_strings)
-                for bleu_metric in bleu_tot_scores.keys():
-                    metrics[f"{stage}_{bleu_metric}"] = torch.tensor(bleu_tot_scores[bleu_metric])
+            #     # measure the bleu score
+            #     batch_gt_strings_list = [[b] for b in batch_gt_strings]
+            #     bleu_tot_scores = bleu_all(list_of_references=batch_gt_strings_list, hypotheses=batch_pred_strings)
+            #     for bleu_metric in bleu_tot_scores.keys():
+            #         metrics[f"{stage}_{bleu_metric}"] = torch.tensor(bleu_tot_scores[bleu_metric])
                 
                 
         else:
