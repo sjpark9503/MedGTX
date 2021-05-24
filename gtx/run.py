@@ -6,7 +6,7 @@ import itertools
 from Run_configs import Configuration
 
 # GPU setting
-os.environ["CUDA_VISIBLE_DEVICES"] = '2'
+os.environ["CUDA_VISIBLE_DEVICES"] = '0'
 # TPU setting
 TPU = False
 
@@ -20,7 +20,7 @@ config = {
     # seed : 1234, 123, 12, 1, 42
     'seed' : 1234, #1234,
     # model : cross / single / lstm / transe
-    'model' : 'single',
+    'model' : 'cross',
     # architecture : both / kg / lm / rand
     'architecture' : 'both',
     # label domain : graph / text
@@ -32,8 +32,8 @@ config = {
     'scratch' : False,
     'evaluation' : False,
     ## Training configs
-    'train_bsize' : 16, # NOTE: dxprx(32)
-    'eval_bsize' : 16, # NOTE: dxprx(32)
+    'train_bsize' : 8, # NOTE: dxprx(32)
+    'eval_bsize' : 2, # NOTE: dxprx(32)
     'lr' : 5e-5,
     'num_epochs' : 50,
     'top_k' : 10,

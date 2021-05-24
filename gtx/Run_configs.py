@@ -96,6 +96,7 @@ class Configuration():
                 Config['max_position_embeddings']['lang'] = 0 if self.Encoder_Type['lang'].lower() in ['bilstm', 'lstm'] else 512
             if self.config['task_number']==2:
                 Config['do_eval'] = False
+                Config['dataloader_num_workers'] = 8
                 
             if self.config['task_number']==3:
                 for k in self.TRAINING_CONFIG:

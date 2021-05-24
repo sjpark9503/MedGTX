@@ -42,7 +42,7 @@ def get_trainer_config(args):
     # Early stop Criteria
     early_stop_callback = pl.callbacks.EarlyStopping(
         monitor=monitoring_target[args.task],
-        min_delta=0.001,
+        min_delta=0.001 if args.task != "Gen" else 0.005,
         patience=3,
         verbose=True,
         mode="max",
