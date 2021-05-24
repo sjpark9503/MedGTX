@@ -275,6 +275,6 @@ class GTXModel(pl.LightningModule):
         final_outputs_fname = os.path.join(output_dir, 'test_output.pt')
         # with open(final_outputs_fname, 'w') as fout:
         #     json.dump(final_outputs, fout)
-        torch.load(final_outputs, final_outputs_fname)
+        torch.save(final_outputs, final_outputs_fname)
             
         notifier.warning(f"Save eval output files to {output_dir}")
