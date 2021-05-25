@@ -192,7 +192,11 @@ class GTXModel(pl.LightningModule):
             test_decode_outputs = [output[1] for output in test_epoch_outputs] # only save decode outputs
             test_epoch_outputs = [output[0] for output in test_epoch_outputs] # only save metrics
             if not self.training_args.do_train and self.training_args.do_eval: # when only do generation
-                self.save_decode_files(test_decode_outputs)
+                output_dir = self.training_args.output_dir
+                self.save_decode_files(decode_outputs=test_decode_outputs, output_dir=output_dir)
+            elif self.training_args.do_train and self.training_args.do_eval:
+                output_dir = self.training_args.output_dir.replace('/pretrained_models/','/eval_output/')
+                self.save_decode_files(decode_outputs=test_decode_outputs, output_dir=output_dir)
         
         # final logging
         keys = test_epoch_outputs[0].keys()
@@ -258,8 +262,7 @@ class GTXModel(pl.LightningModule):
         else:
             self.tokenizer = AutoTokenizer.from_pretrained('bert-base-uncased')
             
-    def save_decode_files(self, decode_outputs):
-        output_dir = self.training_args.output_dir
+    def save_decode_files(self, decode_outputs, output_dir):
         assert self.training_args.task == "Gen"  # only for generation task
         assert 'eval_output/' in output_dir  # only for evaluation mode
         os.makedirs(output_dir, exist_ok=True)
