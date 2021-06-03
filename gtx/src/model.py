@@ -392,7 +392,10 @@ class GTXAttentionOutput(nn.Module):
         if KnowMix_indices is None:
             hidden_states = input_tensor + hidden_states
         else:
-            input_tensor[KnowMix_indices,:] = input_tensor[KnowMix_indices,:] + hidden_states.squeeze(1)
+            if isinstance(KnowMix_indices,int):
+                input_tensor[:,KnowMix_indices] = input_tensor[:,KnowMix_indices]+hidden_states.squeeze(1)
+            else:
+                input_tensor[KnowMix_indices,:] = input_tensor[KnowMix_indices,:] + hidden_states.squeeze(1)
             hidden_states = input_tensor
         hidden_states = self.LayerNorm(hidden_states)
         return hidden_states
@@ -408,7 +411,10 @@ class GTXCrossAttentionLayer(nn.Module):
         if KnowMix_indices is None:
             output = self.att(input_tensor, ctx_tensor, ctx_att_mask, output_attentions=output_attentions)
         else:
-            output = self.att(input_tensor[KnowMix_indices,:].unsqueeze(1), ctx_tensor[KnowMix_indices,:], ctx_att_mask[KnowMix_indices.unsqueeze(1),:].unsqueeze(1).unsqueeze(2), output_attentions=output_attentions)
+            if isinstance(KnowMix_indices,int):
+                output = self.att(input_tensor[:,KnowMix_indices].unsqueeze(1), ctx_tensor, ctx_att_mask, output_attentions=output_attentions)
+            else:
+                output = self.att(input_tensor[KnowMix_indices,:].unsqueeze(1), ctx_tensor[KnowMix_indices,:], ctx_att_mask[KnowMix_indices.unsqueeze(1),:].unsqueeze(1).unsqueeze(2), output_attentions=output_attentions)
         if output_attentions:
             attention_probs = output[1]
         attention_output = self.output(output[0], input_tensor, KnowMix_indices)
@@ -630,6 +636,7 @@ class GTXXLayer(nn.Module):
 class GTXKnowMixLayer(nn.Module):
     def __init__(self, config):
         super().__init__()
+        self.config = config
 
         # The cross-attention Layer
         self.cross_attention = GTXCrossAttentionLayer(config)
@@ -741,6 +748,9 @@ class GTXEncoder(nn.Module):
         self.x_layers = nn.ModuleList([GTXXLayer(config) for _ in range(self.num_x_layers)])
         if self.config.KnowMix=="layer":
             notifier.warning("Use Knowledge Mixup Layer")
+            self.r_layers = nn.ModuleList([GTXKnowMixLayer(config) for _ in range(self.num_r_layers)])
+        if ("literal" in self.config.KnowMix) or ("adm" in self.config.KnowMix):
+            notifier.critical(f"Use Knowledge Mixup Layer on {config.KnowMix} nodes")
             self.r_layers = nn.ModuleList([GTXKnowMixLayer(config) for _ in range(self.num_r_layers)])
         else:
             notifier.warning("Use Standard GAT Layer")
@@ -1158,10 +1168,11 @@ class GTXModel(GTXPreTrainedModel):
         kg_embedding_output = self.kg_embeddings(kg_input_ids, None, kg_inputs_embeds)
         if kg_ext_input_ids is not None:
             kg_ext_embedding_output = self.lang_embeddings.word_embeddings(kg_ext_input_ids)
-            if self.config.KnowMix == "init":
+            if "init" in self.config.KnowMix:
                 literal_idx = kg_ext_attention_mask.bool().any(-1)
                 kg_embedding_output[literal_idx,:] = kg_ext_embedding_output.mean(-2)[literal_idx,:]
-                kg_ext_embedding_output = None
+                if "adm" not in self.config.KnowMix:
+                    kg_ext_embedding_output = None
         else:
             kg_ext_embedding_output = None
         # Run GTX encoder
@@ -2618,6 +2629,7 @@ class GTXForGeneration(GTXPreTrainedModel):
         num_db=1,
         gt_length=None,
         given_lang_tokens=1,
+        top_p_sampling=False, # NOTE: Should be changed!
         ):
         
         assert len(lang_input_ids.shape) == 2
@@ -2669,9 +2681,47 @@ class GTXForGeneration(GTXPreTrainedModel):
             
             # predict [MASK] by greedy infer.
             last_hidden = lang_output[:, -1, :]
-            prediction_scores = self.lm_head(last_hidden)
-            _, max_ids = torch.max(prediction_scores, dim=1)
-            output_ids.append(max_ids.unsqueeze(1))
+            prediction_scores = self.lm_head(last_hidden)  # `prediction_scores` \approx `logits`
+            
+            if top_p_sampling:
+                # notifier.info("Use top-p-sampling")
+                
+                def fixed_top_k_top_p_filtering(logits, top_k=0, top_p=0.9, filter_value=-float('Inf')):
+                    """ Filter a distribution of logits using top-k and/or nucleus (top-p) filtering
+                    https://gist.github.com/thomwolf/1a5a29f6962089e871b94cbd09daf317
+                        Args:
+                            logits: logits distribution shape (..., vocabulary size)
+                            top_k >0: keep only top k tokens with highest probability (top-k filtering).
+                            top_p >0.0: keep the top tokens with cumulative probability >= top_p (nucleus filtering).
+                    """
+                    top_k = min(top_k, logits.size(-1))  # Safety check
+                    if top_k > 0:
+                        # Remove all tokens with a probability less than the last token of the top-k
+                        indices_to_remove = logits < torch.topk(logits, top_k)[0][..., -1, None]
+                        logits[indices_to_remove] = filter_value
+
+                    if top_p > 0.0:
+                        sorted_logits, sorted_indices = torch.sort(logits, descending=True)
+                        cumulative_probs = torch.cumsum(F.softmax(sorted_logits, dim=-1), dim=-1)
+
+                        # Remove tokens with cumulative probability above the threshold
+                        sorted_indices_to_remove = cumulative_probs >= top_p
+                        # Shift the indices to the right to keep also the first token above the threshold
+                        sorted_indices_to_remove[..., 1:] = sorted_indices_to_remove[..., :-1].clone()
+                        sorted_indices_to_remove[..., 0] = 0
+                                                
+                        indices_to_remove = torch.zeros_like(logits, dtype=torch.bool).scatter_(
+                            dim=-1, index=sorted_indices, src=sorted_indices_to_remove)
+                        logits[indices_to_remove] = filter_value
+                    return logits
+                
+                prediction_scores = fixed_top_k_top_p_filtering(logits=prediction_scores)
+                probs = F.softmax(prediction_scores, dim=-1)
+                max_ids = torch.multinomial(probs, num_samples=1).squeeze(1)
+                output_ids.append(max_ids.unsqueeze(1))
+            else:
+                _, max_ids = torch.max(prediction_scores, dim=1)
+                output_ids.append(max_ids.unsqueeze(1))
             
             # setup for next loop
             curr_ids[:, curr_length] = max_ids
