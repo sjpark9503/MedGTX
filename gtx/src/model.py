@@ -846,7 +846,12 @@ class GTXEncoder(nn.Module):
 
         for layer_module in self.r_layers:
             if ("literal" in self.config.KnowMix) or ("adm" in self.config.KnowMix):
-                kg_outputs = layer_module(kg_feats, kg_attention_mask, contexts=kg_ext_input_ids, context_attention_masks=extended_kg_ext_attention_mask, KnowMix_indices=kg_ext_attention_mask, output_attentions=output_attentions)
+                kg_outputs = layer_module(kg_feats,
+                                          kg_attention_mask,
+                                          contexts=kg_ext_input_ids,
+                                          context_attention_masks=extended_kg_ext_attention_mask,
+                                          KnowMix_indices=kg_ext_attention_mask,
+                                          output_attentions=output_attentions)
             else:
                 kg_outputs = layer_module(kg_feats, kg_attention_mask, output_attentions=output_attentions)
             kg_feats = kg_outputs[0]
@@ -2485,7 +2490,6 @@ class GTXForGeneration(GTXPreTrainedModel):
             curr_token_type_ids = token_type_ids[:, :curr_length]
             
             assert curr_ids.shape[-1] == curr_attention_mask.shape[-1]
-
             GTX_output = self.GTX(
                 lang_input_ids=curr_ids,
                 kg_input_ids=kg_input_ids,
@@ -2501,6 +2505,7 @@ class GTXForGeneration(GTXPreTrainedModel):
                 output_hidden_states=output_hidden_states,
                 return_dict=return_dict,
             )
+            
             lang_output, _, _ = (
                 GTX_output.language_output,
                 GTX_output.kg_output,
@@ -2566,11 +2571,16 @@ class GTXForGeneration(GTXPreTrainedModel):
             output_ids = self._greedy_decode(
                 lang_input_ids=lang_input_ids,
                 kg_input_ids=kg_input_ids,
-                lang_inputs_embeds=None,
+                lang_inputs_embeds=lang_inputs_embeds,
                 kg_inputs_embeds=kg_inputs_embeds,
                 lang_attention_mask=lang_attention_mask,
                 kg_attention_mask=kg_attention_mask,
                 kg_padding_mask=kg_padding_mask,
+                # kg_label_mask=None,
+                # lm_label=None,
+                # kg_label=None,
+                kg_ext_input_ids=kg_ext_input_ids,
+                kg_ext_attention_mask=kg_ext_attention_mask,
                 token_type_ids=token_type_ids,
                 output_attentions=output_attentions,
                 output_hidden_states=output_hidden_states,
@@ -2623,8 +2633,8 @@ class GTXForGeneration(GTXPreTrainedModel):
         kg_label_mask=None,
         lm_label=None,
         kg_label=None,
-        kg_ext_input_ids = None,
-        kg_ext_attention_mask = None,
+        kg_ext_input_ids=None,
+        kg_ext_attention_mask=None,
         token_type_ids=None,
         output_attentions=None,
         output_hidden_states=None,
@@ -2660,7 +2670,7 @@ class GTXForGeneration(GTXPreTrainedModel):
             # when dx, prx case, we should consider token_type_ids
             if num_db == 2:
                 curr_token_type_ids = self.convert_token_type_ids(curr_ids, curr_token_type_ids)
-            
+                
             GTX_output = self.GTX(
                 lang_input_ids=curr_ids,
                 kg_input_ids=kg_input_ids,
@@ -2669,13 +2679,14 @@ class GTXForGeneration(GTXPreTrainedModel):
                 lang_attention_mask=curr_attention_mask,
                 kg_attention_mask=kg_attention_mask,
                 kg_padding_mask=kg_padding_mask,
+                kg_ext_input_ids=kg_ext_input_ids,
+                kg_ext_attention_mask=kg_ext_attention_mask,
                 token_type_ids=curr_token_type_ids,
-                kg_ext_input_ids = kg_ext_input_ids,
-                kg_ext_attention_mask = kg_ext_attention_mask,
                 output_attentions=output_attentions,
                 output_hidden_states=output_hidden_states,
                 return_dict=return_dict,
             )
+                
             lang_output, _, _ = (
                 GTX_output.language_output,
                 GTX_output.kg_output,
