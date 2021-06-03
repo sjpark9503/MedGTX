@@ -175,6 +175,10 @@ class TrainingArguments:
     task: str = field(
         metadata={"help": "Task"}
     )
+    id2desc: Optional[str] = field(
+        default=None,
+        metadata={"help": "path to id2desc"}
+    )
     overwrite_output_dir: bool = field(
         default=False,
         metadata={
@@ -272,7 +276,7 @@ class TrainingArguments:
     seed: int = field(default=42, metadata={"help": "random seed for initialization"})
 
     fp16: bool = field(
-        default=False,
+        default=True,
         metadata={"help": "Whether to use 16-bit (mixed) precision (through NVIDIA apex) instead of 32-bit"},
     )
     fp16_opt_level: str = field(

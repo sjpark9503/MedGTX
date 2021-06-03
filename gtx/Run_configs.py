@@ -106,8 +106,9 @@ class Configuration():
             elif self.config['task_number'] in [4, 5]:
                 for k in self.TRAINING_CONFIG:
                     if 'file' in k:
-                        self.TRAINING_CONFIG[k] = self.TRAINING_CONFIG[k].replace('data','data/ed')
-                # Config['num_kg_labels'] = 95 if self.DB=='px' else 45
+                        self.TRAINING_CONFIG[k] = self.TRAINING_CONFIG[k].replace('data','data_ed')
+                self.TRAINING_CONFIG['id2desc'] = os.path.join(self.EXP_PATH,f"data_ed/knowmix/{self.DB}_{self.DB_size}/{self.MODEL_NAME}/id2desc")
+
             if not os.path.isdir(os.path.dirname(self.TRAINING_CONFIG['config_name'])):
                 os.makedirs(os.path.dirname(self.TRAINING_CONFIG['config_name']))
             with open(self.TRAINING_CONFIG['config_name'],'w') as g:
@@ -168,8 +169,9 @@ class Configuration():
                 elif self.config['task_number'] in [4,5]:
                     for k in self.TRAINING_CONFIG:
                         if 'file' in k:
-                            self.TRAINING_CONFIG[k] = self.TRAINING_CONFIG[k].replace('data','data/ed')
-                    # Config['num_kg_labels'] = 95 if self.DB=='px' else 45
+                            self.TRAINING_CONFIG[k] = self.TRAINING_CONFIG[k].replace('data','data_ed')
+                    self.TRAINING_CONFIG['id2desc'] = os.path.join(self.EXP_PATH,f"data_ed/knowmix/{self.DB}_{self.DB_size}/{self.MODEL_NAME}/id2desc")
+
                 # overwrite config
                 if not os.path.isdir(f"config/{self.TASK_NAME}/{'KnowMix,{}/'.format(self.config['KnowMix']) if self.config['KnowMix'] else ''}{self.config['model']}/{self.DB}"):
                     os.makedirs(f"config/{self.TASK_NAME}/{'KnowMix,{}/'.format(self.config['KnowMix']) if self.config['KnowMix'] else ''}{self.config['model']}/{self.DB}")
@@ -187,10 +189,12 @@ class Configuration():
         return SRC_PATH, TRAINING_CONFIG_LIST
 
     def assertion(self):
-        if self.config['seed'] not in [1234, 1, 12, 123, 42]:
-            return False, "Seed out of range"
-        elif os.path.isdir(self.TRAINING_CONFIG['output_dir']):
+        # if self.config['seed'] not in [1234, 1, 12, 123, 42]:
+        #     return False, "Seed out of range"
+        if os.path.isdir(self.TRAINING_CONFIG['output_dir']):
             return False, "Output dir"
+        elif "adm" in self.config['KnowMix'] and "literal" in self.config['KnowMix']:
+            return False, "Choose one of knowledge mixup strategy --> adm or literal"
         elif self.config['architecture'] not in self.Var_MODEL:
             return False, "Model not supported"
         elif self.config['model'] not in ['cross','single','lstm','transe']:

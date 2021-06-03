@@ -41,7 +41,7 @@ class GTXModel(pl.LightningModule):
         else:
             config = CONFIG_MAPPING[model_args.model_type]()
             notifier.warning("You are instantiating a new config instance from scratch.")
-        if 'Adm' == training_args.task:
+        if 'AdmPred' == training_args.task:
             config.use_ce_pooler = False
         else:
             config.use_ce_pooler = True
@@ -56,15 +56,32 @@ class GTXModel(pl.LightningModule):
             "AdmPred":GTXForAdmLvlPrediction,
             "ErrDetect":GTXForErrorDetection,
         }
+
+        # Truncate some weights for Admpred
         if model_args.model_name_or_path:
+            if 'AdmPred' == training_args.task:
+                ckpt_path = os.path.join(model_args.model_name_or_path, 'pytorch_model.bin')
+                load_model_dict = torch.load(ckpt_path)
+                modified_model_dict = load_model_dict.copy()
+                for param in load_model_dict:
+                    if 'multi_pooler' in param:
+                        modified_model_dict.pop(param)
+                torch.save(modified_model_dict, ckpt_path)
+
             self.model = MODEL_CLASSES[training_args.task].from_pretrained(
                 model_args.model_name_or_path,
                 config=config,
             )
             notifier.critical(f"Load pretrained parameters from {model_args.model_name_or_path}")
+                
         else:
             self.model = MODEL_CLASSES[training_args.task](config)
             notifier.critical("Training new model from scratch")
+
+        if 'AdmPred' == training_args.task:
+            db =  training_args.run_name.split('/')[4 if training_args.knowmix else 3].split('_')[-1]
+            self.model.class_weight = torch.load(os.path.join(os.getcwd(),f'data/{db}/adm_class_weight'))
+            notifier.critical(f"Remove unused Weights in Pretrained model for AdmPred")
 
         self.model.training_args = training_args
         
@@ -127,7 +144,10 @@ class GTXModel(pl.LightningModule):
         return epoch_metrics
 
     def on_test_epoch_start(self):
-        self.negative_sampler = self.test_dataloader(batch_size=64)
+        if self.training_args.task == "Re":
+            self.negative_sampler = list()
+            for negative_sample in self.test_dataloader(batch_size=int(len(self.test_dataloader(batch_size=1))/10)):
+                self.negative_sampler.append({k:v.cuda() for k,v in negative_sample.items()})
 
     def test_step(self, batch, batch_idx):
         metrics = dict()

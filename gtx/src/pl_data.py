@@ -1,6 +1,7 @@
 # Base pkgs
 import os
 import itertools
+import torch
 import pytorch_lightning as pl
 from torch.utils.data.dataloader import DataLoader
 from typing import Any, Callable, Dict, List, NewType, Optional, Tuple, Union
@@ -28,18 +29,16 @@ class DataModule(pl.LightningDataModule):
 
         # Load Tokenizer
         os.environ['TOKENIZERS_PARALLELISM'] = 'false'
-        if model_args.tokenizer_name:
-            tokenizer = AutoTokenizer.from_pretrained(self.model_args.tokenizer_name)
-        elif model_args.model_name_or_path:
-            try:
-                tokenizer = AutoTokenizer.from_pretrained(self.model_args.model_name_or_path)
-            except:
-                tokenizer = AutoTokenizer.from_pretrained('bert-base-uncased')
-        else:
-            raise ValueError(
-                "You are instantiating a new tokenizer from scratch. This is not supported, but you can do it from another script, save it,"
-                "and load it from here, using --tokenizer_name"
-            )
+        tokenizer = AutoTokenizer.from_pretrained('bert-base-uncased')
+        # if model_args.tokenizer_name:
+        #     tokenizer = AutoTokenizer.from_pretrained(self.model_args.tokenizer_name)
+        # elif model_args.model_name_or_path:
+        #     tokenizer = AutoTokenizer.from_pretrained(self.model_args.model_name_or_path)
+        # else:
+        #     raise ValueError(
+        #         "You are instantiating a new tokenizer from scratch. This is not supported, but you can do it from another script, save it,"
+        #         "and load it from here, using --tokenizer_name"
+        #     )
         self.tokenizer = tokenizer
 
         # Set block size for padding & truncating inputs
@@ -85,6 +84,12 @@ class DataModule(pl.LightningDataModule):
             "ErrDetect":ErrorDetection_DataCollator,
         }
 
+        # if self.args.task == "ErrDetect":
+        #     id2desc=torch.load(self.args.id2desc)
+        #     id2desc={k:self.tokenizer(v, add_special_tokens=False, return_token_type_ids=False)['input_ids'] for k,v in id2desc.items()}
+        # else:
+        id2desc=None
+
         collator_args = {
             "tokenizer": self.tokenizer,
             "align": self.args.align,
@@ -93,7 +98,8 @@ class DataModule(pl.LightningDataModule):
             "kg_special_token_ids": self.config.kg_special_token_ids,
             "kg_size": self.config.vocab_size['kg'],
             "num_kg_labels": self.config.num_kg_labels,
-            "label_domain": self.args.label_domain
+            "label_domain": self.args.label_domain,
+            "id2desc": id2desc if self.args.knowmix else None,
         }
         self.data_collator = COLLATORS[self.args.task](**{k:v for k,v in collator_args.items() if k in COLLATORS[self.args.task].__annotations__}, prediction=self.args.do_predict)
 

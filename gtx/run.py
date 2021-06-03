@@ -23,7 +23,7 @@ for seed in [1234, 123, 12, 1, 42]:
         # architecture : both / kg / lm / rand
         'architecture' : 'both',
         # label domain : graph / text
-        'label_domain' : 'text',
+        'label_domain' : 'graph',
         'P' : True,
         'A' : True,
         'R' : False,

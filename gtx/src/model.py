@@ -689,7 +689,7 @@ class GTXKnowMixLayer(nn.Module):
         KnowMix_indices,
         output_attentions=False,
     ):
-        KnowMix_indices = KnowMix_indices.bool().any(-1)
+        KnowMix_indices = KnowMix_indices.bool().any(-1) if "literal" in self.config.KnowMix else 0
         att_output = self.mixup(
                 inputs=inputs,
                 attention_masks=context_attention_masks,
@@ -746,14 +746,14 @@ class GTXEncoder(nn.Module):
         self.layer = nn.ModuleList([GTXLayer(config) for _ in range(self.num_l_layers)])
         notifier.warning(f"This model has a {config.cross_att_type if 'cross_att_type' in vars(config).keys() else 'cross'} type of x_attention architecture.")
         self.x_layers = nn.ModuleList([GTXXLayer(config) for _ in range(self.num_x_layers)])
-        if self.config.KnowMix=="layer":
-            notifier.warning("Use Knowledge Mixup Layer")
+        if ("literal" in self.config.KnowMix) or ("adm" in self.config.KnowMix):
+            notifier.critical(f"Use Knowledge Mixup Layer on {config.KnowMix} nodes")
             self.r_layers = nn.ModuleList([GTXKnowMixLayer(config) for _ in range(self.num_r_layers)])
         if ("literal" in self.config.KnowMix) or ("adm" in self.config.KnowMix):
             notifier.critical(f"Use Knowledge Mixup Layer on {config.KnowMix} nodes")
             self.r_layers = nn.ModuleList([GTXKnowMixLayer(config) for _ in range(self.num_r_layers)])
         else:
-            notifier.warning("Use Standard GAT Layer")
+            notifier.critical("Use Standard GAT Layer")
             self.r_layers = nn.ModuleList([GTXLayer(config) for _ in range(self.num_r_layers)])            
         
         # Lang Encoder Architecture
@@ -763,16 +763,16 @@ class GTXEncoder(nn.Module):
 
     def re_init_to_pretrained_lang_model(self):
         if isinstance(self.layer, nn.LSTM):
-            notifier.critical("You've already used RNN-Style Architecture so that cannot re-init with PLMs.")
+            notifier.warning("You've already used RNN-Style Architecture so that cannot re-init with PLMs.")
         else:
             """ If we use lm to language part, then we re-init our encoder.layer """
             plm_usage = self.config.pretrained_lang_model
             from transformers import AutoModel, AutoConfig
             if plm_usage['use_weight']:
-                notifier.critical("Load weight of pretrained model for language part")
+                notifier.warning("Warm start for language part")
                 self.layer = AutoModel.from_pretrained(plm_usage['model_name']).encoder.layer
             else:
-                notifier.critical("Load only configuration of pretrained model for language part")
+                notifier.warning("Cold start for language part")
                 plm_config = AutoConfig.from_pretrained(plm_usage['model_name'])
                 self.layer = AutoModel.from_config(plm_config).encoder.layer
             
@@ -835,14 +835,17 @@ class GTXEncoder(nn.Module):
         # Run relational layers
         ## Process the KG attention mask
         if kg_ext_attention_mask is not None:
-            extended_kg_ext_attention_mask = kg_ext_attention_mask.unsqueeze(1)
+            if len(kg_ext_attention_mask.shape) == 2:
+                extended_kg_ext_attention_mask = kg_ext_attention_mask.unsqueeze(1).unsqueeze(2)
+            elif len(kg_ext_attention_mask.shape) == 3:
+                extended_kg_ext_attention_mask = kg_ext_attention_mask.unsqueeze(1)    
             extended_kg_ext_attention_mask = extended_kg_ext_attention_mask.to(dtype=lang_attention_mask.dtype)
             extended_kg_ext_attention_mask = (1.0 - extended_kg_ext_attention_mask) * -10000.0
         else:
             extended_kg_ext_attention_mask = None
 
         for layer_module in self.r_layers:
-            if self.config.KnowMix=="layer":
+            if ("literal" in self.config.KnowMix) or ("adm" in self.config.KnowMix):
                 kg_outputs = layer_module(kg_feats, kg_attention_mask, contexts=kg_ext_input_ids, context_attention_masks=extended_kg_ext_attention_mask, KnowMix_indices=kg_ext_attention_mask, output_attentions=output_attentions)
             else:
                 kg_outputs = layer_module(kg_feats, kg_attention_mask, output_attentions=output_attentions)
@@ -1619,7 +1622,7 @@ class GTXForAdmLvlPrediction(GTXPreTrainedModel):
         if label is not None:
             total_loss = self.loss_fcts["bce"](multi_label_score, label)
             if self.class_weight is not None:
-                total_loss = total_loss*self.class_weight
+                total_loss = total_loss*torch.tensor(self.class_weight, requires_grad=False, device=label.device)
                 #focal_weight = (multi_label_score.sigmoid()-label).abs().detach().clone()
                 #total_loss = total_loss*focal_weight
 
