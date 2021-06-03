@@ -175,6 +175,10 @@ class TrainingArguments:
     task: str = field(
         metadata={"help": "Task"}
     )
+    id2desc: Optional[str] = field(
+        default=None,
+        metadata={"help": "path to id2desc"}
+    )
     overwrite_output_dir: bool = field(
         default=False,
         metadata={
@@ -272,7 +276,7 @@ class TrainingArguments:
     seed: int = field(default=42, metadata={"help": "random seed for initialization"})
 
     fp16: bool = field(
-        default=False,
+        default=True,
         metadata={"help": "Whether to use 16-bit (mixed) precision (through NVIDIA apex) instead of 32-bit"},
     )
     fp16_opt_level: str = field(
@@ -300,7 +304,7 @@ class TrainingArguments:
     )
     num_eval_per_epoch: int = field(default=None, metadata={"help": "Run an evaluation every X steps."})
     dataloader_num_workers: int = field(
-        default=32,
+        default=8,
         metadata={
             "help": "Number of subprocesses to use for data loading (PyTorch only). 0 means that the data will be loaded in the main process."
         },

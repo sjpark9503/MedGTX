@@ -62,10 +62,13 @@ class HeadOnlyDataset(Dataset):
     """
     This will be superseded by a framework-agnostic approach soon.
     """
-    def __init__(self, tokenizer: PreTrainedTokenizer, file_path: str, block_size: int, token_type_vocab: dict = None):
+    def __init__(self, tokenizer: PreTrainedTokenizer, file_path: str, block_size: int, token_type_vocab: dict = None, knowmix: str = "", task: int=None,):
         assert os.path.isdir(file_path), f"Input file path {file_path} not found"
         self.token_type_vocab = token_type_vocab
+        self.file_path = file_path
         self.tokenizer = tokenizer
+        self.task = task
+        self.knowmix = knowmix
         self.features = list()
         notifier.warning("Creating features from dataset file at %s", file_path)
         # Loading preprocessed data
@@ -82,6 +85,7 @@ class HeadOnlyDataset(Dataset):
                 self.batch_encoding['lang'][k].append(v)
 
         self.batch2feature()
+
         del self.batch_encoding
         gc.collect()
 
@@ -97,6 +101,14 @@ class HeadOnlyDataset(Dataset):
         return type_ids
 
     def batch2feature(self):
+        # Set External Token Length
+        if 'knowledge' in self.batch_encoding:
+            if 'px_' in self.file_path:
+                ext_max_len = 2048
+            elif 'dx,prx_' in self.file_path:
+                ext_max_len = 768
+            else:
+                raise ValueError ("Cannot find DB type in file path")
         for idx in tqdm(range(len(self.batch_encoding['input']))):
             inputs = dict([('lang_'+k,self.batch_encoding['lang'][k][idx]) if 'token_type' not in k else (k, self.batch_encoding['lang'][k][idx]) for k in self.batch_encoding['lang']])
             inputs['kg_input_ids'] = self.batch_encoding['input'][idx]
@@ -111,7 +123,10 @@ class HeadOnlyDataset(Dataset):
             if 'rc_index' in self.batch_encoding:
                 inputs['rc_indeces'] = self.batch_encoding['rc_index'][idx]
             if 'knowledge' in self.batch_encoding:
-                tokenized_knowledge = self.tokenizer(self.batch_encoding['knowledge'][idx], add_special_tokens=False, padding='max_length', max_length=64, return_token_type_ids=False)
+                if "adm" in self.knowmix:
+                    tokenized_knowledge = self.tokenizer((" ".join(self.batch_encoding['knowledge'][idx])).strip(), add_special_tokens=False, padding='max_length', max_length=ext_max_len, return_token_type_ids=False)
+                else:
+                    tokenized_knowledge = self.tokenizer(self.batch_encoding['knowledge'][idx], add_special_tokens=False, padding='max_length', max_length=64, return_token_type_ids=False)
                 inputs['kg_ext_input_ids'] = tokenized_knowledge['input_ids']
                 inputs['kg_ext_attention_mask'] = tokenized_knowledge['attention_mask']
 
@@ -132,7 +147,7 @@ def get_dataset(
     token_type_vocab: dict = None
 ):
     def _dataset(file_path):
-        return HeadOnlyDataset(tokenizer=tokenizer, file_path=file_path, block_size=args.block_size, token_type_vocab=token_type_vocab)
+        return HeadOnlyDataset(tokenizer=tokenizer, file_path=file_path, block_size=args.block_size, token_type_vocab=token_type_vocab, knowmix=args.knowmix, task = args.task)
 
     if evaluate:
         return _dataset(args.eval_data_file)

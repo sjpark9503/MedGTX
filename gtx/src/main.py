@@ -34,17 +34,16 @@ def get_trainer_config(args):
     monitoring_target = {
         "Pre":None,
         "Re":"valid_acc",
-        "AdmPred":"valid_P@1",
-        "ErrDetect":"valid_R@1",
+        "AdmPred":"valid_loss",
+        "ErrDetect":"valid_loss",
         "Gen":"<TBD>!!", 
     }
 
     # Early stop Criteria
     early_stop_callback = pl.callbacks.EarlyStopping(
         monitor=monitoring_target[args.task],
-        min_delta=0.001,
-        patience=3,
-        mode="max",
+        patience=5,
+        mode="min" if args.task in ['AdmPred', 'ErrDetect'] else "max",
         # check_finite=True,
         # stopping_threshold=0.9
     )
@@ -62,10 +61,11 @@ def get_trainer_config(args):
         "precision":16 if args.fp16 else 32,
         "gpus":None if args.use_tpu else -1,
         "tpu_cores":tpu_core_id,
-        "accelerator": None, #"ddp",
+        "accelerator": "ddp",
         "log_every_n_steps":None if args.use_tpu else 50,
         "callbacks":callbacks,
-        "val_check_interval":0.2 if args.task != "Pre" else 1.0,
+        # "check_val_every_n_epoch":50,
+        "val_check_interval":1.0 if args.task in ["Pre"] else 0.2,
     }
     if not args.do_eval:
         config["val_check_interval"]=1e10
@@ -75,6 +75,9 @@ def get_trainer_config(args):
 def main():
     # Parse arguments
     model_args, data_args, training_args = parser.parse_args_into_dataclasses()
+    data_args.knowmix = training_args.knowmix
+    data_args.task = training_args.task
+    notifier.warning(training_args.task in ["Pre", "ErrDetect"])
 
     # Set seed
     pl.seed_everything(training_args.seed)
