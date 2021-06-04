@@ -19,18 +19,26 @@ notifier.addHandler(log_formatter())
 #         return None
 
 def get_trainer_config(args):
+    # We will collect callbacks!
     callbacks = list()
 
-    # Checkpointing Criteria
-    # callbacks.append(pl.callbacks.ModelCheckpoint(
+    # # - Checkpointing Criteria
+    # model_ckpt_callback = pl.callbacks.ModelCheckpoint(
     #     monitor='',
     #     dirpath=args.output_dir,
     #     save_top_k=1,
     #     filename='best',
     #     mode='min',
-    #     )
-    # )  
+    # )
+    # callbacks.append(model_ckpt_callback)
 
+
+    # - LR monitoring Criteria
+    lr_monitor_callback = pl.callbacks.LearningRateMonitor(
+        logging_interval="step"
+    )
+    
+    # - Early stop Criteria
     monitoring_target = {
         "Pre":None,
         "Re":"valid_acc",
@@ -38,15 +46,7 @@ def get_trainer_config(args):
         "ErrDetect":"valid_loss",
         "Gen":"valid_lm_acc",
     }
-
-    # Early stop Criteria
-        
     
-    
-    lr_monitor_callback = pl.callbacks.LearningRateMonitor(
-        logging_interval="step"
-    )
-
     if args.task != "Pre":
         if args.task != "Gen":
             early_stop_callback = pl.callbacks.EarlyStopping(
