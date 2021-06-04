@@ -8,6 +8,7 @@ import torch
 from torch.optim import Adadelta, Adagrad, Adam, AdamW
 from torch.optim.lr_scheduler import LambdaLR, ReduceLROnPlateau
 from transformers import get_linear_schedule_with_warmup, get_polynomial_decay_schedule_with_warmup
+from transformers.models.auto.tokenization_auto import AutoTokenizer
 # Usr defined pkgs
 from model import GTXForKGTokPredAndMaskedLM, GTXForRanking, GTXForAdmLvlPrediction, GTXForErrorDetection, GTXForGeneration
 from utils.metrics import metrics_for_tasks
@@ -50,7 +51,7 @@ class GTXModel(pl.LightningModule):
         MODEL_CLASSES = {
             "Pre":GTXForKGTokPredAndMaskedLM,
             "Re":GTXForRanking,
-            "Gen":GTXForKGTokPredAndMaskedLM,
+            "Gen":GTXForGeneration,
             "AdmPred":GTXForAdmLvlPrediction,
             "ErrDetect":GTXForErrorDetection,
         }
@@ -83,6 +84,8 @@ class GTXModel(pl.LightningModule):
 
         self.model.training_args = training_args
         
+        self.load_bert_tokenizer()
+        
         notifier.warn("## Model Configuration ##")
         notifier.warn(self.model.config)
 
@@ -109,20 +112,33 @@ class GTXModel(pl.LightningModule):
             notifier.critical("Here is the actual input of model")
             notifier.warning(batch)
 
-        outputs = self.model(**batch)
-
-        self.log_dict(outputs.loss_dict, on_step=False if self.training_args.use_tpu else True, on_epoch=True if self.training_args.use_tpu else False)
+        outputs = self.model(**batch)        
+        self.log_dict(
+            outputs.loss_dict,
+            on_step=False if self.training_args.use_tpu else True,
+            on_epoch=True if self.training_args.use_tpu else False,
+        )
 
         return outputs.loss
 
     def validation_step(self, batch, batch_idx):
         outputs = self.model(**batch)
-        metrics = metrics_for_tasks(task=self.training_args.task, stage="valid", batch=batch, outputs=outputs)
+        metrics = metrics_for_tasks(
+            task=self.training_args.task,
+            stage="valid",
+            batch=batch,
+            outputs=outputs,
+            model=self.model if self.training_args.task == "Gen" else None,
+            tokenizer=self.tokenizer,
+            current_epoch=self.current_epoch,
+        )
         return metrics
 
     def validation_epoch_end(self, val_epoch_outputs):
         keys = val_epoch_outputs[0].keys()
-        epoch_metrics = {k:torch.cat([val_epoch_output[k].float() if len(val_epoch_output[k].size())>0 else val_epoch_output[k].unsqueeze(0) for val_epoch_output in val_epoch_outputs]).float().mean() for k in keys}
+        epoch_metrics = {k:torch.cat([val_epoch_output[k].float() \
+            if len(val_epoch_output[k].size())>0 else val_epoch_output[k].unsqueeze(0) \
+                for val_epoch_output in val_epoch_outputs]).float().mean() for k in keys}
         self.log_dict(epoch_metrics)
         return epoch_metrics
 
@@ -164,16 +180,48 @@ class GTXModel(pl.LightningModule):
                 recrank = 1/((scores.argsort(descending=True)==batch_idx).nonzero()+1)
                 metrics[f"{label_domain}_Hits@{top_k}"] = hit
                 metrics[f"{label_domain}_MRR"] = recrank
-
+                
+        elif self.training_args.task == "Gen":
+            outputs = self.model(**batch)
+            metrics, decode_outputs = metrics_for_tasks(
+                task=self.training_args.task,
+                stage="test",
+                batch=batch,
+                outputs=outputs,
+                model=self.model, 
+                tokenizer=self.tokenizer
+            )
+            return [metrics, decode_outputs]
+            
         else:
             outputs = self.model(**batch)
-            metrics = metrics_for_tasks(task=self.training_args.task, stage="test", batch=batch, outputs=outputs)
-
+            metrics = metrics_for_tasks(
+                task=self.training_args.task,
+                stage="test",
+                batch=batch,
+                outputs=outputs,
+                # model=None,
+                # tokenizer=self.tokenizer
+            )
         return metrics
     
     def test_epoch_end(self, test_epoch_outputs):
+        # preprocessing for `test_epoch_outputs`
+        if self.training_args.task == "Gen":  # For generation task, they might have decode_outputs together in `test_epoch_outputs`
+            test_decode_outputs = [output[1] for output in test_epoch_outputs] # only save decode outputs
+            test_epoch_outputs = [output[0] for output in test_epoch_outputs] # only save metrics
+            if not self.training_args.do_train and self.training_args.do_eval: # when only do generation
+                output_dir = self.training_args.output_dir
+                self.save_decode_files(decode_outputs=test_decode_outputs, output_dir=output_dir)
+            elif self.training_args.do_train and self.training_args.do_eval:
+                output_dir = self.training_args.output_dir.replace('/pretrained_models/','/eval_output/')
+                self.save_decode_files(decode_outputs=test_decode_outputs, output_dir=output_dir)
+        
+        # final logging
         keys = test_epoch_outputs[0].keys()
-        epoch_metrics = {k:torch.cat([test_epoch_output[k] if len(test_epoch_output[k].size())!=0 else test_epoch_output[k].unsqueeze(0) for test_epoch_output in test_epoch_outputs]).float().mean() for k in keys}
+        epoch_metrics = {k:torch.cat([test_epoch_output[k] \
+            if len(test_epoch_output[k].size())!=0 else test_epoch_output[k].unsqueeze(0) \
+                for test_epoch_output in test_epoch_outputs]).float().mean() for k in keys}
         self.log_dict(epoch_metrics)
         return epoch_metrics
 
@@ -226,3 +274,29 @@ class GTXModel(pl.LightningModule):
         if (self.training_args.use_tpu and self.local_rank == 0) or not self.training_args.use_tpu:
             notifier.warning(f"Save model to {output_dir}")
             self.model.save_pretrained(output_dir)
+            
+    def load_bert_tokenizer(self):
+        if self.training_args.task == "Gen":
+            self.tokenizer = AutoTokenizer.from_pretrained('bert-base-uncased')
+        else:
+            self.tokenizer = AutoTokenizer.from_pretrained('bert-base-uncased')
+            
+    def save_decode_files(self, decode_outputs, output_dir):
+        assert self.training_args.task == "Gen"  # only for generation task
+        assert 'eval_output/' in output_dir  # only for evaluation mode
+        os.makedirs(output_dir, exist_ok=True)
+        
+        final_outputs = []
+        if isinstance(decode_outputs, list):
+            for decode_output in decode_outputs:
+                gt_graph, gt_text, pred = decode_output
+                data = {'graph': gt_graph, 'text': gt_text, 'pred': pred}
+                final_outputs.append(data)
+
+        import json
+        final_outputs_fname = os.path.join(output_dir, 'test_output.pt')
+        # with open(final_outputs_fname, 'w') as fout:
+        #     json.dump(final_outputs, fout)
+        torch.save(final_outputs, final_outputs_fname)
+            
+        notifier.warning(f"Save eval output files to {output_dir}")

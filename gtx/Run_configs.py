@@ -94,7 +94,9 @@ class Configuration():
             if self.config['scratch'] and self.config['task_number']==2:
                 Config['cross_att_type'] = 'unilm'
                 Config['max_position_embeddings']['lang'] = 0 if self.Encoder_Type['lang'].lower() in ['bilstm', 'lstm'] else 512
-
+            if self.config['task_number']==2:
+                Config['do_eval'] = False
+                
             if self.config['task_number']==3:
                 for k in self.TRAINING_CONFIG:
                     if 'file' in k:
@@ -113,21 +115,18 @@ class Configuration():
                 json.dump(Config,g)
                 
         else:
-            self.TRAINING_CONFIG['run_name'] = 'evaluation/' + self.TRAINING_CONFIG['run_name'] 
+            _run_name = f"evaluation/{'scratch' if self.config['scratch'] else 'pretrained'}/{self.TASK_NAME}/{'KnowMix,{}/'.format(self.config['KnowMix']) if self.config['KnowMix'] else ''}{self.config['model']}/{self.RUN_NAME}_RNG{self.config['seed']}"
+            self.TRAINING_CONFIG['run_name'] = _run_name
+            # self.TRAINING_CONFIG['run_name'] = 'evaluation/' + self.TRAINING_CONFIG['run_name'] 
             self.TRAINING_CONFIG['model_name_or_path'] = os.path.join(self.EXP_PATH,f"pretrained_models/{'scratch' if self.config['scratch'] else 'pretrained'}/{self.TASK_NAME}/{'KnowMix,{}/'.format(self.config['KnowMix']) if self.config['KnowMix'] else ''}{self.config['model']}/{self.RUN_NAME}_RNG{self.config['seed']}")
+            
             # Setting for Eval
             if self.config['evaluation']:
                 # if self.config['task_number']==1:
                     # SRC_PATH = os.path.join(self.EXP_PATH, f'src/evaluation.py')
                 if self.config['task_number']==2:
-                    # SRC_PATH = os.path.join(self.EXP_PATH, 'src/evaluation_generation.py')
-                    self.TRAINING_CONFIG['decode_option'] = {
-                        "perturb_type" : None,
-                        "given_lang_tokens": 1,
-                        "clean_outputs": True,
-                        "given_gt_length": False,
-                        "search_beam_size": 1,
-                    }
+                    self.TRAINING_CONFIG['do_train'] = False
+                    self.TRAINING_CONFIG['do_predict'] = True  # To do nothing on masking of data_collator when evaluation
                 elif self.config['task_number']==3:
                     for k in self.TRAINING_CONFIG:
                         if 'file' in k:

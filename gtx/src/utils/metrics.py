@@ -2,30 +2,51 @@ import torch
 import torch.nn.functional as F
 from tqdm import tqdm
 
-'''
-metric for note generation
-'''
-from nltk.translate.bleu_score import sentence_bleu, SmoothingFunction
-def bleu_all(references, hypothesis):
-    if len(references) == 0:
+from nltk.translate.bleu_score import sentence_bleu, corpus_bleu, SmoothingFunction
+def bleu_all(list_of_references, hypotheses):
+    # calculate bleu scores (batch-wise)
+    assert len(list_of_references) == len(hypotheses)
+    if len(list_of_references) == 0:
         raise ValueError("references size 0")
-    if len(hypothesis) == 0:
-        raise ValueError("hypothesis size 0")
-    bleu1 = sentence_bleu(references, hypothesis, weights=(1.0, 0.0, 0.0, 0.0))
-    bleu2 = sentence_bleu(references, hypothesis, weights=(0.0, 1.0, 0.0, 0.0))
-    bleu3 = sentence_bleu(references, hypothesis, weights=(0.0, 0.0, 1.0, 0.0))
-    bleu4 = sentence_bleu(references, hypothesis, weights=(0.0, 0.0, 0.0, 1.0))
-    bleua = sentence_bleu(references, hypothesis)
+    if len(hypotheses) == 0:
+        raise ValueError("hypotheses size 0")
+    
+    # # instance-level measure
+    # bleu1 = sentence_bleu(references=references, hypothesis=hypothesis, weights=(1.0, 0.0, 0.0, 0.0))
+    # bleu2 = sentence_bleu(references=references, hypothesis=hypothesis, weights=(0.0, 1.0, 0.0, 0.0))
+    # bleu3 = sentence_bleu(references=references, hypothesis=hypothesis, weights=(0.0, 0.0, 1.0, 0.0))
+    # bleu4 = sentence_bleu(references=references, hypothesis=hypothesis, weights=(0.0, 0.0, 0.0, 1.0))
+    # bleua = sentence_bleu(references=references, hypothesis=hypothesis)
+    # chencherry = SmoothingFunction()
+    # bleus = sentence_bleu(references=references, hypothesis=hypothesis, smoothing_function=chencherry.method2)
+    
+    # batch-level measrue
+    bleu1 = corpus_bleu(list_of_references=list_of_references, hypotheses=hypotheses, weights=(1.0, 0.0, 0.0, 0.0))
+    bleu2 = corpus_bleu(list_of_references=list_of_references, hypotheses=hypotheses, weights=(0.0, 1.0, 0.0, 0.0))
+    bleu3 = corpus_bleu(list_of_references=list_of_references, hypotheses=hypotheses, weights=(0.0, 0.0, 1.0, 0.0))
+    bleu4 = corpus_bleu(list_of_references=list_of_references, hypotheses=hypotheses, weights=(0.0, 0.0, 0.0, 1.0))
+    bleua = corpus_bleu(list_of_references=list_of_references, hypotheses=hypotheses)
     chencherry = SmoothingFunction()
-    bleus = sentence_bleu(references, hypothesis, smoothing_function=chencherry.method2)
+    bleus = corpus_bleu(list_of_references=list_of_references, hypotheses=hypotheses, smoothing_function=chencherry.method2)
+    
     keys = ['bleu-1', 'bleu-2', 'bleu-3', 'bleu-4', 'bleu-a', 'bleu-s']
     vals = [bleu1, bleu2, bleu3, bleu4, bleua, bleus]
-    return [{keys[i]:100*vals[i] for i in range(len(keys))}]
+    bleu_scores = {k:100*vals[i] for i, k in enumerate(keys)}
+    return bleu_scores
 
-# from rouge import Rouge 
-# def rouge_all(references, hypothesis):
-#     rouge = Rouge()
-#     return rouge.get_scores(hypothesis, references)
+from rouge import Rouge
+def rouge_all(hypotheses, references):
+    # calculate rouge scores (batch-wise)
+    assert len(hypotheses) == len(references)
+    rouge = Rouge()
+    try:
+        rouge_scores = rouge.get_scores(hyps=hypotheses, refs=references, avg=True)
+    except:
+        hypotheses = [h if h != '' else ' ' for h in hypotheses]
+        references = [r if r != '' else ' ' for r in references]
+        rouge_scores = rouge.get_scores(hyps=hypotheses, refs=references, avg=True)
+    return rouge_scores
+
 
 def precision_at_k(labels, scores, ks=None):
     sample_precision = {k:list() for k in ks}
@@ -54,7 +75,15 @@ def recall_at_k(labels, scores, ks=None):
 
     return {k:torch.tensor(v) for k,v in sample_recall.items()}
 
-def metrics_for_tasks(task, stage, batch=None, outputs=None, scores=None):
+def metrics_for_tasks(task,
+                      stage,
+                      batch=None,
+                      outputs=None,
+                      scores=None,
+                      model=None,
+                      tokenizer=None,
+                      current_epoch=None,                  
+    ):
     metrics = {f"{stage}_{k}":v for k,v in outputs.loss_dict.items()}
     if task == "Pre":
         if batch['lm_label'] is not None:
@@ -98,32 +127,67 @@ def metrics_for_tasks(task, stage, batch=None, outputs=None, scores=None):
                 metrics[f"{stage}_{k}"] = v
 
     elif task == "Gen":
-        if stage == "valid":  # measure the token-level accuracy
+        if stage == "valid":
+            # measure the token-level accuracy (for masked language modeling)
             pred = torch.max(outputs.lang_prediction_logits, dim=2)[-1][~batch['lm_label'].eq(-100)].view(-1).long()
             gt = batch['lm_label'][~batch['lm_label'].eq(-100)].view(-1).long()
             metrics[f"{stage}_lm_acc"] = pred==gt
-        else:  # finally, decoding
-            test_outputs = evaluate_for_generation(model=model,
-                                                   tokenizer=tokenizer,
-                                                   dataset=test_dataset,
-                                                   data_loader=test_dataloader,
-                                                   training_args=training_args,
-                                                   decode_option=decode_option,
-                                                   mode='test')
             
-            # summarize metrics
-            _ = summarize_bleu_score(results=test_outputs, return_results=False)
-            _ = summarize_ppl(results=test_outputs, return_results=False)
+            # IGNORE_EARLY_EPOCHS = 30
+            # VAL_INTERVAL_EPOCHS = 5
+            # if current_epoch >= IGNORE_EARLY_EPOCHS and \
+            #     (current_epoch+1) % VAL_INTERVAL_EPOCHS == 0:  # ignore ealry trials (\because time issue matters)
+                
+            #     # measure the ppl score
+            #     batch_mean_ppl, org_lang_input_ids = model.decode_for_ppl(**batch)  # (teacher-forcing like) autrogressive
+            #     metrics[f"{stage}_ppl"] = batch_mean_ppl
+                
+            #     # measure the rouge score
+            #     pred, _, _ = model.decode(**batch)  # fully autorgressive
+                
+            #     batch_gt_strings = tokenizer.batch_decode(org_lang_input_ids, skip_special_tokens=True)
+            #     batch_pred_strings = tokenizer.batch_decode(pred, skip_special_tokens=True)
+                
+            #     rouge_tot_scores = rouge_all(references=batch_gt_strings, hypotheses=batch_pred_strings)
+            #     for rouge_metric in ['rouge-1', 'rouge-2', 'rouge-l']:
+            #         for rouge_sub_metric in ['f', 'p', 'r']:
+            #             metrics[f"{stage}_{rouge_metric}_{rouge_sub_metric}"] = torch.tensor(rouge_tot_scores[rouge_metric][rouge_sub_metric])
+                        
+            #     # measure the bleu score
+            #     batch_gt_strings_list = [[b] for b in batch_gt_strings]
+            #     bleu_tot_scores = bleu_all(list_of_references=batch_gt_strings_list, hypotheses=batch_pred_strings)
+            #     for bleu_metric in bleu_tot_scores.keys():
+            #         metrics[f"{stage}_{bleu_metric}"] = torch.tensor(bleu_tot_scores[bleu_metric])
+                
+                
+        else:
+            # measure the ppl score
+            batch_mean_ppl, org_lang_input_ids = model.decode_for_ppl(**batch)
+            metrics[f"{stage}_ppl"] = batch_mean_ppl
             
-            # summarize metrics (for now, px)
-            if '/px' in data_args.test_data_file:
-                infos = graph_label_info(data_file=data_args.test_data_file, mimic_dir=MIMIC_TB_PATH, mode='test')
-                _ = compute_and_summarize_refer_ratio(results=test_outputs,
-                                                    tokenizer=tokenizer,
-                                                    id2node=infos['id2node'],
-                                                    db_words_pool=infos['db_words_pool'],
-                                                    num_kg_relations=config.num_relations,
-                                                    return_results=False)
+            # measure the rouge score
+            pred, _, _ = model.decode(**batch)
+            
+            batch_gt_strings = tokenizer.batch_decode(org_lang_input_ids, skip_special_tokens=True)
+            batch_pred_strings = tokenizer.batch_decode(pred, skip_special_tokens=True)
+            rouge_tot_scores = rouge_all(references=batch_gt_strings, hypotheses=batch_pred_strings)
+            for rouge_metric in ['rouge-1', 'rouge-2', 'rouge-l']:
+                for rouge_sub_metric in ['f', 'p', 'r']:
+                    metrics[f"{stage}_{rouge_metric}_{rouge_sub_metric}"] = torch.tensor(rouge_tot_scores[rouge_metric][rouge_sub_metric])
+                    
+            # measure the bleu score
+            batch_gt_strings_list = [[b] for b in batch_gt_strings]
+            bleu_tot_scores = bleu_all(list_of_references=batch_gt_strings_list, hypotheses=batch_pred_strings)
+            for bleu_metric in bleu_tot_scores.keys():
+                metrics[f"{stage}_{bleu_metric}"] = torch.tensor(bleu_tot_scores[bleu_metric])
+                        
+            # save eval_output files
+            batch_kg_input_ids = batch['kg_input_ids'].cpu()
+            org_lang_input_ids = org_lang_input_ids.cpu()
+            pred_output_ids = [tensor_ids.cpu() for tensor_ids in pred]
+            
+            decode_outputs = (batch_kg_input_ids, org_lang_input_ids, pred_output_ids)
+            return metrics, decode_outputs
     else:
         raise ValueError("Task not exist")
 

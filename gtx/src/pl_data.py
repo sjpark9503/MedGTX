@@ -48,24 +48,32 @@ class DataModule(pl.LightningDataModule):
             data_args.block_size = min(data_args.block_size, tokenizer.model_max_length)
 
     def prepare_data(self):
-        self.train_dataset = get_dataset(
-            self.data_args,
-            tokenizer=self.tokenizer,
-            token_type_vocab=self.config.token_type_vocab,
-        )
-        notifier.warning(self.train_dataset[0])
-        self.eval_dataset = get_dataset(
-            self.data_args,
-            tokenizer=self.tokenizer,
-            token_type_vocab = self.config.token_type_vocab,
-            evaluate=True
-        )
-        self.test_dataset = get_dataset(
-            self.data_args, 
-            tokenizer=self.tokenizer, 
-            token_type_vocab = self.config.token_type_vocab,
-            test=True
-        ) if self.args.do_eval else None
+        if self.args.do_train:
+            self.train_dataset = get_dataset(
+                self.data_args,
+                tokenizer=self.tokenizer,
+                token_type_vocab=self.config.token_type_vocab,
+            )
+            notifier.warning(self.train_dataset[0])
+            self.eval_dataset = get_dataset(
+                self.data_args,
+                tokenizer=self.tokenizer,
+                token_type_vocab = self.config.token_type_vocab,
+                evaluate=True
+            )
+        else:
+            self.train_dataset = None
+            self.eval_dataset = None
+            
+        if self.args.do_eval:
+            self.test_dataset = get_dataset(
+                self.data_args, 
+                tokenizer=self.tokenizer, 
+                token_type_vocab = self.config.token_type_vocab,
+                test=True
+            )
+        else:
+            self.test_dataset = None
 
     def setup(self, stage): 
         COLLATORS = {

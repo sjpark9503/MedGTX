@@ -19,37 +19,52 @@ notifier.addHandler(log_formatter())
 #         return None
 
 def get_trainer_config(args):
+    # We will collect callbacks!
     callbacks = list()
 
-    # Checkpointing Criteria
-    # callbacks.append(pl.callbacks.ModelCheckpoint(
+    # # - Checkpointing Criteria
+    # model_ckpt_callback = pl.callbacks.ModelCheckpoint(
     #     monitor='',
     #     dirpath=args.output_dir,
     #     save_top_k=1,
     #     filename='best',
     #     mode='min',
-    #     )
-    # )  
+    # )
+    # callbacks.append(model_ckpt_callback)
 
+
+    # - LR monitoring Criteria
+    lr_monitor_callback = pl.callbacks.LearningRateMonitor(
+        logging_interval="step"
+    )
+    
+    # - Early stop Criteria
     monitoring_target = {
         "Pre":None,
         "Re":"valid_acc",
         "AdmPred":"valid_loss",
         "ErrDetect":"valid_loss",
-        "Gen":"<TBD>!!", 
+        "Gen":"valid_lm_acc",
     }
-
-    # Early stop Criteria
-    early_stop_callback = pl.callbacks.EarlyStopping(
-        monitor=monitoring_target[args.task],
-        patience=5,
-        mode="min" if args.task in ['AdmPred', 'ErrDetect'] else "max",
-        # check_finite=True,
-        # stopping_threshold=0.9
-    )
-
+    
     if args.task != "Pre":
-        callbacks.append(early_stop_callback)
+        if args.task != "Gen":
+            early_stop_callback = pl.callbacks.EarlyStopping(
+                monitor=monitoring_target[args.task],
+                patience=5,
+                mode="min" if args.task in ['AdmPred', 'ErrDetect'] else "max",
+            )
+            callbacks.append(early_stop_callback)
+        else:  # Generation Task
+            early_stop_callback = pl.callbacks.EarlyStopping(
+                monitor=monitoring_target[args.task],
+                min_delta=0.001 if args.task != "Gen" else 0.005,
+                patience=3,
+                verbose=True,
+                mode="max",
+            )
+            callbacks.append(early_stop_callback)
+            callbacks.append(lr_monitor_callback)
 
     if args.use_tpu:
         tpu_core_id = 8
@@ -70,6 +85,10 @@ def get_trainer_config(args):
     if not args.do_eval:
         config["val_check_interval"]=1e10
         
+    if args.task == "Gen":
+        config["val_check_interval"]=1.0
+        config["check_val_every_n_epoch"]=5
+
     return config
 
 def main():
@@ -111,10 +130,16 @@ def main():
         if training_args.task == "Pre":
             gtx.save()
             data_module.save()
+        elif training_args.task == "Gen":
+            gtx.save()
+            # data_module.save()
         
     # Test
     if training_args.do_eval:
-        trainer.test()
+        if not training_args.do_train:
+            data_module.prepare_data()
+            data_module.setup('test')
+        trainer.test(model=gtx, datamodule=data_module)
 
 if __name__ == "__main__":
     main()
