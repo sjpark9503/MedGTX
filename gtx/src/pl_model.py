@@ -51,7 +51,6 @@ class GTXModel(pl.LightningModule):
         MODEL_CLASSES = {
             "Pre":GTXForKGTokPredAndMaskedLM,
             "Re":GTXForRanking,
-            # "Gen":GTXForKGTokPredAndMaskedLM,
             "Gen":GTXForGeneration,
             "AdmPred":GTXForAdmLvlPrediction,
             "ErrDetect":GTXForErrorDetection,

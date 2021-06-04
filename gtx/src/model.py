@@ -749,9 +749,6 @@ class GTXEncoder(nn.Module):
         if ("literal" in self.config.KnowMix) or ("adm" in self.config.KnowMix):
             notifier.critical(f"Use Knowledge Mixup Layer on {config.KnowMix} nodes")
             self.r_layers = nn.ModuleList([GTXKnowMixLayer(config) for _ in range(self.num_r_layers)])
-        if ("literal" in self.config.KnowMix) or ("adm" in self.config.KnowMix):
-            notifier.critical(f"Use Knowledge Mixup Layer on {config.KnowMix} nodes")
-            self.r_layers = nn.ModuleList([GTXKnowMixLayer(config) for _ in range(self.num_r_layers)])
         else:
             notifier.critical("Use Standard GAT Layer")
             self.r_layers = nn.ModuleList([GTXLayer(config) for _ in range(self.num_r_layers)])            
@@ -846,12 +843,14 @@ class GTXEncoder(nn.Module):
 
         for layer_module in self.r_layers:
             if ("literal" in self.config.KnowMix) or ("adm" in self.config.KnowMix):
-                kg_outputs = layer_module(kg_feats,
-                                          kg_attention_mask,
-                                          contexts=kg_ext_input_ids,
-                                          context_attention_masks=extended_kg_ext_attention_mask,
-                                          KnowMix_indices=kg_ext_attention_mask,
-                                          output_attentions=output_attentions)
+                kg_outputs = layer_module(
+                    kg_feats,
+                    kg_attention_mask,
+                    contexts=kg_ext_input_ids,
+                    context_attention_masks=extended_kg_ext_attention_mask,
+                    KnowMix_indices=kg_ext_attention_mask,
+                    output_attentions=output_attentions
+                )
             else:
                 kg_outputs = layer_module(kg_feats, kg_attention_mask, output_attentions=output_attentions)
             kg_feats = kg_outputs[0]

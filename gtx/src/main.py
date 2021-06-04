@@ -105,11 +105,7 @@ def main():
     wandb_config = dict()
     wandb_config.update(vars(training_args))
     wandb_config.update(vars(model_args))
-    logger = pl.loggers.WandbLogger(config=wandb_config,
-                                    entity='kgtxt',
-                                    project='NeurIPS2021',
-                                    name=training_args.run_name,
-                                    save_dir=None)
+    logger = pl.loggers.WandbLogger(config=wandb_config, entity='kgtxt', project='NeurIPS2021', name=training_args.run_name, save_dir=None)
 
     # Call Model
     gtx = GTXModel(model_args, training_args)
@@ -134,7 +130,6 @@ def main():
         if training_args.task == "Pre":
             gtx.save()
             data_module.save()
-        # TODO: save models
         elif training_args.task == "Gen":
             gtx.save()
             # data_module.save()
