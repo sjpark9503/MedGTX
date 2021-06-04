@@ -34,31 +34,37 @@ def get_trainer_config(args):
     monitoring_target = {
         "Pre":None,
         "Re":"valid_acc",
-        "AdmPred":"valid_P@1",
-        "ErrDetect":"valid_R@1",
+        "AdmPred":"valid_loss",
+        "ErrDetect":"valid_loss",
         "Gen":"valid_lm_acc",
     }
 
     # Early stop Criteria
-    early_stop_callback = pl.callbacks.EarlyStopping(
-        monitor=monitoring_target[args.task],
-        min_delta=0.001 if args.task != "Gen" else 0.005,
-        patience=3,
-        verbose=True,
-        mode="max",
-        # check_finite=True,
-        # stopping_threshold=0.9
-    )
+        
+    
     
     lr_monitor_callback = pl.callbacks.LearningRateMonitor(
         logging_interval="step"
     )
 
     if args.task != "Pre":
-        callbacks.append(early_stop_callback)
-        
-    if args.task == "Gen":
-        callbacks.append(lr_monitor_callback)
+        if args.task != "Gen":
+            early_stop_callback = pl.callbacks.EarlyStopping(
+                monitor=monitoring_target[args.task],
+                patience=5,
+                mode="min" if args.task in ['AdmPred', 'ErrDetect'] else "max",
+            )
+            callbacks.append(early_stop_callback)
+        else:  # Generation Task
+            early_stop_callback = pl.callbacks.EarlyStopping(
+                monitor=monitoring_target[args.task],
+                min_delta=0.001 if args.task != "Gen" else 0.005,
+                patience=3,
+                verbose=True,
+                mode="max",
+            )
+            callbacks.append(early_stop_callback)
+            callbacks.append(lr_monitor_callback)
 
     if args.use_tpu:
         tpu_core_id = 8

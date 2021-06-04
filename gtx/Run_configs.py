@@ -127,14 +127,6 @@ class Configuration():
                 if self.config['task_number']==2:
                     self.TRAINING_CONFIG['do_train'] = False
                     self.TRAINING_CONFIG['do_predict'] = True  # To do nothing on masking of data_collator when evaluation
-                    # SRC_PATH = os.path.join(self.EXP_PATH, 'src/evaluation_generation.py')
-                    # self.TRAINING_CONFIG['decode_option'] = {
-                    #     # "perturb_type" : None,
-                    #     "given_lang_tokens": 1,
-                    #     "clean_outputs": True,
-                    #     "given_gt_length": False,
-                    #     "search_beam_size": 1,
-                    # }
                 elif self.config['task_number']==3:
                     for k in self.TRAINING_CONFIG:
                         if 'file' in k:
