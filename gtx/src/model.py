@@ -1985,7 +1985,6 @@ class GTXForGeneration(GTXPreTrainedModel):
         rc_indeces=None,
         kg_ext_input_ids = None,
         kg_ext_attention_mask = None,
-        token_type_ids=None,
         output_attentions=None,
         output_hidden_states=None,
         return_dict=True,
