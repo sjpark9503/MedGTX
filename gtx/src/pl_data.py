@@ -8,7 +8,7 @@ from typing import Any, Callable, Dict, List, NewType, Optional, Tuple, Union
 
 # User defined pkgs
 from utils.dataset import get_dataset
-from utils.data_collator import NodeClassification_DataCollator, NegativeSampling_DataCollator, UniLM_DataCollator, AdmLvlPred_DataCollator, ErrorDetection_DataCollator, Evaluation_DataCollator
+from utils.data_collator import NodeClassification_DataCollator, NegativeSampling_DataCollator, UniLM_DataCollator, AdmLvlPred_DataCollator, ErrorDetection_DataCollator, Evaluation_DataCollator, TemporalPred_DataCollator
 
 # Huggingface Transformers Module
 from transformers import (
@@ -82,6 +82,11 @@ class DataModule(pl.LightningDataModule):
             "Gen":UniLM_DataCollator,
             "AdmPred":AdmLvlPred_DataCollator,
             "ErrDetect":ErrorDetection_DataCollator,
+            "ReAdm":TemporalPred_DataCollator,
+            "NextDx":TemporalPred_DataCollator,
+            "Death30":TemporalPred_DataCollator,
+            "Death180":TemporalPred_DataCollator,
+            "Death365":TemporalPred_DataCollator,
         }
 
         # if self.args.task == "ErrDetect":
@@ -97,7 +102,7 @@ class DataModule(pl.LightningDataModule):
             "edge_cls": self.args.edge_cls,
             "kg_special_token_ids": self.config.kg_special_token_ids,
             "kg_size": self.config.vocab_size['kg'],
-            "num_kg_labels": self.config.num_kg_labels,
+            "num_labels": self.config.num_labels,
             "label_domain": self.args.label_domain,
             "id2desc": id2desc if self.args.knowmix else None,
         }

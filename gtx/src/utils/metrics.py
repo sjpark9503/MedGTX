@@ -3,6 +3,7 @@ import torch.nn.functional as F
 from tqdm import tqdm
 
 from nltk.translate.bleu_score import sentence_bleu, corpus_bleu, SmoothingFunction
+from sklearn.metrics import accuracy_score, f1_score, roc_auc_score, average_precision_score
 def bleu_all(list_of_references, hypotheses):
     # calculate bleu scores (batch-wise)
     assert len(list_of_references) == len(hypotheses)
@@ -49,13 +50,24 @@ def rouge_all(hypotheses, references):
 
 
 def precision_at_k(labels, scores, ks=None):
-    sample_precision = {k:list() for k in ks}
+    if ks is None:
+        sample_precision = {"Precision":list()}
+    else:
+        sample_precision = {k:list() for k in ks}
+        sample_precision["Precision"] = list()
     for label, score in zip(labels, scores):
-        label = (label==1).nonzero()
-        for k in ks:
-            top_k_pred = score.topk(k).indices
-            hit = sum([1 if pred in label else 0 for pred in top_k_pred])
-            sample_precision[k].append(hit/k)
+        label_pos = (label==1).nonzero()
+        if ks is not None:
+            for k in ks:
+                top_k_pred = score.topk(k).indices
+                hit = sum([1 if pred in label_pos else 0 for pred in top_k_pred])
+                sample_precision[k].append(hit/k)
+        pred = (score>0.5).float()
+        hit = pred[label==1].sum()
+        if pred.sum() == 0:
+            sample_precision["Precision"].append(0.0)
+        else:
+            sample_precision["Precision"].append(hit/pred.sum())
 
     return {k:torch.tensor(v) for k,v in sample_precision.items()}
 
@@ -78,13 +90,20 @@ def recall_at_k(labels, scores, ks=None):
 def metrics_for_tasks(task,
                       stage,
                       batch=None,
+                      gt=None,
                       outputs=None,
+                      loss_only=False,
                       scores=None,
                       model=None,
                       tokenizer=None,
                       current_epoch=None,                  
     ):
-    metrics = {f"{stage}_{k}":v for k,v in outputs.loss_dict.items()}
+    if task not in ["ReAdm","NextDx","Death30","Death180","Death365"] or loss_only:
+        metrics = {f"{stage}_{k}":v for k,v in outputs.loss_dict.items()}
+        if loss_only:
+            return metrics
+    else:
+        metrics = {}
     if task == "Pre":
         if batch['lm_label'] is not None:
             lm_pred = torch.max(outputs.lang_prediction_logits, dim=2)[-1][:batch['lm_label'].size(0)][~batch['lm_label'].eq(-100)].view(-1).long()
@@ -120,11 +139,38 @@ def metrics_for_tasks(task,
             raise ValueError("Label for one of the domain needed to exist")
 
         task_metrics = recall_at_k(gt, pred, ks=[1,5,10,20,50])
+        precision_metrics = precision_at_k(gt, pred)
+        task_metrics['Precision'] = precision_metrics['Precision']
         for k,v in task_metrics.items():
             if isinstance(k,int):
                 metrics[f"{stage}_R@{k}"] = v
             else:
                 metrics[f"{stage}_{k}"] = v
+
+    elif task in ["ReAdm","Death30","Death180","Death365"]:
+        pred = F.sigmoid(outputs).cpu()
+        pred_ind = pred>0.5
+        gt = gt.cpu()
+        metrics[f"{stage}_acc"] = accuracy_score(gt, pred_ind)
+        metrics[f"{stage}_f1"] = f1_score(gt, pred_ind)
+        # if stage == "test":
+        metrics[f"{stage}_AUPRC"] = average_precision_score(gt, pred)
+        metrics[f"{stage}_AUROC"] = roc_auc_score(gt, pred)
+
+    elif task == "NextDx":
+        living_gt_idx = gt.sum(0)!=0
+        gt = gt[:,living_gt_idx].cpu()
+        pred = F.sigmoid(outputs[:,living_gt_idx]).cpu()
+        pred_ind = pred>0.5
+        metrics[f"{stage}_acc"] = accuracy_score(gt, pred_ind)
+        metrics[f"{stage}_macro_f1"] = f1_score(gt, pred_ind, average="macro")
+        metrics[f"{stage}_micro_f1"] = f1_score(gt, pred_ind, average="micro")
+        # if stage == "test":
+        metrics[f"{stage}_macro_AUPRC"] = average_precision_score(gt, pred, average="macro")
+        metrics[f"{stage}_micro_AUPRC"] = average_precision_score(gt, pred, average="micro")
+        metrics[f"{stage}_macro_AUROC"] = roc_auc_score(gt, pred, average="macro")
+        metrics[f"{stage}_micro_AUROC"] = roc_auc_score(gt, pred, average="micro")
+
 
     elif task == "Gen":
         if stage == "valid":

@@ -688,8 +688,15 @@ class GTXKnowMixLayer(nn.Module):
         context_attention_masks,
         KnowMix_indices,
         output_attentions=False,
-    ):
-        KnowMix_indices = KnowMix_indices.bool().any(-1) if "literal" in self.config.KnowMix else 0
+    ):  
+        # Select fusion level
+        if ("lit" in self.config.KnowMix) or ("abs" in self.config.KnowMix):
+            KnowMix_indices = KnowMix_indices.bool().any(-1)
+        elif "adm" in self.config.KnowMix:
+            KnowMix_indices = 1
+        else:
+            raise NotImplementedError(f"{self.config.Knowmix} is an invalid fusion level.")
+
         att_output = self.mixup(
                 inputs=inputs,
                 attention_masks=context_attention_masks,
@@ -746,7 +753,7 @@ class GTXEncoder(nn.Module):
         self.layer = nn.ModuleList([GTXLayer(config) for _ in range(self.num_l_layers)])
         notifier.warning(f"This model has a {config.cross_att_type if 'cross_att_type' in vars(config).keys() else 'cross'} type of x_attention architecture.")
         self.x_layers = nn.ModuleList([GTXXLayer(config) for _ in range(self.num_x_layers)])
-        if ("literal" in self.config.KnowMix) or ("adm" in self.config.KnowMix):
+        if ("lit" in self.config.KnowMix) or ("abs" in self.config.KnowMix) or ("adm" in self.config.KnowMix):
             notifier.critical(f"Use Knowledge Mixup Layer on {config.KnowMix} nodes")
             self.r_layers = nn.ModuleList([GTXKnowMixLayer(config) for _ in range(self.num_r_layers)])
         else:
@@ -842,7 +849,7 @@ class GTXEncoder(nn.Module):
             extended_kg_ext_attention_mask = None
 
         for layer_module in self.r_layers:
-            if ("literal" in self.config.KnowMix) or ("adm" in self.config.KnowMix):
+            if ("lit" in self.config.KnowMix) or ("abs" in self.config.KnowMix) or ("adm" in self.config.KnowMix):
                 kg_outputs = layer_module(
                     kg_feats,
                     kg_attention_mask,
@@ -892,7 +899,7 @@ class GTXPooler(nn.Module):
         super(GTXPooler, self).__init__()
         self.multi_pooler = nn.Sequential(nn.Linear(config.hidden_size*2, config.hidden_size*2),
                                     nn.Tanh(),
-                                    nn.Linear(config.hidden_size*2, config.num_kg_labels))
+                                    nn.Linear(config.hidden_size*2, config.num_labels))
         self.ce_pooler = nn.Sequential(nn.Linear(config.hidden_size*2, config.hidden_size*2),
                                     nn.Tanh(),
                                     nn.Linear(config.hidden_size*2, 2))
@@ -1067,6 +1074,7 @@ class GTXModel(GTXPreTrainedModel):
         super().__init__(config)
         self.lang_embeddings = GTXEmbeddings(config,input_type='lang')
         self.kg_embeddings = GTXEmbeddings(config,input_type='kg')
+
         self.encoder = GTXEncoder(config)
         self.pooler = GTXPooler(config)
 
@@ -1081,12 +1089,21 @@ class GTXModel(GTXPreTrainedModel):
     def get_kg_embeddings(self):
         return self.kg_embeddings.word_embeddings
 
-    def set_kg_embeddings(self, new_embedding):
-        if len(self.config.kg_special_token_ids)>0:
-            self.kg_embeddings.word_embeddings.weight.data[len(self.config.kg_special_token_ids):,:] = new_embedding.data[:-len(self.config.kg_special_token_ids)]
+    def set_kg_embeddings(self, new_embedding, lit2word=None):
+        if lit2word is None:
+            if len(self.config.kg_special_token_ids)>0:
+                self.kg_embeddings.word_embeddings.weight.data[len(self.config.kg_special_token_ids):,:] = new_embedding.data[:-len(self.config.kg_special_token_ids)]
+            else:
+                self.kg_embeddings.word_embeddings.weight.data = new_embedding.data
         else:
-            self.kg_embeddings.word_embeddings.weight.data = new_embedding.data
-
+            litwords = torch.tensor(lit2word['input_ids'])
+            litwords_notpad = torch.tensor(lit2word['attention_mask'])
+            literal_idx = litwords_notpad.any(1)
+            kg_emb = self.get_lang_embeddings()(litwords)
+            kg_emb[~litwords_notpad] = 0
+            literal_emb = kg_emb.sum(1)[literal_idx]/litwords_notpad.sum(1)[literal_idx].unsqueeze(-1)
+            self.kg_embeddings.word_embeddings.weight.data[literal_idx] = literal_emb
+            notifier.warning(f"Successfully initialize the KG embdding w/ subword embddings. {literal_idx.float().mean():.2f} indices initialized.")
     def forward(
         self,
         lang_input_ids=None,
@@ -1175,11 +1192,6 @@ class GTXModel(GTXPreTrainedModel):
         kg_embedding_output = self.kg_embeddings(kg_input_ids, None, kg_inputs_embeds)
         if kg_ext_input_ids is not None:
             kg_ext_embedding_output = self.lang_embeddings.word_embeddings(kg_ext_input_ids)
-            if "init" in self.config.KnowMix:
-                literal_idx = kg_ext_attention_mask.bool().any(-1)
-                kg_embedding_output[literal_idx,:] = kg_ext_embedding_output.mean(-2)[literal_idx,:]
-                if "adm" not in self.config.KnowMix:
-                    kg_ext_embedding_output = None
         else:
             kg_ext_embedding_output = None
         # Run GTX encoder
@@ -1231,10 +1243,11 @@ class GTXModel(GTXPreTrainedModel):
         )
 
 class GTXForKGTokPredAndMaskedLM(GTXPreTrainedModel):
-    def __init__(self, config):
-        super().__init__(config)
+    def __init__(self, config, lit2word=None):
+        super().__init__(config, lit2word)
         # Configuration
         self.config = config
+        self.num_labels = config.num_labels
         self.num_kg_labels = config.num_kg_labels
 
         # GTX backbone
@@ -1255,10 +1268,10 @@ class GTXForKGTokPredAndMaskedLM(GTXPreTrainedModel):
         if not config.gcn and config.pretrained_kg_embedding:
             notifier.critical("Load pretrained embedding for translation based KG-GTX")
             new_embedding = torch.load(config.pretrained_kg_embedding)
-            # new_embedding = loaded_state_dict['ent_embeddings.weight']
             self.GTX.set_kg_embeddings(new_embedding)
             del new_embedding
-            #torch.cuda.empty_cache()
+        elif lit2word:
+            self.GTX.set_kg_embeddings(None, lit2word)
 
         # Use Pretrained-LM in Language Part
         self.GTX.encoder.re_init_to_pretrained_lang_model()
@@ -1371,6 +1384,7 @@ class GTXForKGTokPredAndMaskedLM(GTXPreTrainedModel):
             cross_loss = self.loss_fcts["ce"](cross_relationship_score, cross_label)
             total_loss += cross_loss
             loss_dict['align_loss']=cross_loss.mean().detach()
+        
         if rc_indeces is not None:
             rc_labels = list()
             rc_inputs = list()
@@ -1663,7 +1677,7 @@ class GTXForErrorDetection(GTXPreTrainedModel):
         self.GTX = GTXModel(config)
         self.multilabel_classifier = nn.Sequential(nn.Linear(config.hidden_size, config.hidden_size),
                                                 nn.ReLU(),
-                                                nn.Linear(config.hidden_size, config.num_kg_labels))
+                                                nn.Linear(config.hidden_size, config.num_labels))
         self.token_classifier = nn.Linear(config.hidden_size, 1)
         self.dropout = nn.Dropout(config.hidden_dropout_prob)
 
@@ -1789,18 +1803,135 @@ class GTXForErrorDetection(GTXPreTrainedModel):
             cross_encoder_attentions=GTX_output.cross_encoder_attentions,
         )
 
+class GTXForTemporalPred(GTXPreTrainedModel):
+    def __init__(self, config):
+        super().__init__(config)
+        # Configuration
+        self.config = config
+
+        # GTX backbone
+        self.GTX = GTXModel(config)
+        self.dropout = nn.Dropout(config.hidden_dropout_prob)
+
+        # Weight initialization
+        self.init_weights()
+
+        # Use Pretrained-LM in Language Part
+        self.GTX.encoder.re_init_to_pretrained_lang_model()
+
+        # Warm start KG embedding
+        if not config.gcn and config.pretrained_kg_embedding:
+            notifier.critical("Load pretrained embedding for translation based KG-GTX")
+            new_embedding = torch.load(config.pretrained_kg_embedding)
+            self.GTX.set_kg_embeddings(new_embedding)
+            del new_embedding
+
+        # Loss functions
+        self.loss_fcts = {
+            "bce": nn.BCEWithLogitsLoss(reduction='none'),
+            # "ce": nn.CrossEntropyLoss(),
+        }
+        self.class_weight = None
+
+    def forward(
+        self,
+        lang_input_ids=None,
+        kg_input_ids=None,
+        lang_inputs_embeds=None,
+        kg_inputs_embeds=None,
+        lang_attention_mask=None,
+        kg_attention_mask=None,
+        kg_padding_mask=None,
+        label=None,
+        token_type_ids=None,
+        kg_ext_input_ids = None,
+        kg_ext_attention_mask = None,
+        output_attentions=None,
+        output_hidden_states=None,
+        return_dict=True,
+    ):
+        r"""
+        masked_lm_labels (``torch.LongTensor`` of shape ``(batch_size, sequence_length)``, `optional`):
+            Labels for computing the masked language modeling loss. Indices should be in ``[-100, 0, ...,
+            config.vocab_size]`` (see ``input_ids`` docstring) Tokens with indices set to ``-100`` are ignored
+            (masked), the loss is only computed for the tokens with labels in ``[0, ..., config.vocab_size]``
+        obj_labels: (``Dict[Str: Tuple[Torch.FloatTensor, Torch.FloatTensor]]``, `optional`):
+            each key is named after each one of the visual losses and each element of the tuple is of the shape
+            ``(batch_size, num_features)`` and ``(batch_size, num_features, visual_feature_dim)`` for each the label id
+            and the label score respectively
+        matched_label (``torch.LongTensor`` of shape ``(batch_size,)``, `optional`):
+            Labels for computing the whether or not the text input matches the image (classification) loss. Input
+            should be a sequence pair (see :obj:`input_ids` docstring) Indices should be in ``[0, 1]``:
+
+            - 0 indicates that the sentence does not match the image,
+            - 1 indicates that the sentence does match the image.
+        ans: (``Torch.Tensor`` of shape ``(batch_size)``, `optional`):
+            a one hot representation hof the correct answer `optional`
+
+        Returns:
+        """
+
+        device = lang_input_ids.device #if lang_input_ids is not None else inputs_embeds.device
+
+        loss_dict = dict()
+
+        GTX_output = self.GTX(
+            lang_input_ids=lang_input_ids,
+            kg_input_ids=kg_input_ids,
+            lang_inputs_embeds=lang_inputs_embeds,
+            kg_inputs_embeds=kg_inputs_embeds,
+            lang_attention_mask=lang_attention_mask,
+            kg_attention_mask=kg_attention_mask,
+            kg_padding_mask=kg_padding_mask,
+            token_type_ids=token_type_ids,
+            kg_ext_input_ids = kg_ext_input_ids,
+            kg_ext_attention_mask = kg_ext_attention_mask,
+            output_attentions=output_attentions,
+            output_hidden_states=output_hidden_states,
+            return_dict=return_dict,
+        )
+
+        lang_output, kg_output, multi_label_score = (
+            GTX_output.language_output,
+            GTX_output.kg_output,
+            GTX_output.pooled_output,
+        )
+        # multi_label_score = multi_label_score.softmax(dim=1)
+        if label is not None:
+            total_loss = self.loss_fcts["bce"](multi_label_score.squeeze(dim=1), label.float())
+            total_loss = total_loss.mean()
+            loss_dict['loss']=total_loss.detach()
+        else:
+            total_loss = None
+    
+        if not return_dict:
+            output = (
+                loss_dict,
+            ) + GTX_output[3:]
+            return ((total_loss,) + output) if total_loss is not None else output
+
+        return GTXForDownstreamOutput(
+            loss=total_loss,
+            loss_dict=loss_dict,
+            pooled_logits=multi_label_score.detach(),
+            language_hidden_states=GTX_output.language_hidden_states,
+            kg_hidden_states=GTX_output.kg_hidden_states,
+            language_attentions=GTX_output.language_attentions,
+            kg_attentions=GTX_output.kg_attentions,
+            cross_encoder_attentions=GTX_output.cross_encoder_attentions,
+        )
 
 class GTXForGeneration(GTXPreTrainedModel):
     def __init__(self, config):
         super().__init__(config)
         # Configuration
         self.config = config
-        self.num_kg_labels = config.num_kg_labels
+        self.num_labels = config.num_labels
 
         # GTX backbone
         self.GTX = GTXModel(config)
         self.dropout = nn.Dropout(config.hidden_dropout_prob)
-        # self.classifier = nn.Linear(config.hidden_size, config.num_kg_labels)
+        # self.classifier = nn.Linear(config.hidden_size, config.num_labels)
         # self.edge_classifier = nn.Sequential(nn.Linear(config.hidden_size*2, config.hidden_size*2),
         #                                     nn.Tanh(),
         #                                     nn.Linear(config.hidden_size*2, config.num_relations))
@@ -1854,6 +1985,7 @@ class GTXForGeneration(GTXPreTrainedModel):
         rc_indeces=None,
         kg_ext_input_ids = None,
         kg_ext_attention_mask = None,
+        token_type_ids=None,
         output_attentions=None,
         output_hidden_states=None,
         return_dict=True,

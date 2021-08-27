@@ -14,6 +14,7 @@ import torch
 from torch.nn.utils.rnn import pad_sequence
 from torch.utils.data.dataset import Dataset
 import numpy as np
+from itertools import chain
 
 from transformers.tokenization_utils_base import BatchEncoding, PaddingStrategy, PreTrainedTokenizerBase
 from transformers.tokenization_utils import PreTrainedTokenizer
@@ -73,6 +74,9 @@ class HeadOnlyDataset(Dataset):
         notifier.warning("Creating features from dataset file at %s", file_path)
         # Loading preprocessed data
         self.batch_encoding = torch.load(os.path.join(file_path,'db'))
+        # # Only for debug
+        # self.batch_encoding  = {k:v[:10] for k,v in self.batch_encoding.items()}
+        # # Only for debug
         self.batch_encoding['lang'] = dict()
         for text in tqdm(self.batch_encoding['text']):
             sections, notes = list(text.keys()), list(text.values())
@@ -122,9 +126,18 @@ class HeadOnlyDataset(Dataset):
                     inputs['label'] = self.batch_encoding['label'][idx]
             if 'rc_index' in self.batch_encoding:
                 inputs['rc_indeces'] = self.batch_encoding['rc_index'][idx]
-            if 'knowledge' in self.batch_encoding:
+            if ('knowledge' in self.batch_encoding) and (self.knowmix!="init"):
                 if "adm" in self.knowmix:
                     tokenized_knowledge = self.tokenizer((" ".join(self.batch_encoding['knowledge'][idx])).strip(), add_special_tokens=False, padding='max_length', max_length=ext_max_len, return_token_type_ids=False)
+                elif "abs" in self.knowmix:
+                    abs_indices = [x for _idx, x in enumerate(self.batch_encoding['knowledge'][idx]) if (_idx>1) and not x]
+                    processed_knowledge = list()
+                    for node_idx in range(len(self.batch_encoding['knowledge'][idx])):
+                        if node_idx in abs_indices:
+                            processed_knowledge.append(" ".join([_s for _idx, _mask, _s in enumerate(zip(inputs['kg_attention_mask'][node_idx],self.batch_encoding['knowledge'][idx])) if (_idx>1) and (_mask!=0)]).strip())
+                        else:
+                            processed_knowledge.append("")
+                    tokenized_knowledge = self.tokenizer(processed_knowledge, add_special_tokens=False, padding='max_length', max_length=64, return_token_type_ids=False)
                 else:
                     tokenized_knowledge = self.tokenizer(self.batch_encoding['knowledge'][idx], add_special_tokens=False, padding='max_length', max_length=64, return_token_type_ids=False)
                 inputs['kg_ext_input_ids'] = tokenized_knowledge['input_ids']

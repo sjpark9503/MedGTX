@@ -436,7 +436,7 @@ class AdmLvlPred_DataCollator:
     """
     tokenizer: PreTrainedTokenizerBase
     kg_special_token_ids: dict
-    num_kg_labels: int
+    num_labels: int
     prediction: bool = False
 
     def __call__(self,features: List[InputDataClass]) -> Dict[str, torch.Tensor]:
@@ -461,8 +461,61 @@ class AdmLvlPred_DataCollator:
         for k, v in first.items():
             if (v is not None) and (not isinstance(v, str)):
                 if (k == 'label'):
-                    batch[k] = torch.stack([torch.zeros(self.num_kg_labels).index_fill_(0,torch.LongTensor(f[k]),1) for f in features])
+                    batch[k] = torch.stack([torch.zeros(self.num_labels).index_fill_(0,torch.LongTensor(f[k]),1) for f in features])
                     continue
+                if (k == "kg_attention_mask"):
+                    if isinstance(v, torch.Tensor):
+                        if (len(v.shape) == 3):
+                            batch[k] = torch.stack([f[k] for f in features]).permute(0,3,1,2)
+                        else:
+                            batch[k] = torch.stack([f[k] for f in features])
+                    else:
+                        batch[k] = torch.tensor([f[k] for f in features])
+                else:
+                    if isinstance(v, torch.Tensor):
+                        batch[k] = torch.stack([f[k] for f in features])
+                    else:
+                        batch[k] = torch.tensor([f[k] for f in features])
+
+                    if (k == "kg_input_ids"):
+                        batch['kg_padding_mask'] = ~batch[k].detach().clone().eq(self.kg_special_token_ids['PAD'])
+
+        return batch
+
+@dataclass
+class TemporalPred_DataCollator:
+    """
+    Data collator used for language modeling.
+    - collates batches of tensors, honoring their tokenizer's pad_token
+    - preprocesses batches for masked language modeling
+    """
+    tokenizer: PreTrainedTokenizerBase
+    kg_special_token_ids: dict
+    num_labels: int
+    prediction: bool = False
+
+    def __call__(self,features: List[InputDataClass]) -> Dict[str, torch.Tensor]:
+        if not isinstance(features[0], (dict, BatchEncoding)):
+            features = [vars(f) for f in features]
+        batch = self._tensorize_batch(features)
+
+        return batch
+
+    def _tensorize_batch(self,features: List[Dict]) -> Dict[str, torch.Tensor]:
+        # In this function we'll make the assumption that all `features` in the batch
+        # have the same attributes.
+        # So we will look at the first element as a proxy for what attributes exist
+        # on the whole batch.
+        first = features[0]
+        batch = {}
+
+        for k, v in first.items():
+            if (v is not None) and (not isinstance(v, str)):
+                if (k == 'label'):
+                    if self.num_labels>1:
+                        batch[k] = torch.stack([torch.zeros(self.num_labels).index_fill_(0,torch.LongTensor(f[k]),1) for f in features])
+                    else:
+                        batch[k] = torch.tensor([f[k] for f in features])
                 if (k == "kg_attention_mask"):
                     if isinstance(v, torch.Tensor):
                         if (len(v.shape) == 3):
@@ -491,7 +544,7 @@ class ErrorDetection_DataCollator:
     """
     tokenizer: PreTrainedTokenizerBase
     kg_special_token_ids: dict
-    #num_kg_labels: int
+    #num_labels: int
     kg_size: int
     id2desc: dict
     label_domain: str
@@ -582,7 +635,7 @@ class ErrorDetection_DataCollator:
 
     #     # if 'deletion' in self.task:
     #     #     inputs[corruption_indeces] = self.kg_special_token_ids['PAD']
-    #     #     deleted_label = torch.zeros(inputs.size(0),self.num_kg_labels)
+    #     #     deleted_label = torch.zeros(inputs.size(0),self.num_labels)
     #     #     for idx in corruption_indeces.nonzero():
     #     #         deleted_label[idx[0],labels[idx[0],idx[1]]]=1
     #     #         if 'kg_attention_mask' in batch:
@@ -689,7 +742,7 @@ class ErrorDetection_DataCollator:
 #     """
 #     tokenizer: PreTrainedTokenizerBase
 #     kg_special_token_ids: dict
-#     #num_kg_labels: int
+#     #num_labels: int
 #     kg_size: int
 #     label_domain: str
 #     prediction: bool = False
@@ -760,7 +813,7 @@ class ErrorDetection_DataCollator:
 
 #         # if 'deletion' in self.task:
 #         #     inputs[corruption_indeces] = self.kg_special_token_ids['PAD']
-#         #     deleted_label = torch.zeros(inputs.size(0),self.num_kg_labels)
+#         #     deleted_label = torch.zeros(inputs.size(0),self.num_labels)
 #         #     for idx in corruption_indeces.nonzero():
 #         #         deleted_label[idx[0],labels[idx[0],idx[1]]]=1
 #         #         if 'kg_attention_mask' in batch:

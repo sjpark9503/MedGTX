@@ -23,7 +23,12 @@ class Configuration():
                         1: 'Re',
                         2: 'Gen',
                         3: 'AdmPred',
-                        4: 'ErrDetect'}
+                        4: 'ErrDetect',
+                        5: 'ReAdm',
+                        6: 'NextDx',
+                        7: 'Death30',
+                        8: 'Death180',
+                        9: 'Death365'}
         self.TASK_NAME = self.TASK_POOL[config['task_number']]
 
         self.MODEL_NAME = f'{self.DB}_{self.Var_Unified}{"Uni" if self.MODEL_TYPE in ["both","kg"] else "No"}KGenc'
@@ -90,6 +95,7 @@ class Configuration():
             Config['hidden_dropout_prob'] = self.config['dropout']
             Config['cross_att_type'] = 'single' if self.config['model']=='single' else 'cross'
             Config['encoder_type'] = self.Encoder_Type
+            Config['lit2word_path'] = self.TRAINING_CONFIG['train_data_file'].replace("train","lit2word")
             
             if self.config['scratch'] and self.config['task_number']==2:
                 Config['cross_att_type'] = 'unilm'
@@ -101,13 +107,31 @@ class Configuration():
                 for k in self.TRAINING_CONFIG:
                     if 'file' in k:
                         self.TRAINING_CONFIG[k] = self.TRAINING_CONFIG[k].replace('data','data/adm')
-                Config['num_kg_labels'] = 45 if self.DB=='px' else 95
+                Config['num_labels'] = 45 if self.DB=='px' else 95
 
-            elif self.config['task_number'] in [4, 5]:
+            elif self.config['task_number']==4:
                 for k in self.TRAINING_CONFIG:
                     if 'file' in k:
-                        self.TRAINING_CONFIG[k] = self.TRAINING_CONFIG[k].replace('data','data_ed')
-                self.TRAINING_CONFIG['id2desc'] = os.path.join(self.EXP_PATH,f"data_ed/knowmix/{self.DB}_{self.DB_size}/{self.MODEL_NAME}/id2desc")
+                        self.TRAINING_CONFIG[k] = self.TRAINING_CONFIG[k].replace('data','data/ed')
+                self.TRAINING_CONFIG['id2desc'] = os.path.join(self.EXP_PATH,f"data/ed/knowmix/{self.DB}_{self.DB_size}/{self.MODEL_NAME}/id2desc")
+
+            elif self.config['task_number']==5:
+                for k in self.TRAINING_CONFIG:
+                    if 'file' in k:
+                        self.TRAINING_CONFIG[k] = self.TRAINING_CONFIG[k].replace('data','data/readm')
+                Config['num_labels'] = 1
+
+            elif self.config['task_number']==6:
+                for k in self.TRAINING_CONFIG:
+                    if 'file' in k:
+                        self.TRAINING_CONFIG[k] = self.TRAINING_CONFIG[k].replace('data','data/nextdx')
+                Config['num_labels'] = 845
+
+            elif self.config['task_number'] in [7,8,9]:
+                for k in self.TRAINING_CONFIG:
+                    if 'file' in k:
+                        self.TRAINING_CONFIG[k] = self.TRAINING_CONFIG[k].replace('data',f'data/{self.TASK_NAME}')
+                Config['num_labels'] = 1
 
             if not os.path.isdir(os.path.dirname(self.TRAINING_CONFIG['config_name'])):
                 os.makedirs(os.path.dirname(self.TRAINING_CONFIG['config_name']))
@@ -157,12 +181,29 @@ class Configuration():
                     for k in self.TRAINING_CONFIG:
                         if 'file' in k:
                             self.TRAINING_CONFIG[k] = self.TRAINING_CONFIG[k].replace('data','data/adm')
-                    Config['num_kg_labels'] = 45 if self.DB=='px' else 95
-                elif self.config['task_number'] in [4,5]:
+                    Config['num_labels'] = 45 if self.DB=='px' else 95
+                elif self.config['task_number']==4:
                     for k in self.TRAINING_CONFIG:
                         if 'file' in k:
-                            self.TRAINING_CONFIG[k] = self.TRAINING_CONFIG[k].replace('data','data_ed')
-                    self.TRAINING_CONFIG['id2desc'] = os.path.join(self.EXP_PATH,f"data_ed/knowmix/{self.DB}_{self.DB_size}/{self.MODEL_NAME}/id2desc")
+                            self.TRAINING_CONFIG[k] = self.TRAINING_CONFIG[k].replace('data','data/ed')
+                    self.TRAINING_CONFIG['id2desc'] = os.path.join(self.EXP_PATH,f"data/ed/knowmix/{self.DB}_{self.DB_size}/{self.MODEL_NAME}/id2desc")
+                elif self.config['task_number']==5:
+                    for k in self.TRAINING_CONFIG:
+                        if 'file' in k:
+                            self.TRAINING_CONFIG[k] = self.TRAINING_CONFIG[k].replace('data','data/readm')
+                    Config['num_labels'] = 1
+
+                elif self.config['task_number']==6:
+                    for k in self.TRAINING_CONFIG:
+                        if 'file' in k:
+                            self.TRAINING_CONFIG[k] = self.TRAINING_CONFIG[k].replace('data','data/nextdx')
+                    Config['num_labels'] = 845
+
+                elif self.config['task_number'] in [7,8,9]:
+                    for k in self.TRAINING_CONFIG:
+                        if 'file' in k:
+                            self.TRAINING_CONFIG[k] = self.TRAINING_CONFIG[k].replace('data',f'data/{self.TASK_NAME}')
+                    Config['num_labels'] = 1
 
                 # overwrite config
                 if not os.path.isdir(f"config/{self.TASK_NAME}/{'KnowMix,{}/'.format(self.config['KnowMix']) if self.config['KnowMix'] else ''}{self.config['model']}/{self.DB}"):

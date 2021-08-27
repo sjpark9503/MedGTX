@@ -22,17 +22,6 @@ def get_trainer_config(args):
     # We will collect callbacks!
     callbacks = list()
 
-    # # - Checkpointing Criteria
-    # model_ckpt_callback = pl.callbacks.ModelCheckpoint(
-    #     monitor='',
-    #     dirpath=args.output_dir,
-    #     save_top_k=1,
-    #     filename='best',
-    #     mode='min',
-    # )
-    # callbacks.append(model_ckpt_callback)
-
-
     # - LR monitoring Criteria
     lr_monitor_callback = pl.callbacks.LearningRateMonitor(
         logging_interval="step"
@@ -45,13 +34,18 @@ def get_trainer_config(args):
         "AdmPred":"valid_loss",
         "ErrDetect":"valid_loss",
         "Gen":"valid_lm_acc",
+        "ReAdm":"valid_AUROC",
+        "NextDx":"valid_macro_AUROC",
+        'Death30':"valid_AUROC",
+        'Death180': "valid_AUROC",
+        'Death365': "valid_AUROC",
     }
     
     if args.task != "Pre":
         if args.task != "Gen":
             early_stop_callback = pl.callbacks.EarlyStopping(
                 monitor=monitoring_target[args.task],
-                patience=5,
+                patience=2,
                 mode="min" if args.task in ['AdmPred', 'ErrDetect'] else "max",
             )
             callbacks.append(early_stop_callback)
@@ -80,7 +74,7 @@ def get_trainer_config(args):
         "log_every_n_steps":None if args.use_tpu else 50,
         "callbacks":callbacks,
         # "check_val_every_n_epoch":50,
-        "val_check_interval":1.0 if args.task in ["Pre"] else 0.2,
+        "val_check_interval":1.0 if args.task in ["Pre"] else 0.5,
     }
     if not args.do_eval:
         config["val_check_interval"]=1e10
@@ -96,7 +90,6 @@ def main():
     model_args, data_args, training_args = parser.parse_args_into_dataclasses()
     data_args.knowmix = training_args.knowmix
     data_args.task = training_args.task
-    notifier.warning(training_args.task in ["Pre", "ErrDetect"])
 
     # Set seed
     pl.seed_everything(training_args.seed)
@@ -105,7 +98,7 @@ def main():
     wandb_config = dict()
     wandb_config.update(vars(training_args))
     wandb_config.update(vars(model_args))
-    logger = pl.loggers.WandbLogger(config=wandb_config, entity='kgtxt', project='NeurIPS2021', name=training_args.run_name, save_dir=None)
+    logger = pl.loggers.WandbLogger(config=wandb_config, entity='kgtxt', project='AAAI2022_GTX', name=training_args.run_name, log_model=False, save_dir='logs')
 
     # Call Model
     gtx = GTXModel(model_args, training_args)
@@ -130,9 +123,9 @@ def main():
         if training_args.task == "Pre":
             gtx.save()
             data_module.save()
-        elif training_args.task == "Gen":
+        elif training_args.task in ["Gen","ReAdm","NextDx","Death30","Death180", "Death365"]:
             gtx.save()
-            # data_module.save()
+            notifier.critical("Trained model is successfully saved!")
         
     # Test
     if training_args.do_eval:

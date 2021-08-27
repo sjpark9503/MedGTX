@@ -10,7 +10,7 @@ from torch.optim.lr_scheduler import LambdaLR, ReduceLROnPlateau
 from transformers import get_linear_schedule_with_warmup, get_polynomial_decay_schedule_with_warmup
 from transformers.models.auto.tokenization_auto import AutoTokenizer
 # Usr defined pkgs
-from model import GTXForKGTokPredAndMaskedLM, GTXForRanking, GTXForAdmLvlPrediction, GTXForErrorDetection, GTXForGeneration
+from model import GTXForKGTokPredAndMaskedLM, GTXForRanking, GTXForAdmLvlPrediction, GTXForErrorDetection, GTXForGeneration, GTXForTemporalPred
 from utils.metrics import metrics_for_tasks
 # Transformers
 from transformers import (
@@ -33,6 +33,8 @@ class GTXModel(pl.LightningModule):
         self.best_val_metric = -1e10
         self.best_test_metric = -1e10
 
+        self.load_bert_tokenizer()
+
         # Load configuration
         if model_args.config_name:
             config = AutoConfig.from_pretrained(model_args.config_name)
@@ -41,7 +43,7 @@ class GTXModel(pl.LightningModule):
         else:
             config = CONFIG_MAPPING[model_args.model_type]()
             notifier.warning("You are instantiating a new config instance from scratch.")
-        if 'AdmPred' == training_args.task:
+        if training_args.task in ['AdmPred','ReAdm','NextDx', 'Death30', 'Death180', 'Death365']:
             config.use_ce_pooler = False
         else:
             config.use_ce_pooler = True
@@ -54,18 +56,23 @@ class GTXModel(pl.LightningModule):
             "Gen":GTXForGeneration,
             "AdmPred":GTXForAdmLvlPrediction,
             "ErrDetect":GTXForErrorDetection,
+            "ReAdm":GTXForTemporalPred,
+            "NextDx":GTXForTemporalPred,
+            "Death30":GTXForTemporalPred,
+            "Death180":GTXForTemporalPred,
+            "Death365":GTXForTemporalPred,
         }
 
         # Truncate some weights for Admpred
         if model_args.model_name_or_path:
-            if 'AdmPred' == training_args.task:
-                ckpt_path = os.path.join(model_args.model_name_or_path, 'pytorch_model.bin')
-                load_model_dict = torch.load(ckpt_path)
-                modified_model_dict = load_model_dict.copy()
-                for param in load_model_dict:
-                    if 'multi_pooler' in param:
-                        modified_model_dict.pop(param)
-                torch.save(modified_model_dict, ckpt_path)
+            # if training_args.task in ['AdmPred','ReAdm','NextDx', 'Death30', 'Death180', 'Death365']:
+            #     ckpt_path = os.path.join(model_args.model_name_or_path, 'pytorch_model.bin')
+            #     load_model_dict = torch.load(ckpt_path)
+            #     modified_model_dict = load_model_dict.copy()
+            #     for param in load_model_dict:
+            #         if 'multi_pooler' in param:
+            #             modified_model_dict.pop(param)
+            #     torch.save(modified_model_dict, ckpt_path)
 
             self.model = MODEL_CLASSES[training_args.task].from_pretrained(
                 model_args.model_name_or_path,
@@ -74,7 +81,12 @@ class GTXModel(pl.LightningModule):
             notifier.critical(f"Load pretrained parameters from {model_args.model_name_or_path}")
                 
         else:
-            self.model = MODEL_CLASSES[training_args.task](config)
+            if "init" in config.KnowMix:
+                lit2word = torch.load(config.lit2word_path)
+                lit2word = self.tokenizer(lit2word, add_special_tokens=False, padding='max_length', max_length=64, return_token_type_ids=False)
+            else:
+                lit2word=None
+            self.model = MODEL_CLASSES[training_args.task](config, lit2word=lit2word)
             notifier.critical("Training new model from scratch")
 
         if 'AdmPred' == training_args.task:
@@ -91,21 +103,6 @@ class GTXModel(pl.LightningModule):
 
     def forward(self, x):
         return self.model(x)
-    
-    # def on_training_epoch_start(self):
-        # batch = next(self.train_dataloader())
-
-    # def on_before_zero_grad(self,out):
-    #     self.t1 = time.time()
-
-    # def on_after_backward(self):
-    #     self.t2 = time.time()
-
-    # def on_train_batch_end(self, out, out2, out3, out4):
-    #     self.t3 = time.time()
-    #     if self.local_rank in [1,2,3]:
-    #         notifier.warning(f"Backward Time : {self.t2-self.t1:3f}s")
-    #         notifier.warning(f"Opt. Step Time : {self.t3-self.t2:3f}s")
 
     def training_step(self, batch, batch_idx):
         if (self.global_step==0) and (self.local_rank==1):
@@ -124,21 +121,38 @@ class GTXModel(pl.LightningModule):
     def validation_step(self, batch, batch_idx):
         outputs = self.model(**batch)
         metrics = metrics_for_tasks(
-            task=self.training_args.task,
-            stage="valid",
-            batch=batch,
-            outputs=outputs,
-            model=self.model if self.training_args.task == "Gen" else None,
-            tokenizer=self.tokenizer,
-            current_epoch=self.current_epoch,
-        )
-        return metrics
+                task=self.training_args.task,
+                stage="valid",
+                batch=batch,
+                outputs=outputs,
+                loss_only= self.training_args.task in ['ReAdm', 'NextDx', 'Death30', 'Death180', 'Death365'],
+                model=self.model if self.training_args.task == "Gen" else None,
+                tokenizer=self.tokenizer,
+                current_epoch=self.current_epoch,
+            )
+        if self.training_args.task in ['ReAdm', 'NextDx', 'Death30', 'Death180', 'Death365']:
+            return (metrics, outputs.pooled_logits, batch['label'])
+        else:
+            return metrics
 
     def validation_epoch_end(self, val_epoch_outputs):
-        keys = val_epoch_outputs[0].keys()
-        epoch_metrics = {k:torch.cat([val_epoch_output[k].float() \
-            if len(val_epoch_output[k].size())>0 else val_epoch_output[k].unsqueeze(0) \
-                for val_epoch_output in val_epoch_outputs]).float().mean() for k in keys}
+        val_epoch_metrics = [x[0] for x in val_epoch_outputs] if self.training_args.task in ['ReAdm', 'NextDx', 'Death30', 'Death180', 'Death365'] else val_epoch_outputs
+        keys = val_epoch_metrics[0].keys()
+        epoch_metrics = {k:torch.cat([val_epoch_metric[k].float() \
+            if len(val_epoch_metric[k].size())>0 else val_epoch_metric[k].unsqueeze(0) \
+                for val_epoch_metric in val_epoch_metrics]).float().mean() for k in keys}
+        if self.training_args.task in ['ReAdm', 'NextDx', 'Death30', 'Death180', 'Death365']:
+            epoch_metrics.update(
+                metrics_for_tasks(
+                    task=self.training_args.task,
+                    stage="valid",
+                    gt= torch.cat([x[2] for x in val_epoch_outputs],dim=0),
+                    outputs=torch.cat([x[1] for x in val_epoch_outputs],dim=0),
+                    model=None,
+                    tokenizer=self.tokenizer,
+                    current_epoch=self.current_epoch,
+                )
+            )
         self.log_dict(epoch_metrics)
         return epoch_metrics
 
@@ -196,13 +210,17 @@ class GTXModel(pl.LightningModule):
         else:
             outputs = self.model(**batch)
             metrics = metrics_for_tasks(
-                task=self.training_args.task,
-                stage="test",
-                batch=batch,
-                outputs=outputs,
-                # model=None,
-                # tokenizer=self.tokenizer
-            )
+                    task=self.training_args.task,
+                    stage="test",
+                    batch=batch,
+                    outputs=outputs,
+                    loss_only= self.training_args.task in ['ReAdm', 'NextDx', 'Death30', 'Death180', 'Death365'],
+                    model=self.model if self.training_args.task == "Gen" else None,
+                    tokenizer=self.tokenizer,
+                    current_epoch=self.current_epoch,
+                )
+            if self.training_args.task in ['ReAdm', 'NextDx', 'Death30', 'Death180', 'Death365']:
+                return (metrics, outputs.pooled_logits, batch['label'])
         return metrics
     
     def test_epoch_end(self, test_epoch_outputs):
@@ -218,10 +236,23 @@ class GTXModel(pl.LightningModule):
                 self.save_decode_files(decode_outputs=test_decode_outputs, output_dir=output_dir)
         
         # final logging
-        keys = test_epoch_outputs[0].keys()
-        epoch_metrics = {k:torch.cat([test_epoch_output[k] \
-            if len(test_epoch_output[k].size())!=0 else test_epoch_output[k].unsqueeze(0) \
-                for test_epoch_output in test_epoch_outputs]).float().mean() for k in keys}
+        test_epoch_metrics = [x[0] for x in test_epoch_outputs] if self.training_args.task in ['ReAdm','NextDx', 'Death30', 'Death180', 'Death365'] else test_epoch_outputs
+        keys = test_epoch_metrics[0].keys()
+        epoch_metrics = {k:torch.cat([test_epoch_metric[k].float() \
+            if len(test_epoch_metric[k].size())>0 else test_epoch_metric[k].unsqueeze(0) \
+                for test_epoch_metric in test_epoch_metrics]).float().mean() for k in keys}
+        if self.training_args.task in ['ReAdm', 'NextDx', 'Death30', 'Death180', 'Death365']:
+            epoch_metrics.update(
+                metrics_for_tasks(
+                    task=self.training_args.task,
+                    stage="test",
+                    gt= torch.cat([x[2] for x in test_epoch_outputs],dim=0),
+                    outputs=torch.cat([x[1] for x in test_epoch_outputs],dim=0),
+                    model=None,
+                    tokenizer=self.tokenizer,
+                    current_epoch=self.current_epoch,
+                )
+            )
         self.log_dict(epoch_metrics)
         return epoch_metrics
 
