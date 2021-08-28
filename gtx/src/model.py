@@ -2191,8 +2191,11 @@ class GTXForGeneration(GTXPreTrainedModel):
                 
         # Choose the database (dx/px, rx)
         num_db = len(torch.bincount(token_type_ids[0]))
+        assert num_db in [1, 2]
         # Calcuate ground truth length
         gt_length = torch.sum(lang_input_ids.not_equal(self.pad_token_id), axis=1)
+        # Choose the Top-p sampling strategy
+        top_p_sampling = (num_db == 1) # Rx
         
         # 1. Greedy Decoding
         if search_beam_size == 1:
@@ -2216,6 +2219,7 @@ class GTXForGeneration(GTXPreTrainedModel):
                 num_db=num_db,
                 gt_length=gt_length,
                 given_lang_tokens=1,
+                top_p_sampling=top_p_sampling
             )
             
         # 2. Beam Search Decoding    
@@ -2268,7 +2272,7 @@ class GTXForGeneration(GTXPreTrainedModel):
         num_db=1,
         gt_length=None,
         given_lang_tokens=1,
-        top_p_sampling=False, # NOTE: Should be changed!
+        top_p_sampling=True,
         ):
         
         assert len(lang_input_ids.shape) == 2
