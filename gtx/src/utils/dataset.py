@@ -46,9 +46,11 @@ class InputFeatures:
     lang_input_ids: List[int]
     kg_input_ids: List[int]
     kg_ext_input_ids: Optional[List[List[int]]] = None
+    kg_ext_sum_input_ids: Optional[List[List[int]]] = None
     lang_attention_mask: Optional[List[int]] = None
     kg_attention_mask: Optional[List[int]] = None
     kg_ext_attention_mask: Optional[List[List[int]]] = None
+    kg_ext_sum_attention_mask: Optional[List[List[int]]] = None
     kg_label_mask: Optional[List[int]] = None
     kg_label: Optional[List[int]] = None
     label: Optional[List[int]] = None
@@ -88,6 +90,11 @@ class HeadOnlyDataset(Dataset):
                     self.batch_encoding['lang'][k] = list()
                 self.batch_encoding['lang'][k].append(v)
 
+        if "adm" in self.knowmix:
+            notifier.critical("Turn on the admission level fusion")
+        elif "abs" in self.knowmix:
+            notifier.critical("Turn on the abstract level fusion")
+
         self.batch2feature()
 
         del self.batch_encoding
@@ -126,22 +133,30 @@ class HeadOnlyDataset(Dataset):
                     inputs['label'] = self.batch_encoding['label'][idx]
             if 'rc_index' in self.batch_encoding:
                 inputs['rc_indeces'] = self.batch_encoding['rc_index'][idx]
-            if ('knowledge' in self.batch_encoding) and (self.knowmix!="init"):
-                if "adm" in self.knowmix:
-                    tokenized_knowledge = self.tokenizer((" ".join(self.batch_encoding['knowledge'][idx])).strip(), add_special_tokens=False, padding='max_length', max_length=ext_max_len, return_token_type_ids=False)
-                elif "abs" in self.knowmix:
-                    abs_indices = [x for _idx, x in enumerate(self.batch_encoding['knowledge'][idx]) if (_idx>1) and not x]
-                    processed_knowledge = list()
-                    for node_idx in range(len(self.batch_encoding['knowledge'][idx])):
-                        if node_idx in abs_indices:
-                            processed_knowledge.append(" ".join([_s for _idx, _mask, _s in enumerate(zip(inputs['kg_attention_mask'][node_idx],self.batch_encoding['knowledge'][idx])) if (_idx>1) and (_mask!=0)]).strip())
-                        else:
-                            processed_knowledge.append("")
-                    tokenized_knowledge = self.tokenizer(processed_knowledge, add_special_tokens=False, padding='max_length', max_length=64, return_token_type_ids=False)
-                else:
-                    tokenized_knowledge = self.tokenizer(self.batch_encoding['knowledge'][idx], add_special_tokens=False, padding='max_length', max_length=64, return_token_type_ids=False)
-                inputs['kg_ext_input_ids'] = tokenized_knowledge['input_ids']
-                inputs['kg_ext_attention_mask'] = tokenized_knowledge['attention_mask']
+            if 'knowledge' in self.batch_encoding:
+                if ("adm" in self.knowmix) or ("abs" in self.knowmix) or ("lit" in self.knowmix):
+                    if "adm" in self.knowmix:
+                        tokenized_knowledge = self.tokenizer((" ".join(self.batch_encoding['knowledge'][idx])).strip(), add_special_tokens=False, padding='max_length', max_length=ext_max_len, return_token_type_ids=False)
+                    elif "abs" in self.knowmix:
+                        abs_indices = [x for _idx, x in enumerate(self.batch_encoding['knowledge'][idx]) if (_idx>1) and not x]
+                        processed_knowledge = list()
+                        for node_idx in range(len(self.batch_encoding['knowledge'][idx])):
+                            if node_idx in abs_indices:
+                                processed_knowledge.append(" ".join([_s for _idx, _mask, _s in enumerate(zip(inputs['kg_attention_mask'][node_idx],self.batch_encoding['knowledge'][idx])) if (_idx>1) and (_mask!=0)]).strip())
+                            else:
+                                processed_knowledge.append("")
+                        tokenized_knowledge = self.tokenizer(processed_knowledge, add_special_tokens=False, padding='max_length', max_length=64, return_token_type_ids=False)
+                    else:
+                        tokenized_knowledge = self.tokenizer(self.batch_encoding['knowledge'][idx], add_special_tokens=False, padding='max_length', max_length=64, return_token_type_ids=False)
+                    inputs['kg_ext_input_ids'] = tokenized_knowledge['input_ids']
+                    inputs['kg_ext_attention_mask'] = tokenized_knowledge['attention_mask']
+
+                if "summary" in self.knowmix:
+                    summarized_knowledge = self.tokenizer((" ".join(self.batch_encoding['knowledge'][idx])).strip(), add_special_tokens=False, padding='max_length', max_length=ext_max_len, return_token_type_ids=False)
+                    inputs['kg_ext_sum_input_ids'] = summarized_knowledge['input_ids']
+                    inputs['kg_ext_sum_attention_mask'] = summarized_knowledge['attention_mask']
+
+
 
             feature = InputFeatures(**inputs)
             self.features.append(feature)

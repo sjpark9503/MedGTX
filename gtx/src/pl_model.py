@@ -65,14 +65,14 @@ class GTXModel(pl.LightningModule):
 
         # Truncate some weights for Admpred
         if model_args.model_name_or_path:
-            # if training_args.task in ['AdmPred','ReAdm','NextDx', 'Death30', 'Death180', 'Death365']:
-            #     ckpt_path = os.path.join(model_args.model_name_or_path, 'pytorch_model.bin')
-            #     load_model_dict = torch.load(ckpt_path)
-            #     modified_model_dict = load_model_dict.copy()
-            #     for param in load_model_dict:
-            #         if 'multi_pooler' in param:
-            #             modified_model_dict.pop(param)
-            #     torch.save(modified_model_dict, ckpt_path)
+            if training_args.task in ['AdmPred','ReAdm','NextDx', 'Death30', 'Death180', 'Death365']:
+                ckpt_path = os.path.join(model_args.model_name_or_path, 'pytorch_model.bin')
+                load_model_dict = torch.load(ckpt_path)
+                modified_model_dict = load_model_dict.copy()
+                for param in load_model_dict:
+                    if 'multi_pooler' in param:
+                        modified_model_dict.pop(param)
+                torch.save(modified_model_dict, ckpt_path)
 
             self.model = MODEL_CLASSES[training_args.task].from_pretrained(
                 model_args.model_name_or_path,
@@ -91,7 +91,7 @@ class GTXModel(pl.LightningModule):
 
         if 'AdmPred' == training_args.task:
             db =  training_args.run_name.split('/')[4 if training_args.knowmix else 3].split('_')[-1]
-            self.model.class_weight = torch.load(os.path.join(os.getcwd(),f'data/{db}/adm_class_weight'))
+            self.model.class_weight = torch.load(os.path.join(os.getcwd(),f'fixed_data/{db}/adm_class_weight'))
             notifier.critical(f"Remove unused Weights in Pretrained model for AdmPred")
 
         self.model.training_args = training_args

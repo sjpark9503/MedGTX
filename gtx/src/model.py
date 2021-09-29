@@ -653,16 +653,36 @@ class GTXKnowMixLayer(nn.Module):
         inputs,
         attention_masks,
         contexts,
+        summaries,
+        summary_attention_masks,
         KnowMix_indices,
         output_x_attentions=False,
     ):
-        att_output = self.cross_attention(
-            inputs,
-            contexts,
-            ctx_att_mask=attention_masks,
-            KnowMix_indices=KnowMix_indices,
-            output_attentions=output_x_attentions,
-        )
+        err_stack = 0
+        if KnowMix_indices[0] is not None:
+            att_output = self.cross_attention(
+                inputs,
+                contexts,
+                ctx_att_mask=attention_masks,
+                KnowMix_indices=KnowMix_indices[0],
+                output_attentions=output_x_attentions,
+            )
+        else:
+            err_stack += 1
+            att_output=(inputs,)
+        if KnowMix_indices[1] is not None:
+            att_output = self.cross_attention(
+                att_output[0],
+                summaries,
+                ctx_att_mask=summary_attention_masks,
+                KnowMix_indices=KnowMix_indices[1],
+                output_attentions=output_x_attentions,
+            )
+        else:
+            err_stack += 1
+        
+        if err_stack == 2:
+            raise ValueError("************** Something goes wrong! ****************")
 
         return att_output
 
@@ -686,22 +706,26 @@ class GTXKnowMixLayer(nn.Module):
         attention_masks,
         contexts,
         context_attention_masks,
+        summaries,
+        summary_attention_masks,
         KnowMix_indices,
         output_attentions=False,
     ):  
         # Select fusion level
         if ("lit" in self.config.KnowMix) or ("abs" in self.config.KnowMix):
-            KnowMix_indices = KnowMix_indices.bool().any(-1)
+            actual_KnowMix_indices = KnowMix_indices.bool().any(-1)
         elif "adm" in self.config.KnowMix:
-            KnowMix_indices = 1
+            actual_KnowMix_indices = 1
         else:
-            raise NotImplementedError(f"{self.config.Knowmix} is an invalid fusion level.")
+            actual_KnowMix_indices = None
 
         att_output = self.mixup(
                 inputs=inputs,
                 attention_masks=context_attention_masks,
                 contexts=contexts,
-                KnowMix_indices=KnowMix_indices,
+                summaries=summaries,
+                summary_attention_masks=summary_attention_masks,
+                KnowMix_indices=(actual_KnowMix_indices, 0 if summaries is not None else None),
                 output_x_attentions=output_attentions,
             )
         attention_probs = {'kg->txt':att_output[-1]}
@@ -753,7 +777,7 @@ class GTXEncoder(nn.Module):
         self.layer = nn.ModuleList([GTXLayer(config) for _ in range(self.num_l_layers)])
         notifier.warning(f"This model has a {config.cross_att_type if 'cross_att_type' in vars(config).keys() else 'cross'} type of x_attention architecture.")
         self.x_layers = nn.ModuleList([GTXXLayer(config) for _ in range(self.num_x_layers)])
-        if ("lit" in self.config.KnowMix) or ("abs" in self.config.KnowMix) or ("adm" in self.config.KnowMix):
+        if ("lit" in self.config.KnowMix) or ("abs" in self.config.KnowMix) or ("summary" in self.config.KnowMix) or ("adm" in self.config.KnowMix):
             notifier.critical(f"Use Knowledge Mixup Layer on {config.KnowMix} nodes")
             self.r_layers = nn.ModuleList([GTXKnowMixLayer(config) for _ in range(self.num_r_layers)])
         else:
@@ -809,6 +833,8 @@ class GTXEncoder(nn.Module):
         kg_padding_mask,
         kg_ext_input_ids=None,
         kg_ext_attention_mask=None,
+        kg_ext_sum_input_ids=None,
+        kg_ext_sum_attention_mask=None,
         output_attentions=None,
     ):
 
@@ -847,14 +873,25 @@ class GTXEncoder(nn.Module):
             extended_kg_ext_attention_mask = (1.0 - extended_kg_ext_attention_mask) * -10000.0
         else:
             extended_kg_ext_attention_mask = None
+        if kg_ext_sum_attention_mask is not None:
+            if len(kg_ext_sum_attention_mask.shape) == 2:
+                extended_kg_ext_sum_attention_mask = kg_ext_sum_attention_mask.unsqueeze(1).unsqueeze(2)
+            elif len(kg_ext_sum_attention_mask.shape) == 3:
+                extended_kg_ext_sum_attention_mask = kg_ext_sum_attention_mask.unsqueeze(1)    
+            extended_kg_ext_sum_attention_mask = extended_kg_ext_sum_attention_mask.to(dtype=lang_attention_mask.dtype)
+            extended_kg_ext_sum_attention_mask = (1.0 - extended_kg_ext_sum_attention_mask) * -10000.0
+        else:
+            extended_kg_ext_sum_attention_mask = None
 
         for layer_module in self.r_layers:
-            if ("lit" in self.config.KnowMix) or ("abs" in self.config.KnowMix) or ("adm" in self.config.KnowMix):
+            if ("lit" in self.config.KnowMix) or ("abs" in self.config.KnowMix) or ("summary" in self.config.KnowMix) or ("adm" in self.config.KnowMix):
                 kg_outputs = layer_module(
                     kg_feats,
                     kg_attention_mask,
                     contexts=kg_ext_input_ids,
                     context_attention_masks=extended_kg_ext_attention_mask,
+                    summaries = kg_ext_sum_input_ids,
+                    summary_attention_masks = extended_kg_ext_sum_attention_mask,
                     KnowMix_indices=kg_ext_attention_mask,
                     output_attentions=output_attentions
                 )
@@ -1091,10 +1128,11 @@ class GTXModel(GTXPreTrainedModel):
 
     def set_kg_embeddings(self, new_embedding, lit2word=None):
         if lit2word is None:
-            if len(self.config.kg_special_token_ids)>0:
-                self.kg_embeddings.word_embeddings.weight.data[len(self.config.kg_special_token_ids):,:] = new_embedding.data[:-len(self.config.kg_special_token_ids)]
-            else:
-                self.kg_embeddings.word_embeddings.weight.data = new_embedding.data
+            # if len(self.config.kg_special_token_ids)>0:
+            shape = self.kg_embeddings.word_embeddings.weight.data[len(self.config.kg_special_token_ids):,:].shape
+            self.kg_embeddings.word_embeddings.weight.data[len(self.config.kg_special_token_ids):,:] = new_embedding.data[:shape[0]]
+            # else:
+            #     self.kg_embeddings.word_embeddings.weight.data = new_embedding.data
         else:
             litwords = torch.tensor(lit2word['input_ids'])
             litwords_notpad = torch.tensor(lit2word['attention_mask'])
@@ -1115,6 +1153,8 @@ class GTXModel(GTXPreTrainedModel):
         kg_padding_mask=None,
         kg_ext_input_ids = None,
         kg_ext_attention_mask = None,
+        kg_ext_sum_input_ids = None,
+        kg_ext_sum_attention_mask = None,
         token_type_ids=None,
         output_attentions=None,
         output_hidden_states=None,
@@ -1194,6 +1234,10 @@ class GTXModel(GTXPreTrainedModel):
             kg_ext_embedding_output = self.lang_embeddings.word_embeddings(kg_ext_input_ids)
         else:
             kg_ext_embedding_output = None
+        if kg_ext_sum_input_ids is not None:
+            kg_ext_sum_embedding_output = self.lang_embeddings.word_embeddings(kg_ext_sum_input_ids)
+        else:
+            kg_ext_sum_embedding_output = None
         # Run GTX encoder
         encoder_outputs = self.encoder(
             lang_feats=lang_embedding_output,
@@ -1203,6 +1247,8 @@ class GTXModel(GTXPreTrainedModel):
             kg_padding_mask=extended_kg_padding_mask,
             kg_ext_input_ids = kg_ext_embedding_output,
             kg_ext_attention_mask = kg_ext_attention_mask,
+            kg_ext_sum_input_ids = kg_ext_sum_embedding_output,
+            kg_ext_sum_attention_mask = kg_ext_sum_attention_mask,
             output_attentions=output_attentions,
         )
 
@@ -1301,6 +1347,8 @@ class GTXForKGTokPredAndMaskedLM(GTXPreTrainedModel):
         rc_indeces=None,
         kg_ext_input_ids = None,
         kg_ext_attention_mask = None,
+        kg_ext_sum_input_ids = None,
+        kg_ext_sum_attention_mask = None,
         output_attentions=None,
         output_hidden_states=None,
         return_dict=True,
@@ -1338,6 +1386,8 @@ class GTXForKGTokPredAndMaskedLM(GTXPreTrainedModel):
             token_type_ids=token_type_ids,
             kg_ext_input_ids = kg_ext_input_ids,
             kg_ext_attention_mask = kg_ext_attention_mask,
+            kg_ext_sum_input_ids = kg_ext_sum_input_ids,
+            kg_ext_sum_attention_mask = kg_ext_sum_attention_mask,
             output_attentions=output_attentions,
             output_hidden_states=output_hidden_states,
             return_dict=return_dict,
@@ -1465,6 +1515,8 @@ class GTXForRanking(GTXPreTrainedModel):
         token_type_ids=None,
         kg_ext_input_ids = None,
         kg_ext_attention_mask = None,
+        kg_ext_sum_input_ids = None,
+        kg_ext_sum_attention_mask = None,
         output_attentions=None,
         output_hidden_states=None,
         return_dict=True,
@@ -1505,6 +1557,8 @@ class GTXForRanking(GTXPreTrainedModel):
             token_type_ids=token_type_ids,
             kg_ext_input_ids = kg_ext_input_ids,
             kg_ext_attention_mask = kg_ext_attention_mask,
+            kg_ext_sum_input_ids = kg_ext_sum_input_ids,
+            kg_ext_sum_attention_mask = kg_ext_sum_attention_mask,
             output_attentions=output_attentions,
             output_hidden_states=output_hidden_states,
             return_dict=return_dict,
@@ -1586,6 +1640,8 @@ class GTXForAdmLvlPrediction(GTXPreTrainedModel):
         token_type_ids=None,
         kg_ext_input_ids = None,
         kg_ext_attention_mask = None,
+        kg_ext_sum_input_ids = None,
+        kg_ext_sum_attention_mask = None,
         output_attentions=None,
         output_hidden_states=None,
         return_dict=True,
@@ -1626,6 +1682,8 @@ class GTXForAdmLvlPrediction(GTXPreTrainedModel):
             token_type_ids=token_type_ids,
             kg_ext_input_ids = kg_ext_input_ids,
             kg_ext_attention_mask = kg_ext_attention_mask,
+            kg_ext_sum_input_ids = kg_ext_sum_input_ids,
+            kg_ext_sum_attention_mask = kg_ext_sum_attention_mask,
             output_attentions=output_attentions,
             output_hidden_states=output_hidden_states,
             return_dict=return_dict,
@@ -1715,6 +1773,8 @@ class GTXForErrorDetection(GTXPreTrainedModel):
         token_type_ids=None,
         kg_ext_input_ids = None,
         kg_ext_attention_mask = None,
+        kg_ext_sum_input_ids = None,
+        kg_ext_sum_attention_mask = None,
         output_attentions=None,
         output_hidden_states=None,
         return_dict=True,
@@ -1755,6 +1815,8 @@ class GTXForErrorDetection(GTXPreTrainedModel):
             token_type_ids=token_type_ids,
             kg_ext_input_ids = kg_ext_input_ids,
             kg_ext_attention_mask = kg_ext_attention_mask,
+            kg_ext_sum_input_ids = kg_ext_sum_input_ids,
+            kg_ext_sum_attention_mask = kg_ext_sum_attention_mask,
             output_attentions=output_attentions,
             output_hidden_states=output_hidden_states,
             return_dict=return_dict,
@@ -1846,6 +1908,8 @@ class GTXForTemporalPred(GTXPreTrainedModel):
         token_type_ids=None,
         kg_ext_input_ids = None,
         kg_ext_attention_mask = None,
+        kg_ext_sum_input_ids = None,
+        kg_ext_sum_attention_mask = None,
         output_attentions=None,
         output_hidden_states=None,
         return_dict=True,
@@ -1886,6 +1950,8 @@ class GTXForTemporalPred(GTXPreTrainedModel):
             token_type_ids=token_type_ids,
             kg_ext_input_ids = kg_ext_input_ids,
             kg_ext_attention_mask = kg_ext_attention_mask,
+            kg_ext_sum_input_ids = kg_ext_sum_input_ids,
+            kg_ext_sum_attention_mask = kg_ext_sum_attention_mask,
             output_attentions=output_attentions,
             output_hidden_states=output_hidden_states,
             return_dict=return_dict,
@@ -1985,6 +2051,8 @@ class GTXForGeneration(GTXPreTrainedModel):
         rc_indeces=None,
         kg_ext_input_ids = None,
         kg_ext_attention_mask = None,
+        kg_ext_sum_input_ids = None,
+        kg_ext_sum_attention_mask = None,
         output_attentions=None,
         output_hidden_states=None,
         return_dict=True,
@@ -2001,6 +2069,8 @@ class GTXForGeneration(GTXPreTrainedModel):
             token_type_ids=token_type_ids,
             kg_ext_input_ids = kg_ext_input_ids,
             kg_ext_attention_mask = kg_ext_attention_mask,
+            kg_ext_sum_input_ids = kg_ext_sum_input_ids,
+            kg_ext_sum_attention_mask = kg_ext_sum_attention_mask,
             output_attentions=output_attentions,
             output_hidden_states=output_hidden_states,
             return_dict=return_dict,
@@ -2081,6 +2151,8 @@ class GTXForGeneration(GTXPreTrainedModel):
         kg_label=None,
         kg_ext_input_ids = None,
         kg_ext_attention_mask = None,
+        kg_ext_sum_input_ids = None,
+        kg_ext_sum_attention_mask = None,
         token_type_ids=None,
         output_attentions=None,
         output_hidden_states=None,
@@ -2129,6 +2201,8 @@ class GTXForGeneration(GTXPreTrainedModel):
                 token_type_ids=curr_token_type_ids,
                 kg_ext_input_ids = kg_ext_input_ids,
                 kg_ext_attention_mask = kg_ext_attention_mask,
+                kg_ext_sum_input_ids = kg_ext_sum_input_ids,
+                kg_ext_sum_attention_mask = kg_ext_sum_attention_mask,
                 output_attentions=output_attentions,
                 output_hidden_states=output_hidden_states,
                 return_dict=return_dict,
@@ -2172,6 +2246,8 @@ class GTXForGeneration(GTXPreTrainedModel):
         kg_label=None,
         kg_ext_input_ids = None,
         kg_ext_attention_mask = None,
+        kg_ext_sum_input_ids = None,
+        kg_ext_sum_attention_mask = None,
         token_type_ids=None,
         output_attentions=None,
         output_hidden_states=None,
@@ -2212,6 +2288,8 @@ class GTXForGeneration(GTXPreTrainedModel):
                 # kg_label=None,
                 kg_ext_input_ids=kg_ext_input_ids,
                 kg_ext_attention_mask=kg_ext_attention_mask,
+                kg_ext_sum_input_ids = kg_ext_sum_input_ids,
+                kg_ext_sum_attention_mask = kg_ext_sum_attention_mask,
                 token_type_ids=token_type_ids,
                 output_attentions=output_attentions,
                 output_hidden_states=output_hidden_states,
@@ -2265,6 +2343,8 @@ class GTXForGeneration(GTXPreTrainedModel):
         kg_label=None,
         kg_ext_input_ids=None,
         kg_ext_attention_mask=None,
+        kg_ext_sum_input_ids = None,
+        kg_ext_sum_attention_mask = None,
         token_type_ids=None,
         output_attentions=None,
         output_hidden_states=None,
@@ -2311,6 +2391,8 @@ class GTXForGeneration(GTXPreTrainedModel):
                 kg_padding_mask=kg_padding_mask,
                 kg_ext_input_ids=kg_ext_input_ids,
                 kg_ext_attention_mask=kg_ext_attention_mask,
+                kg_ext_sum_input_ids = kg_ext_sum_input_ids,
+                kg_ext_sum_attention_mask = kg_ext_sum_attention_mask,
                 token_type_ids=curr_token_type_ids,
                 output_attentions=output_attentions,
                 output_hidden_states=output_hidden_states,
@@ -2387,6 +2469,8 @@ class GTXForGeneration(GTXPreTrainedModel):
         kg_label=None,
         kg_ext_input_ids = None,
         kg_ext_attention_mask = None,
+        kg_ext_sum_input_ids = None,
+        kg_ext_sum_attention_mask = None,
         token_type_ids=None,
         output_attentions=None,
         output_hidden_states=None,
@@ -2441,6 +2525,8 @@ class GTXForGeneration(GTXPreTrainedModel):
                 token_type_ids=curr_token_type_ids,
                 kg_ext_input_ids = kg_ext_input_ids,
                 kg_ext_attention_mask = kg_ext_attention_mask,
+                kg_ext_sum_input_ids = kg_ext_sum_input_ids,
+                kg_ext_sum_attention_mask = kg_ext_sum_attention_mask,
                 output_attentions=False,
                 output_hidden_states=False,
                 return_dict=True,

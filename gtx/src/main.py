@@ -57,7 +57,7 @@ def get_trainer_config(args):
                 verbose=True,
                 mode="max",
             )
-            callbacks.append(early_stop_callback)
+            # callbacks.append(early_stop_callback)
             callbacks.append(lr_monitor_callback)
 
     if args.use_tpu:
@@ -123,7 +123,7 @@ def main():
         if training_args.task == "Pre":
             gtx.save()
             data_module.save()
-        elif training_args.task in ["Gen","ReAdm","NextDx","Death30","Death180", "Death365"]:
+        else:
             gtx.save()
             notifier.critical("Trained model is successfully saved!")
         
