@@ -776,13 +776,13 @@ class GTXEncoder(nn.Module):
         # Using self.layer instead of self.l_layer to support loading BERT weights.
         self.layer = nn.ModuleList([GTXLayer(config) for _ in range(self.num_l_layers)])
         notifier.warning(f"This model has a {config.cross_att_type if 'cross_att_type' in vars(config).keys() else 'cross'} type of x_attention architecture.")
-        self.x_layers = nn.ModuleList([GTXXLayer(config) for _ in range(self.num_x_layers)])
-        if ("lit" in self.config.KnowMix) or ("abs" in self.config.KnowMix) or ("summary" in self.config.KnowMix) or ("adm" in self.config.KnowMix):
-            notifier.critical(f"Use Knowledge Mixup Layer on {config.KnowMix} nodes")
-            self.r_layers = nn.ModuleList([GTXKnowMixLayer(config) for _ in range(self.num_r_layers)])
-        else:
-            notifier.critical("Use Standard GAT Layer")
-            self.r_layers = nn.ModuleList([GTXLayer(config) for _ in range(self.num_r_layers)])            
+        # self.x_layers = nn.ModuleList([GTXXLayer(config) for _ in range(self.num_x_layers)])
+        # if ("lit" in self.config.KnowMix) or ("abs" in self.config.KnowMix) or ("summary" in self.config.KnowMix) or ("adm" in self.config.KnowMix):
+        #     notifier.critical(f"Use Knowledge Mixup Layer on {config.KnowMix} nodes")
+        #     self.r_layers = nn.ModuleList([GTXKnowMixLayer(config) for _ in range(self.num_r_layers)])
+        # else:
+        #     notifier.critical("Use Standard GAT Layer")
+        #     self.r_layers = nn.ModuleList([GTXLayer(config) for _ in range(self.num_r_layers)])            
         
         # Lang Encoder Architecture
         # LSTM for generation, BiLSTM for pretraining/other donwstream tasks
