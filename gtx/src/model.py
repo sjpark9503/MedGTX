@@ -776,13 +776,13 @@ class GTXEncoder(nn.Module):
         # Using self.layer instead of self.l_layer to support loading BERT weights.
         self.layer = nn.ModuleList([GTXLayer(config) for _ in range(self.num_l_layers)])
         notifier.warning(f"This model has a {config.cross_att_type if 'cross_att_type' in vars(config).keys() else 'cross'} type of x_attention architecture.")
-        self.x_layers = nn.ModuleList([GTXXLayer(config) for _ in range(self.num_x_layers)])
-        if ("lit" in self.config.KnowMix) or ("abs" in self.config.KnowMix) or ("summary" in self.config.KnowMix) or ("adm" in self.config.KnowMix):
-            notifier.critical(f"Use Knowledge Mixup Layer on {config.KnowMix} nodes")
-            self.r_layers = nn.ModuleList([GTXKnowMixLayer(config) for _ in range(self.num_r_layers)])
-        else:
-            notifier.critical("Use Standard GAT Layer")
-            self.r_layers = nn.ModuleList([GTXLayer(config) for _ in range(self.num_r_layers)])            
+        # self.x_layers = nn.ModuleList([GTXXLayer(config) for _ in range(self.num_x_layers)])
+        # if ("lit" in self.config.KnowMix) or ("abs" in self.config.KnowMix) or ("summary" in self.config.KnowMix) or ("adm" in self.config.KnowMix):
+        #     notifier.critical(f"Use Knowledge Mixup Layer on {config.KnowMix} nodes")
+        #     self.r_layers = nn.ModuleList([GTXKnowMixLayer(config) for _ in range(self.num_r_layers)])
+        # else:
+        #     notifier.critical("Use Standard GAT Layer")
+        #     self.r_layers = nn.ModuleList([GTXLayer(config) for _ in range(self.num_r_layers)])            
         
         # Lang Encoder Architecture
         # LSTM for generation, BiLSTM for pretraining/other donwstream tasks
@@ -828,13 +828,13 @@ class GTXEncoder(nn.Module):
         self,
         lang_feats,
         lang_attention_mask,
-        kg_feats,
-        kg_attention_mask,
-        kg_padding_mask,
-        kg_ext_input_ids=None,
-        kg_ext_attention_mask=None,
-        kg_ext_sum_input_ids=None,
-        kg_ext_sum_attention_mask=None,
+        # kg_feats,
+        # kg_attention_mask,
+        # kg_padding_mask,
+        # kg_ext_input_ids=None,
+        # kg_ext_attention_mask=None,
+        # kg_ext_sum_input_ids=None,
+        # kg_ext_sum_attention_mask=None,
         output_attentions=None,
     ):
 
@@ -864,88 +864,88 @@ class GTXEncoder(nn.Module):
 
         # Run relational layers
         ## Process the KG attention mask
-        if kg_ext_attention_mask is not None:
-            if len(kg_ext_attention_mask.shape) == 2:
-                extended_kg_ext_attention_mask = kg_ext_attention_mask.unsqueeze(1).unsqueeze(2)
-            elif len(kg_ext_attention_mask.shape) == 3:
-                extended_kg_ext_attention_mask = kg_ext_attention_mask.unsqueeze(1)    
-            extended_kg_ext_attention_mask = extended_kg_ext_attention_mask.to(dtype=lang_attention_mask.dtype)
-            extended_kg_ext_attention_mask = (1.0 - extended_kg_ext_attention_mask) * -10000.0
-        else:
-            extended_kg_ext_attention_mask = None
-        if kg_ext_sum_attention_mask is not None:
-            if len(kg_ext_sum_attention_mask.shape) == 2:
-                extended_kg_ext_sum_attention_mask = kg_ext_sum_attention_mask.unsqueeze(1).unsqueeze(2)
-            elif len(kg_ext_sum_attention_mask.shape) == 3:
-                extended_kg_ext_sum_attention_mask = kg_ext_sum_attention_mask.unsqueeze(1)    
-            extended_kg_ext_sum_attention_mask = extended_kg_ext_sum_attention_mask.to(dtype=lang_attention_mask.dtype)
-            extended_kg_ext_sum_attention_mask = (1.0 - extended_kg_ext_sum_attention_mask) * -10000.0
-        else:
-            extended_kg_ext_sum_attention_mask = None
+        # if kg_ext_attention_mask is not None:
+        #     if len(kg_ext_attention_mask.shape) == 2:
+        #         extended_kg_ext_attention_mask = kg_ext_attention_mask.unsqueeze(1).unsqueeze(2)
+        #     elif len(kg_ext_attention_mask.shape) == 3:
+        #         extended_kg_ext_attention_mask = kg_ext_attention_mask.unsqueeze(1)    
+        #     extended_kg_ext_attention_mask = extended_kg_ext_attention_mask.to(dtype=lang_attention_mask.dtype)
+        #     extended_kg_ext_attention_mask = (1.0 - extended_kg_ext_attention_mask) * -10000.0
+        # else:
+        #     extended_kg_ext_attention_mask = None
+        # if kg_ext_sum_attention_mask is not None:
+        #     if len(kg_ext_sum_attention_mask.shape) == 2:
+        #         extended_kg_ext_sum_attention_mask = kg_ext_sum_attention_mask.unsqueeze(1).unsqueeze(2)
+        #     elif len(kg_ext_sum_attention_mask.shape) == 3:
+        #         extended_kg_ext_sum_attention_mask = kg_ext_sum_attention_mask.unsqueeze(1)    
+        #     extended_kg_ext_sum_attention_mask = extended_kg_ext_sum_attention_mask.to(dtype=lang_attention_mask.dtype)
+        #     extended_kg_ext_sum_attention_mask = (1.0 - extended_kg_ext_sum_attention_mask) * -10000.0
+        # else:
+        #     extended_kg_ext_sum_attention_mask = None
 
-        for layer_module in self.r_layers:
-            if ("lit" in self.config.KnowMix) or ("abs" in self.config.KnowMix) or ("summary" in self.config.KnowMix) or ("adm" in self.config.KnowMix):
-                kg_outputs = layer_module(
-                    kg_feats,
-                    kg_attention_mask,
-                    contexts=kg_ext_input_ids,
-                    context_attention_masks=extended_kg_ext_attention_mask,
-                    summaries = kg_ext_sum_input_ids,
-                    summary_attention_masks = extended_kg_ext_sum_attention_mask,
-                    KnowMix_indices=kg_ext_attention_mask,
-                    output_attentions=output_attentions
-                )
-            else:
-                kg_outputs = layer_module(kg_feats, kg_attention_mask, output_attentions=output_attentions)
-            kg_feats = kg_outputs[0]
-            kg_hidden_states = kg_hidden_states + (kg_feats,)
-            if kg_attentions is not None:
-                kg_attentions = kg_attentions + (kg_outputs[1],)
+        # for layer_module in self.r_layers:
+        #     if ("lit" in self.config.KnowMix) or ("abs" in self.config.KnowMix) or ("summary" in self.config.KnowMix) or ("adm" in self.config.KnowMix):
+        #         kg_outputs = layer_module(
+        #             kg_feats,
+        #             kg_attention_mask,
+        #             contexts=kg_ext_input_ids,
+        #             context_attention_masks=extended_kg_ext_attention_mask,
+        #             summaries = kg_ext_sum_input_ids,
+        #             summary_attention_masks = extended_kg_ext_sum_attention_mask,
+        #             KnowMix_indices=kg_ext_attention_mask,
+        #             output_attentions=output_attentions
+        #         )
+        #     else:
+        #         kg_outputs = layer_module(kg_feats, kg_attention_mask, output_attentions=output_attentions)
+        #     kg_feats = kg_outputs[0]
+        #     kg_hidden_states = kg_hidden_states + (kg_feats,)
+        #     if kg_attentions is not None:
+        #         kg_attentions = kg_attentions + (kg_outputs[1],)
 
         # Run cross-modality layers
-        for layer_module in self.x_layers:
-            x_outputs = layer_module(
-                lang_feats,
-                lang_attention_mask,
-                kg_feats,
-                kg_padding_mask,
-                kg_padding_mask,
-                output_attentions=output_attentions,
-            )
-            lang_feats, kg_feats = x_outputs[:2]
-            kg_hidden_states = kg_hidden_states + (kg_feats,)
-            language_hidden_states = language_hidden_states + (lang_feats,)
-            if cross_encoder_attentions is not None:
-                cross_encoder_attentions = {k:cross_encoder_attentions[k] + (x_outputs[2][k],) for k in cross_encoder_attentions}
-        kg_encoder_outputs = (
-            kg_hidden_states,
-            kg_attentions if output_attentions else None,
-        )
+        # for layer_module in self.x_layers:
+        #     x_outputs = layer_module(
+        #         lang_feats,
+        #         lang_attention_mask,
+        #         kg_feats,
+        #         kg_padding_mask,
+        #         kg_padding_mask,
+        #         output_attentions=output_attentions,
+        #     )
+        #     lang_feats, kg_feats = x_outputs[:2]
+        #     kg_hidden_states = kg_hidden_states + (kg_feats,)
+        #     language_hidden_states = language_hidden_states + (lang_feats,)
+        #     if cross_encoder_attentions is not None:
+        #         cross_encoder_attentions = {k:cross_encoder_attentions[k] + (x_outputs[2][k],) for k in cross_encoder_attentions}
+        # kg_encoder_outputs = (
+        #     kg_hidden_states,
+        #     kg_attentions if output_attentions else None,
+        # )
         lang_encoder_outputs = (
             language_hidden_states,
             language_attentions if output_attentions else None,
         )
         return (
-            kg_encoder_outputs,
-            lang_encoder_outputs,
-            cross_encoder_attentions if output_attentions else None,
+            # kg_encoder_outputs,
+            lang_encoder_outputs
+            # cross_encoder_attentions if output_attentions else None,
         )
 
 class GTXPooler(nn.Module):
     def __init__(self, config):
         super(GTXPooler, self).__init__()
-        self.multi_pooler = nn.Sequential(nn.Linear(config.hidden_size*2, config.hidden_size*2),
+        self.multi_pooler = nn.Sequential(nn.Linear(config.hidden_size, config.hidden_size),
                                     nn.Tanh(),
-                                    nn.Linear(config.hidden_size*2, config.num_labels))
-        self.ce_pooler = nn.Sequential(nn.Linear(config.hidden_size*2, config.hidden_size*2),
+                                    nn.Linear(config.hidden_size, config.num_labels))
+        self.ce_pooler = nn.Sequential(nn.Linear(config.hidden_size, config.hidden_size),
                                     nn.Tanh(),
-                                    nn.Linear(config.hidden_size*2, 2))
+                                    nn.Linear(config.hidden_size, 2))
         self.use_ce_pooler = config.use_ce_pooler
     #def forward(self, hidden_states):
     def forward(self, kg_hidden_states, lang_hidden_states):
         # We "pool" the model by simply taking the hidden state corresponding
         # to the first token.
-        first_token_tensors = torch.cat([kg_hidden_states[:, 0],lang_hidden_states[:, 0]],dim=1)
+        first_token_tensors = lang_hidden_states[:, 0]
         if self.use_ce_pooler:
             pooled_output = self.ce_pooler(first_token_tensors)
         else:
@@ -1198,81 +1198,81 @@ class GTXModel(GTXPreTrainedModel):
         extended_lang_attention_mask = (1.0 - extended_lang_attention_mask) * -10000.0
 
         # Process the KG attention mask
-        if kg_attention_mask is not None:
-            if len(kg_attention_mask.shape)==3:
-                # Process KG-side self attention mask
-                extended_kg_attention_mask = kg_attention_mask.unsqueeze(1)
-                extended_kg_attention_mask = extended_kg_attention_mask.to(dtype=self.dtype)
-                extended_kg_attention_mask = (1.0 - extended_kg_attention_mask) * -10000.0
-                # Process KG padding mask for cross attention
-                extended_kg_padding_mask = kg_padding_mask.unsqueeze(1).unsqueeze(2)
-                extended_kg_padding_mask = extended_kg_padding_mask.to(dtype=self.dtype)
-                extended_kg_padding_mask = (1.0 - extended_kg_padding_mask) * -10000.0
+        # if kg_attention_mask is not None:
+        #     if len(kg_attention_mask.shape)==3:
+        #         # Process KG-side self attention mask
+        #         extended_kg_attention_mask = kg_attention_mask.unsqueeze(1)
+        #         extended_kg_attention_mask = extended_kg_attention_mask.to(dtype=self.dtype)
+        #         extended_kg_attention_mask = (1.0 - extended_kg_attention_mask) * -10000.0
+        #         # Process KG padding mask for cross attention
+        #         extended_kg_padding_mask = kg_padding_mask.unsqueeze(1).unsqueeze(2)
+        #         extended_kg_padding_mask = extended_kg_padding_mask.to(dtype=self.dtype)
+        #         extended_kg_padding_mask = (1.0 - extended_kg_padding_mask) * -10000.0
 
-            elif len(kg_attention_mask.shape)==4:
-                # Process KG-side self attention mask
-                extended_kg_attention_mask = kg_attention_mask
-                extended_kg_attention_mask = extended_kg_attention_mask.to(dtype=self.dtype)
-                extended_kg_attention_mask = (1.0 - extended_kg_attention_mask) * -10000.0
-                # Process KG padding mask for cross attention
-                extended_kg_padding_mask = kg_padding_mask.unsqueeze(1).unsqueeze(2)
-                extended_kg_padding_mask = extended_kg_padding_mask.to(dtype=self.dtype)
-                extended_kg_padding_mask = (1.0 - extended_kg_padding_mask) * -10000.0
-            else:
-                raise ValueError("Only supports seq_len X seq_len mask or batch_size X # head X seq_len X seq_len")
-        else:
-            # Process KG padding mask for cross attention
-            extended_kg_padding_mask = kg_padding_mask.unsqueeze(1).unsqueeze(2)
-            extended_kg_padding_mask = extended_kg_padding_mask.to(dtype=self.dtype)
-            extended_kg_padding_mask = (1.0 - extended_kg_padding_mask) * -10000.0
-            extended_kg_attention_mask = extended_kg_padding_mask.clone().detach()
+        #     elif len(kg_attention_mask.shape)==4:
+        #         # Process KG-side self attention mask
+        #         extended_kg_attention_mask = kg_attention_mask
+        #         extended_kg_attention_mask = extended_kg_attention_mask.to(dtype=self.dtype)
+        #         extended_kg_attention_mask = (1.0 - extended_kg_attention_mask) * -10000.0
+        #         # Process KG padding mask for cross attention
+        #         extended_kg_padding_mask = kg_padding_mask.unsqueeze(1).unsqueeze(2)
+        #         extended_kg_padding_mask = extended_kg_padding_mask.to(dtype=self.dtype)
+        #         extended_kg_padding_mask = (1.0 - extended_kg_padding_mask) * -10000.0
+        #     else:
+        #         raise ValueError("Only supports seq_len X seq_len mask or batch_size X # head X seq_len X seq_len")
+        # else:
+        #     # Process KG padding mask for cross attention
+        #     extended_kg_padding_mask = kg_padding_mask.unsqueeze(1).unsqueeze(2)
+        #     extended_kg_padding_mask = extended_kg_padding_mask.to(dtype=self.dtype)
+        #     extended_kg_padding_mask = (1.0 - extended_kg_padding_mask) * -10000.0
+        #     extended_kg_attention_mask = extended_kg_padding_mask.clone().detach()
 
         # Positional Word Embeddings
         lang_embedding_output = self.lang_embeddings(lang_input_ids, token_type_ids, lang_inputs_embeds)
         kg_embedding_output = self.kg_embeddings(kg_input_ids, None, kg_inputs_embeds)
-        if kg_ext_input_ids is not None:
-            kg_ext_embedding_output = self.lang_embeddings.word_embeddings(kg_ext_input_ids)
-        else:
-            kg_ext_embedding_output = None
-        if kg_ext_sum_input_ids is not None:
-            kg_ext_sum_embedding_output = self.lang_embeddings.word_embeddings(kg_ext_sum_input_ids)
-        else:
-            kg_ext_sum_embedding_output = None
+        # if kg_ext_input_ids is not None:
+        #     kg_ext_embedding_output = self.lang_embeddings.word_embeddings(kg_ext_input_ids)
+        # else:
+        #     kg_ext_embedding_output = None
+        # if kg_ext_sum_input_ids is not None:
+        #     kg_ext_sum_embedding_output = self.lang_embeddings.word_embeddings(kg_ext_sum_input_ids)
+        # else:
+        #     kg_ext_sum_embedding_output = None
         # Run GTX encoder
         encoder_outputs = self.encoder(
             lang_feats=lang_embedding_output,
             lang_attention_mask=extended_lang_attention_mask,
-            kg_feats=kg_embedding_output,
-            kg_attention_mask=extended_kg_attention_mask,
-            kg_padding_mask=extended_kg_padding_mask,
-            kg_ext_input_ids = kg_ext_embedding_output,
-            kg_ext_attention_mask = kg_ext_attention_mask,
-            kg_ext_sum_input_ids = kg_ext_sum_embedding_output,
-            kg_ext_sum_attention_mask = kg_ext_sum_attention_mask,
+            # kg_feats=kg_embedding_output,
+            # kg_attention_mask=extended_kg_attention_mask,
+            # kg_padding_mask=extended_kg_padding_mask,
+            # kg_ext_input_ids = kg_ext_embedding_output,
+            # kg_ext_attention_mask = kg_ext_attention_mask,
+            # kg_ext_sum_input_ids = kg_ext_sum_embedding_output,
+            # kg_ext_sum_attention_mask = kg_ext_sum_attention_mask,
             output_attentions=output_attentions,
         )
 
-        kg_encoder_outputs, lang_encoder_outputs = encoder_outputs[:2]
-        kg_hidden_states = kg_encoder_outputs[0]
+        lang_encoder_outputs = encoder_outputs
+        # kg_hidden_states = kg_encoder_outputs[0]
         language_hidden_states = lang_encoder_outputs[0]
 
         all_attentions = ()
         if output_attentions:
             language_attentions = lang_encoder_outputs[1]
-            kg_attentions = kg_encoder_outputs[1]
-            cross_encoder_attentions = encoder_outputs[2]
+            # kg_attentions = kg_encoder_outputs[1]
+            # cross_encoder_attentions = encoder_outputs[2]
             all_attentions = (
                 language_attentions,
-                kg_attentions,
-                cross_encoder_attentions,
+                # kg_attentions,
+                # cross_encoder_attentions,
             )
 
-        hidden_states = (language_hidden_states, kg_hidden_states) if output_hidden_states else ()
+        hidden_states = (language_hidden_states) if output_hidden_states else ()
 
-        kg_output = kg_hidden_states[-1]
+        # kg_output = kg_hidden_states[-1]
         lang_output = language_hidden_states[-1]
-        #pooled_output = self.pooler(lang_output)
-        pooled_output = self.pooler(kg_output, lang_output)
+        pooled_output = self.pooler(lang_output)
+        # pooled_output = self.pooler(kg_output, lang_output)
 
         if not return_dict:
             return (lang_output, kg_output, pooled_output) + hidden_states + all_attentions
@@ -1280,12 +1280,12 @@ class GTXModel(GTXPreTrainedModel):
         return GTXModelOutput(
             pooled_output=pooled_output,
             language_output=lang_output,
-            kg_output=kg_output,
+            # kg_output=kg_output,
             language_hidden_states=language_hidden_states if output_hidden_states else None,
-            kg_hidden_states=kg_hidden_states if output_hidden_states else None,
+            # kg_hidden_states=kg_hidden_states if output_hidden_states else None,
             language_attentions=language_attentions if output_attentions else None,
-            kg_attentions=kg_attentions if output_attentions else None,
-            cross_encoder_attentions=cross_encoder_attentions if output_attentions else None,
+            # kg_attentions=kg_attentions if output_attentions else None,
+            # cross_encoder_attentions=cross_encoder_attentions if output_attentions else None,
         )
 
 class GTXForKGTokPredAndMaskedLM(GTXPreTrainedModel):
@@ -1311,13 +1311,13 @@ class GTXForKGTokPredAndMaskedLM(GTXPreTrainedModel):
         self.init_weights()
 
         # Warm start KG embedding
-        if not config.gcn and config.pretrained_kg_embedding:
-            notifier.critical("Load pretrained embedding for translation based KG-GTX")
-            new_embedding = torch.load(config.pretrained_kg_embedding)
-            self.GTX.set_kg_embeddings(new_embedding)
-            del new_embedding
-        elif lit2word:
-            self.GTX.set_kg_embeddings(None, lit2word)
+        # if not config.gcn and config.pretrained_kg_embedding:
+        #     notifier.critical("Load pretrained embedding for translation based KG-GTX")
+        #     new_embedding = torch.load(config.pretrained_kg_embedding)
+        #     self.GTX.set_kg_embeddings(new_embedding)
+        #     del new_embedding
+        # elif lit2word:
+        #     self.GTX.set_kg_embeddings(None, lit2word)
 
         # Use Pretrained-LM in Language Part
         self.GTX.encoder.re_init_to_pretrained_lang_model()
@@ -1377,29 +1377,29 @@ class GTXForKGTokPredAndMaskedLM(GTXPreTrainedModel):
         device = lang_input_ids.device #if lang_input_ids is not None else inputs_embeds.device
         GTX_output = self.GTX(
             lang_input_ids=lang_input_ids,
-            kg_input_ids=kg_input_ids,
+            # kg_input_ids=kg_input_ids,
             lang_inputs_embeds=lang_inputs_embeds,
-            kg_inputs_embeds=kg_inputs_embeds,
+            # kg_inputs_embeds=kg_inputs_embeds,
             lang_attention_mask=lang_attention_mask,
-            kg_attention_mask=kg_attention_mask,
-            kg_padding_mask=kg_padding_mask,
+            # kg_attention_mask=kg_attention_mask,
+            # kg_padding_mask=kg_padding_mask,
             token_type_ids=token_type_ids,
-            kg_ext_input_ids = kg_ext_input_ids,
-            kg_ext_attention_mask = kg_ext_attention_mask,
-            kg_ext_sum_input_ids = kg_ext_sum_input_ids,
-            kg_ext_sum_attention_mask = kg_ext_sum_attention_mask,
+            # kg_ext_input_ids = kg_ext_input_ids,
+            # kg_ext_attention_mask = kg_ext_attention_mask,
+            # kg_ext_sum_input_ids = kg_ext_sum_input_ids,
+            # kg_ext_sum_attention_mask = kg_ext_sum_attention_mask,
             output_attentions=output_attentions,
             output_hidden_states=output_hidden_states,
             return_dict=return_dict,
         )
 
-        lang_output, kg_output, cross_relationship_score = (
+        lang_output,cross_relationship_score = (
             GTX_output.language_output,
-            GTX_output.kg_output,
+            # GTX_output.kg_output,
             GTX_output.pooled_output,
         )
         lang_prediction_scores = self.lm_head(lang_output)
-        kg_prediction_scores = self.classifier(self.dropout(kg_output))
+        # kg_prediction_scores = self.classifier(self.dropout(kg_output))
 
         # Loss calculation
         total_loss = (
@@ -1462,13 +1462,13 @@ class GTXForKGTokPredAndMaskedLM(GTXPreTrainedModel):
             loss=total_loss,
             loss_dict=loss_dict,
             lang_prediction_logits=lang_prediction_scores.detach(),
-            kg_prediction_logits=kg_prediction_scores.detach(),
-            cross_relationship_score=cross_relationship_score.detach(),
+            # kg_prediction_logits=kg_prediction_scores.detach(),
+            # cross_relationship_score=cross_relationship_score.detach(),
             language_hidden_states=GTX_output.language_hidden_states,
-            kg_hidden_states=GTX_output.kg_hidden_states,
+            # kg_hidden_states=GTX_output.kg_hidden_states,
             language_attentions=GTX_output.language_attentions,
-            kg_attentions=GTX_output.kg_attentions,
-            cross_encoder_attentions=GTX_output.cross_encoder_attentions,
+            # kg_attentions=GTX_output.kg_attentions,
+            # cross_encoder_attentions=GTX_output.cross_encoder_attentions,
         )
 
 class GTXForRanking(GTXPreTrainedModel):
@@ -1548,25 +1548,25 @@ class GTXForRanking(GTXPreTrainedModel):
 
         GTX_output = self.GTX(
             lang_input_ids=lang_input_ids,
-            kg_input_ids=kg_input_ids,
+            # kg_input_ids=kg_input_ids,
             lang_inputs_embeds=lang_inputs_embeds,
-            kg_inputs_embeds=kg_inputs_embeds,
+            # kg_inputs_embeds=kg_inputs_embeds,
             lang_attention_mask=lang_attention_mask,
-            kg_attention_mask=kg_attention_mask,
-            kg_padding_mask=kg_padding_mask,
+            # kg_attention_mask=kg_attention_mask,
+            # kg_padding_mask=kg_padding_mask,
             token_type_ids=token_type_ids,
-            kg_ext_input_ids = kg_ext_input_ids,
-            kg_ext_attention_mask = kg_ext_attention_mask,
-            kg_ext_sum_input_ids = kg_ext_sum_input_ids,
-            kg_ext_sum_attention_mask = kg_ext_sum_attention_mask,
+            # kg_ext_input_ids = kg_ext_input_ids,
+            # kg_ext_attention_mask = kg_ext_attention_mask,
+            # kg_ext_sum_input_ids = kg_ext_sum_input_ids,
+            # kg_ext_sum_attention_mask = kg_ext_sum_attention_mask,
             output_attentions=output_attentions,
             output_hidden_states=output_hidden_states,
             return_dict=return_dict,
         )
 
-        lang_output, kg_output, pooled_output = (
+        lang_output, pooled_output = (
             GTX_output.language_output,
-            GTX_output.kg_output,
+            # GTX_output.kg_output,
             GTX_output.pooled_output,
         )
         cross_relationship_score = pooled_output.squeeze()
@@ -1586,12 +1586,12 @@ class GTXForRanking(GTXPreTrainedModel):
         return GTXForDownstreamOutput(
             loss=total_loss,
             loss_dict=loss_dict,
-            pooled_logits=cross_relationship_score.detach(),
+            # pooled_logits=cross_relationship_score.detach(),
             language_hidden_states=GTX_output.language_hidden_states,
-            kg_hidden_states=GTX_output.kg_hidden_states,
+            # kg_hidden_states=GTX_output.kg_hidden_states,
             language_attentions=GTX_output.language_attentions,
-            kg_attentions=GTX_output.kg_attentions,
-            cross_encoder_attentions=GTX_output.cross_encoder_attentions,
+            # kg_attentions=GTX_output.kg_attentions,
+            # cross_encoder_attentions=GTX_output.cross_encoder_attentions,
         )
 
 class GTXForAdmLvlPrediction(GTXPreTrainedModel):
@@ -1673,25 +1673,25 @@ class GTXForAdmLvlPrediction(GTXPreTrainedModel):
 
         GTX_output = self.GTX(
             lang_input_ids=lang_input_ids,
-            kg_input_ids=kg_input_ids,
+            # kg_input_ids=kg_input_ids,
             lang_inputs_embeds=lang_inputs_embeds,
-            kg_inputs_embeds=kg_inputs_embeds,
+            # kg_inputs_embeds=kg_inputs_embeds,
             lang_attention_mask=lang_attention_mask,
-            kg_attention_mask=kg_attention_mask,
-            kg_padding_mask=kg_padding_mask,
+            # kg_attention_mask=kg_attention_mask,
+            # kg_padding_mask=kg_padding_mask,
             token_type_ids=token_type_ids,
-            kg_ext_input_ids = kg_ext_input_ids,
-            kg_ext_attention_mask = kg_ext_attention_mask,
-            kg_ext_sum_input_ids = kg_ext_sum_input_ids,
-            kg_ext_sum_attention_mask = kg_ext_sum_attention_mask,
+            # kg_ext_input_ids = kg_ext_input_ids,
+            # kg_ext_attention_mask = kg_ext_attention_mask,
+            # kg_ext_sum_input_ids = kg_ext_sum_input_ids,
+            # kg_ext_sum_attention_mask = kg_ext_sum_attention_mask,
             output_attentions=output_attentions,
             output_hidden_states=output_hidden_states,
             return_dict=return_dict,
         )
 
-        lang_output, kg_output, multi_label_score = (
+        lang_output, multi_label_score = (
             GTX_output.language_output,
-            GTX_output.kg_output,
+            # GTX_output.kg_output,
             GTX_output.pooled_output,
         )
         # multi_label_score = multi_label_score.softmax(dim=1)
@@ -1719,10 +1719,10 @@ class GTXForAdmLvlPrediction(GTXPreTrainedModel):
             loss_dict=loss_dict,
             pooled_logits=multi_label_score.detach(),
             language_hidden_states=GTX_output.language_hidden_states,
-            kg_hidden_states=GTX_output.kg_hidden_states,
+            # kg_hidden_states=GTX_output.kg_hidden_states,
             language_attentions=GTX_output.language_attentions,
-            kg_attentions=GTX_output.kg_attentions,
-            cross_encoder_attentions=GTX_output.cross_encoder_attentions,
+            # kg_attentions=GTX_output.kg_attentions,
+            # cross_encoder_attentions=GTX_output.cross_encoder_attentions,
         )
 
 class GTXForErrorDetection(GTXPreTrainedModel):
@@ -1806,25 +1806,25 @@ class GTXForErrorDetection(GTXPreTrainedModel):
 
         GTX_output = self.GTX(
             lang_input_ids=lang_input_ids,
-            kg_input_ids=kg_input_ids,
+            # kg_input_ids=kg_input_ids,
             lang_inputs_embeds=lang_inputs_embeds,
-            kg_inputs_embeds=kg_inputs_embeds,
+            # kg_inputs_embeds=kg_inputs_embeds,
             lang_attention_mask=lang_attention_mask,
-            kg_attention_mask=kg_attention_mask,
-            kg_padding_mask=kg_padding_mask,
+            # kg_attention_mask=kg_attention_mask,
+            # kg_padding_mask=kg_padding_mask,
             token_type_ids=token_type_ids,
-            kg_ext_input_ids = kg_ext_input_ids,
-            kg_ext_attention_mask = kg_ext_attention_mask,
-            kg_ext_sum_input_ids = kg_ext_sum_input_ids,
-            kg_ext_sum_attention_mask = kg_ext_sum_attention_mask,
+            # kg_ext_input_ids = kg_ext_input_ids,
+            # kg_ext_attention_mask = kg_ext_attention_mask,
+            # kg_ext_sum_input_ids = kg_ext_sum_input_ids,
+            # kg_ext_sum_attention_mask = kg_ext_sum_attention_mask,
             output_attentions=output_attentions,
             output_hidden_states=output_hidden_states,
             return_dict=return_dict,
         )
 
-        lang_output, kg_output, multi_label_score = (
+        lang_output, multi_label_score = (
             GTX_output.language_output,
-            GTX_output.kg_output,
+            # GTX_output.kg_output,
             GTX_output.pooled_output,
         )
         # total_loss = 0
@@ -1859,10 +1859,10 @@ class GTXForErrorDetection(GTXPreTrainedModel):
             loss_dict=loss_dict,
             pooled_logits=score.detach(),
             language_hidden_states=GTX_output.language_hidden_states,
-            kg_hidden_states=GTX_output.kg_hidden_states,
+            # kg_hidden_states=GTX_output.kg_hidden_states,
             language_attentions=GTX_output.language_attentions,
-            kg_attentions=GTX_output.kg_attentions,
-            cross_encoder_attentions=GTX_output.cross_encoder_attentions,
+            # kg_attentions=GTX_output.kg_attentions,
+            # cross_encoder_attentions=GTX_output.cross_encoder_attentions,
         )
 
 class GTXForTemporalPred(GTXPreTrainedModel):
@@ -1941,25 +1941,25 @@ class GTXForTemporalPred(GTXPreTrainedModel):
 
         GTX_output = self.GTX(
             lang_input_ids=lang_input_ids,
-            kg_input_ids=kg_input_ids,
+            # kg_input_ids=kg_input_ids,
             lang_inputs_embeds=lang_inputs_embeds,
-            kg_inputs_embeds=kg_inputs_embeds,
+            # kg_inputs_embeds=kg_inputs_embeds,
             lang_attention_mask=lang_attention_mask,
-            kg_attention_mask=kg_attention_mask,
-            kg_padding_mask=kg_padding_mask,
+            # kg_attention_mask=kg_attention_mask,
+            # kg_padding_mask=kg_padding_mask,
             token_type_ids=token_type_ids,
-            kg_ext_input_ids = kg_ext_input_ids,
-            kg_ext_attention_mask = kg_ext_attention_mask,
-            kg_ext_sum_input_ids = kg_ext_sum_input_ids,
-            kg_ext_sum_attention_mask = kg_ext_sum_attention_mask,
+            # kg_ext_input_ids = kg_ext_input_ids,
+            # kg_ext_attention_mask = kg_ext_attention_mask,
+            # kg_ext_sum_input_ids = kg_ext_sum_input_ids,
+            # kg_ext_sum_attention_mask = kg_ext_sum_attention_mask,
             output_attentions=output_attentions,
             output_hidden_states=output_hidden_states,
             return_dict=return_dict,
         )
 
-        lang_output, kg_output, multi_label_score = (
+        lang_output, multi_label_score = (
             GTX_output.language_output,
-            GTX_output.kg_output,
+            # GTX_output.kg_output,
             GTX_output.pooled_output,
         )
         # multi_label_score = multi_label_score.softmax(dim=1)
@@ -1981,10 +1981,10 @@ class GTXForTemporalPred(GTXPreTrainedModel):
             loss_dict=loss_dict,
             pooled_logits=multi_label_score.detach(),
             language_hidden_states=GTX_output.language_hidden_states,
-            kg_hidden_states=GTX_output.kg_hidden_states,
+            # kg_hidden_states=GTX_output.kg_hidden_states,
             language_attentions=GTX_output.language_attentions,
-            kg_attentions=GTX_output.kg_attentions,
-            cross_encoder_attentions=GTX_output.cross_encoder_attentions,
+            # kg_attentions=GTX_output.kg_attentions,
+            # cross_encoder_attentions=GTX_output.cross_encoder_attentions,
         )
 
 class GTXForGeneration(GTXPreTrainedModel):

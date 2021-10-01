@@ -6,7 +6,7 @@ import itertools
 from Run_configs import Configuration
 
 # GPU setting
-os.environ["CUDA_VISIBLE_DEVICES"] = '5'
+os.environ["CUDA_VISIBLE_DEVICES"] = '0'
 
 # TPU setting
 TPU = False
@@ -15,13 +15,13 @@ for preset in [
     # {'model':'cross','architecture':'both','knowmix':'init','scratch':False},
     # {'model':'cross','architecture':'both','knowmix':'init,adm','scratch':False},
     # {'db':'dx,prx','model':'transe','architecture':'lm ','knowmix':'','scratch':False},
-    {'db':'dx,prx','model':'cross','architecture':'both','knowmix':'init,abs','scratch':False},
-    {'db':'px','model':'cross','architecture':'both','knowmix':'init,abs','scratch':False},
+    {'db':'dx,prx','model':'single','architecture':'lm','knowmix':'','scratch':False},
+    # {'db':'px','model':'cross','architecture':'both','knowmix':'init,abs','scratch':False},
 ]:
-    for _task in [0,1,2,3,4,5,7]:
+    for _task in [0]:
         if (_task==3) and (preset['db']=='px'):
             continue
-        for _SEED in [1234,123,12,1,42]: # , 123, 12, 1, 42]: # , 1, 42]:
+        for _SEED in [1234]: # , 123, 12, 1, 42]: # , 1, 42]:
             if (_task==0) and (_SEED!=1234):
                 continue
             config = {
