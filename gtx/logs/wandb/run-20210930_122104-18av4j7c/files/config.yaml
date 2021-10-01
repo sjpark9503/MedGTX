@@ -1,0 +1,229 @@
+wandb_version: 1
+
+_wandb:
+  desc: null
+  value:
+    cli_version: 0.10.28
+    code_path: code/gtx/src/main.py
+    framework: huggingface
+    huggingface_version: 4.5.1
+    is_jupyter_run: false
+    is_kaggle_kernel: true
+    m:
+    - 1: trainer/global_step
+      6:
+      - 3
+    python_version: 3.7.9
+    t:
+      1:
+      - 1
+      - 3
+      - 5
+      - 9
+      - 11
+      2:
+      - 1
+      - 3
+      - 5
+      - 9
+      - 11
+      3:
+      - 7
+      4: 3.7.9
+      5: 0.10.28
+      6: 4.5.1
+      8:
+      - 2
+      - 5
+adam_beta1:
+  desc: null
+  value: 0.9
+adam_beta2:
+  desc: null
+  value: 0.999
+adam_epsilon:
+  desc: null
+  value: 1.0e-08
+align:
+  desc: null
+  value: true
+cache_dir:
+  desc: null
+  value: null
+config_name:
+  desc: null
+  value: /home/ssbae/kim/kg_txt_multimodal/gtx/config/config_H128_L2,2,4_cross_kg_Unifieddx,prx.json
+dataloader_drop_last:
+  desc: null
+  value: false
+dataloader_num_workers:
+  desc: null
+  value: 8
+dataloader_pin_memory:
+  desc: null
+  value: true
+debug:
+  desc: null
+  value: false
+disable_tqdm:
+  desc: null
+  value: null
+do_eval:
+  desc: null
+  value: true
+do_predict:
+  desc: null
+  value: false
+do_train:
+  desc: null
+  value: true
+edge_cls:
+  desc: null
+  value: true
+eval_accumulation_steps:
+  desc: null
+  value: null
+eval_batch_size:
+  desc: null
+  value: 4
+eval_criterion:
+  desc: null
+  value: null
+evaluate_during_training:
+  desc: null
+  value: true
+evaluation_strategy:
+  desc: null
+  value: 'no'
+fp16:
+  desc: null
+  value: true
+fp16_opt_level:
+  desc: null
+  value: O1
+gradient_accumulation_steps:
+  desc: null
+  value: 1
+greater_is_better:
+  desc: null
+  value: null
+id2desc:
+  desc: null
+  value: null
+knowmix:
+  desc: null
+  value: ''
+label_domain:
+  desc: null
+  value: graph
+label_names:
+  desc: null
+  value: null
+learning_rate:
+  desc: null
+  value: 0.0001
+load_best_model_at_end:
+  desc: null
+  value: false
+local_rank:
+  desc: null
+  value: -1
+logging_dir:
+  desc: null
+  value: runs/Sep30_12-20-00_aiamdgpuserver03
+logging_first_step:
+  desc: null
+  value: false
+max_grad_norm:
+  desc: null
+  value: 1.0
+max_steps:
+  desc: null
+  value: -1
+metric_for_best_model:
+  desc: null
+  value: null
+model_name_or_path:
+  desc: null
+  value: null
+model_type:
+  desc: null
+  value: lxmert
+n_negatives:
+  desc: null
+  value: 1
+no_cuda:
+  desc: null
+  value: false
+num_eval_per_epoch:
+  desc: null
+  value: 2
+num_log_per_epoch:
+  desc: null
+  value: 20
+num_train_epochs:
+  desc: null
+  value: 40
+optimizer:
+  desc: null
+  value: Adam
+output_dir:
+  desc: null
+  value: /home/ssbae/kim/kg_txt_multimodal/gtx/pretrained_models/Pre/cross/dx,prx/KGenc_H128_L2,2,4_Align_RC_Unified2000
+overwrite_output_dir:
+  desc: null
+  value: false
+past_index:
+  desc: null
+  value: -1
+per_gpu_eval_batch_size:
+  desc: null
+  value: null
+per_gpu_train_batch_size:
+  desc: null
+  value: null
+prediction_loss_only:
+  desc: null
+  value: false
+remove_unused_columns:
+  desc: null
+  value: true
+run_name:
+  desc: null
+  value: Pre/cross/dx,prx/KGenc_H128_L2,2,4_Align_RC_Unified2000
+save_per_run:
+  desc: null
+  value: 4
+save_total_limit:
+  desc: null
+  value: null
+seed:
+  desc: null
+  value: 1234
+task:
+  desc: null
+  value: Pre
+tokenizer_name:
+  desc: null
+  value: bert-base-uncased
+top_k:
+  desc: null
+  value: 10
+tpu_metrics_debug:
+  desc: null
+  value: false
+tpu_num_cores:
+  desc: null
+  value: null
+train_batch_size:
+  desc: null
+  value: 16
+use_tpu:
+  desc: null
+  value: false
+warmup_steps:
+  desc: null
+  value: 0
+weight_decay:
+  desc: null
+  value: 0.0

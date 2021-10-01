@@ -105,10 +105,10 @@ def metrics_for_tasks(task,
     else:
         metrics = {}
     if task == "Pre":
-        if batch['lm_label'] is not None:
-            lm_pred = torch.max(outputs.lang_prediction_logits, dim=2)[-1][:batch['lm_label'].size(0)][~batch['lm_label'].eq(-100)].view(-1).long()
-            lm_gt = batch['lm_label'][~batch['lm_label'].eq(-100)].view(-1).long()
-            metrics[f"{stage}_lm_acc"] = lm_pred==lm_gt
+        # if batch['lm_label'] is not None:
+        #     lm_pred = torch.max(outputs.lang_prediction_logits, dim=2)[-1][:batch['lm_label'].size(0)][~batch['lm_label'].eq(-100)].view(-1).long()
+        #     lm_gt = batch['lm_label'][~batch['lm_label'].eq(-100)].view(-1).long()
+        #     metrics[f"{stage}_lm_acc"] = lm_pred==lm_gt
         if batch['kg_label'] is not None:
             kg_pred = torch.max(outputs.kg_prediction_logits, dim=2)[-1][:batch['lm_label'].size(0)][~batch['kg_label'].eq(-100)].view(-1).long()
             kg_gt = batch['kg_label'][~batch['kg_label'].eq(-100)].view(-1).long().detach()

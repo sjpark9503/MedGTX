@@ -1,0 +1,253 @@
+diff --git a/gtx/Run_configs.py b/gtx/Run_configs.py
+index d9e37bc..93ef274 100644
+--- a/gtx/Run_configs.py
++++ b/gtx/Run_configs.py
+@@ -60,9 +60,9 @@ class Configuration():
+             "use_tpu" : config['use_tpu'],
+             "dataloader_pin_memory" : False if not config['use_tpu'] else True,
+             "label_domain" : config['label_domain'],
+-            "train_data_file":os.path.join(self.EXP_PATH,f"data/{'knowmix/' if config['KnowMix'] else ''}{self.DB}_{self.DB_size}/{self.MODEL_NAME}/train"),
+-            "eval_data_file": os.path.join(self.EXP_PATH,f"data/{'knowmix/' if config['KnowMix'] else ''}{self.DB}_{self.DB_size}/{self.MODEL_NAME}/valid"),
+-            "test_data_file": os.path.join(self.EXP_PATH,f"data/{'knowmix/' if config['KnowMix'] else ''}{self.DB}_{self.DB_size}/{self.MODEL_NAME}/test"),
++            "train_data_file":os.path.join('/home/sjpark/experiments/lightning_base/kg_txt_multimodal/gtx',f"fixed_data/{'knowmix/' if config['KnowMix'] else ''}{self.DB}_{self.DB_size}/{self.MODEL_NAME}/train"),
++            "eval_data_file": os.path.join('/home/sjpark/experiments/lightning_base/kg_txt_multimodal/gtx',f"fixed_data/{'knowmix/' if config['KnowMix'] else ''}{self.DB}_{self.DB_size}/{self.MODEL_NAME}/valid"),
++            "test_data_file": os.path.join('/home/sjpark/experiments/lightning_base/kg_txt_multimodal/gtx',f"fixed_data/{'knowmix/' if config['KnowMix'] else ''}{self.DB}_{self.DB_size}/{self.MODEL_NAME}/test"),
+             "run_name":f"{self.TASK_NAME}_{self.RUN_NAME}"
+         }
+ 
+diff --git a/gtx/run.py b/gtx/run.py
+index 684768e..03fe6c1 100644
+--- a/gtx/run.py
++++ b/gtx/run.py
+@@ -6,7 +6,7 @@ import itertools
+ from Run_configs import Configuration
+ 
+ # GPU setting
+-os.environ["CUDA_VISIBLE_DEVICES"] = '5'
++os.environ["CUDA_VISIBLE_DEVICES"] = '0'
+ 
+ # TPU setting
+ TPU = False
+@@ -15,13 +15,13 @@ for preset in [
+     # {'model':'cross','architecture':'both','knowmix':'init','scratch':False},
+     # {'model':'cross','architecture':'both','knowmix':'init,adm','scratch':False},
+     # {'db':'dx,prx','model':'transe','architecture':'lm ','knowmix':'','scratch':False},
+-    {'db':'dx,prx','model':'cross','architecture':'both','knowmix':'init,abs','scratch':False},
+-    {'db':'px','model':'cross','architecture':'both','knowmix':'init,abs','scratch':False},
++    {'db':'dx,prx','model':'cross','architecture':'kg','knowmix':'','scratch':False},
++    # {'db':'px','model':'cross','architecture':'both','knowmix':'init,abs','scratch':False},
+ ]:
+-    for _task in [0,1,2,3,4,5,7]:
++    for _task in [0]: # [5, 7]
+         if (_task==3) and (preset['db']=='px'):
+             continue
+-        for _SEED in [1234,123,12,1,42]: # , 123, 12, 1, 42]: # , 1, 42]:
++        for _SEED in [1234]: # , 123, 12, 1, 42]: # , 1, 42]:
+             if (_task==0) and (_SEED!=1234):
+                 continue
+             config = {
+@@ -37,7 +37,7 @@ for preset in [
+                 # architecture : both / kg / lm / rand
+                 'architecture' : preset['architecture'],
+                 # label domain : graph / text
+-                'label_domain' : 'text',
++                'label_domain' : 'graph',
+                 'P' : True,
+                 'A' : not preset['scratch'],
+                 'R' : False if preset['db']=='px' else True,
+@@ -71,7 +71,7 @@ for preset in [
+                 config['lr'] = 3e-5
+                 config['num_epochs'] = 30
+             
+-
++            
+             # Run script
+             exp_config = Configuration(config)
+             SRC_PATH, TRAINING_CONFIG_LIST = exp_config.get_configuration()
+diff --git a/gtx/src/model.py b/gtx/src/model.py
+index ad339fe..07d1e81 100644
+--- a/gtx/src/model.py
++++ b/gtx/src/model.py
+@@ -774,35 +774,35 @@ class GTXEncoder(nn.Module):
+ 
+         # Layers
+         # Using self.layer instead of self.l_layer to support loading BERT weights.
+-        self.layer = nn.ModuleList([GTXLayer(config) for _ in range(self.num_l_layers)])
+-        notifier.warning(f"This model has a {config.cross_att_type if 'cross_att_type' in vars(config).keys() else 'cross'} type of x_attention architecture.")
++        # self.layer = nn.ModuleList([GTXLayer(config) for _ in range(self.num_l_layers)])
++        # notifier.warning(f"This model has a {config.cross_att_type if 'cross_att_type' in vars(config).keys() else 'cross'} type of x_attention architecture.")
+         # self.x_layers = nn.ModuleList([GTXXLayer(config) for _ in range(self.num_x_layers)])
+         # if ("lit" in self.config.KnowMix) or ("abs" in self.config.KnowMix) or ("summary" in self.config.KnowMix) or ("adm" in self.config.KnowMix):
+         #     notifier.critical(f"Use Knowledge Mixup Layer on {config.KnowMix} nodes")
+         #     self.r_layers = nn.ModuleList([GTXKnowMixLayer(config) for _ in range(self.num_r_layers)])
+         # else:
+-        #     notifier.critical("Use Standard GAT Layer")
+-        #     self.r_layers = nn.ModuleList([GTXLayer(config) for _ in range(self.num_r_layers)])            
++        notifier.critical("Use Standard GAT Layer")
++        self.r_layers = nn.ModuleList([GTXLayer(config) for _ in range(self.num_r_layers)])            
+         
+         # Lang Encoder Architecture
+         # LSTM for generation, BiLSTM for pretraining/other donwstream tasks
+         if self.encoder_type in ['bilstm', 'lstm']:
+             self.convert_lang_encoder_to_RNN()
+ 
+-    def re_init_to_pretrained_lang_model(self):
+-        if isinstance(self.layer, nn.LSTM):
+-            notifier.warning("You've already used RNN-Style Architecture so that cannot re-init with PLMs.")
+-        else:
+-            """ If we use lm to language part, then we re-init our encoder.layer """
+-            plm_usage = self.config.pretrained_lang_model
+-            from transformers import AutoModel, AutoConfig
+-            if plm_usage['use_weight']:
+-                notifier.warning("Warm start for language part")
+-                self.layer = AutoModel.from_pretrained(plm_usage['model_name']).encoder.layer
+-            else:
+-                notifier.warning("Cold start for language part")
+-                plm_config = AutoConfig.from_pretrained(plm_usage['model_name'])
+-                self.layer = AutoModel.from_config(plm_config).encoder.layer
++    # def re_init_to_pretrained_lang_model(self):
++    #     if isinstance(self.layer, nn.LSTM):
++    #         notifier.warning("You've already used RNN-Style Architecture so that cannot re-init with PLMs.")
++    #     else:
++    #         """ If we use lm to language part, then we re-init our encoder.layer """
++    #         plm_usage = self.config.pretrained_lang_model
++    #         from transformers import AutoModel, AutoConfig
++    #         if plm_usage['use_weight']:
++    #             notifier.warning("Warm start for language part")
++    #             self.layer = AutoModel.from_pretrained(plm_usage['model_name']).encoder.layer
++    #         else:
++    #             notifier.warning("Cold start for language part")
++    #             plm_config = AutoConfig.from_pretrained(plm_usage['model_name'])
++    #             self.layer = AutoModel.from_config(plm_config).encoder.layer
+             
+     def convert_lang_encoder_to_RNN(self):
+         if self.encoder_type == 'lstm':
+@@ -846,21 +846,21 @@ class GTXEncoder(nn.Module):
+         
+         # Run language layers
+         ## use RNN Encoder
+-        if self.encoder_type in ['bilstm', 'lstm']:
+-            l_outputs = self.layer(lang_feats)
+-            lang_feats = l_outputs[0]
+-            if self.layer.bidirectional:
+-                bsz, seq_len = lang_feats.shape[0], lang_feats.shape[1]
+-                lang_feats = lang_feats.view(bsz, seq_len, 2, -1).sum(axis=2)
+-            language_hidden_states = language_hidden_states + (lang_feats,)
+-        ## use BERT Encoder
+-        else:
+-            for layer_module in self.layer:
+-                l_outputs = layer_module(lang_feats, lang_attention_mask, output_attentions=output_attentions)
+-                lang_feats = l_outputs[0]
+-                language_hidden_states = language_hidden_states + (lang_feats,)
+-                if language_attentions is not None:
+-                    language_attentions = language_attentions + (l_outputs[1],)
++        # if self.encoder_type in ['bilstm', 'lstm']:
++        #     l_outputs = self.layer(lang_feats)
++        #     lang_feats = l_outputs[0]
++        #     if self.layer.bidirectional:
++        #         bsz, seq_len = lang_feats.shape[0], lang_feats.shape[1]
++        #         lang_feats = lang_feats.view(bsz, seq_len, 2, -1).sum(axis=2)
++        #     language_hidden_states = language_hidden_states + (lang_feats,)
++        # ## use BERT Encoder
++        # else:
++        #     for layer_module in self.layer:
++        #         l_outputs = layer_module(lang_feats, lang_attention_mask, output_attentions=output_attentions)
++        #         lang_feats = l_outputs[0]
++        #         language_hidden_states = language_hidden_states + (lang_feats,)
++        #         if language_attentions is not None:
++        #             language_attentions = language_attentions + (l_outputs[1],)
+ 
+         # Run relational layers
+         ## Process the KG attention mask
+@@ -902,21 +902,21 @@ class GTXEncoder(nn.Module):
+             if kg_attentions is not None:
+                 kg_attentions = kg_attentions + (kg_outputs[1],)
+ 
+-        # Run cross-modality layers
+-        for layer_module in self.x_layers:
+-            x_outputs = layer_module(
+-                lang_feats,
+-                lang_attention_mask,
+-                kg_feats,
+-                kg_padding_mask,
+-                kg_padding_mask,
+-                output_attentions=output_attentions,
+-            )
+-            lang_feats, kg_feats = x_outputs[:2]
+-            kg_hidden_states = kg_hidden_states + (kg_feats,)
+-            language_hidden_states = language_hidden_states + (lang_feats,)
+-            if cross_encoder_attentions is not None:
+-                cross_encoder_attentions = {k:cross_encoder_attentions[k] + (x_outputs[2][k],) for k in cross_encoder_attentions}
++        # # Run cross-modality layers
++        # for layer_module in self.x_layers:
++        #     x_outputs = layer_module(
++        #         lang_feats,
++        #         lang_attention_mask,
++        #         kg_feats,
++        #         kg_padding_mask,
++        #         kg_padding_mask,
++        #         output_attentions=output_attentions,
++        #     )
++        #     lang_feats, kg_feats = x_outputs[:2]
++        #     kg_hidden_states = kg_hidden_states + (kg_feats,)
++        #     language_hidden_states = language_hidden_states + (lang_feats,)
++        #     if cross_encoder_attentions is not None:
++        #         cross_encoder_attentions = {k:cross_encoder_attentions[k] + (x_outputs[2][k],) for k in cross_encoder_attentions}
+         kg_encoder_outputs = (
+             kg_hidden_states,
+             kg_attentions if output_attentions else None,
+@@ -934,18 +934,19 @@ class GTXEncoder(nn.Module):
+ class GTXPooler(nn.Module):
+     def __init__(self, config):
+         super(GTXPooler, self).__init__()
+-        self.multi_pooler = nn.Sequential(nn.Linear(config.hidden_size*2, config.hidden_size*2),
++        self.multi_pooler = nn.Sequential(nn.Linear(config.hidden_size, config.hidden_size),
+                                     nn.Tanh(),
+-                                    nn.Linear(config.hidden_size*2, config.num_labels))
+-        self.ce_pooler = nn.Sequential(nn.Linear(config.hidden_size*2, config.hidden_size*2),
++                                    nn.Linear(config.hidden_size, config.num_labels))
++        self.ce_pooler = nn.Sequential(nn.Linear(config.hidden_size, config.hidden_size),
+                                     nn.Tanh(),
+-                                    nn.Linear(config.hidden_size*2, 2))
++                                    nn.Linear(config.hidden_size, 2))
+         self.use_ce_pooler = config.use_ce_pooler
+     #def forward(self, hidden_states):
+     def forward(self, kg_hidden_states, lang_hidden_states):
+         # We "pool" the model by simply taking the hidden state corresponding
+         # to the first token.
+-        first_token_tensors = torch.cat([kg_hidden_states[:, 0],lang_hidden_states[:, 0]],dim=1)
++        # first_token_tensors = torch.cat([kg_hidden_states[:, 0],lang_hidden_states[:, 0]],dim=1)
++        first_token_tensors = kg_hidden_states
+         if self.use_ce_pooler:
+             pooled_output = self.ce_pooler(first_token_tensors)
+         else:
+@@ -1270,16 +1271,16 @@ class GTXModel(GTXPreTrainedModel):
+         hidden_states = (language_hidden_states, kg_hidden_states) if output_hidden_states else ()
+ 
+         kg_output = kg_hidden_states[-1]
+-        lang_output = language_hidden_states[-1]
+-        #pooled_output = self.pooler(lang_output)
+-        pooled_output = self.pooler(kg_output, lang_output)
++        # lang_output = language_hidden_states[-1]
++        pooled_output = self.pooler(kg_output)
++        # pooled_output = self.pooler(kg_output, lang_output)
+ 
+         if not return_dict:
+             return (lang_output, kg_output, pooled_output) + hidden_states + all_attentions
+ 
+         return GTXModelOutput(
+             pooled_output=pooled_output,
+-            language_output=lang_output,
++            # language_output=,
+             kg_output=kg_output,
+             language_hidden_states=language_hidden_states if output_hidden_states else None,
+             kg_hidden_states=kg_hidden_states if output_hidden_states else None,
+@@ -1320,7 +1321,7 @@ class GTXForKGTokPredAndMaskedLM(GTXPreTrainedModel):
+             self.GTX.set_kg_embeddings(None, lit2word)
+ 
+         # Use Pretrained-LM in Language Part
+-        self.GTX.encoder.re_init_to_pretrained_lang_model()
++        # self.GTX.encoder.re_init_to_pretrained_lang_model()
+ 
+         # Loss functions
+         self.loss_fcts = {

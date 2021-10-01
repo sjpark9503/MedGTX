@@ -6,7 +6,7 @@ import itertools
 from Run_configs import Configuration
 
 # GPU setting
-os.environ["CUDA_VISIBLE_DEVICES"] = '5'
+os.environ["CUDA_VISIBLE_DEVICES"] = '0'
 
 # TPU setting
 TPU = False
@@ -15,13 +15,13 @@ for preset in [
     # {'model':'cross','architecture':'both','knowmix':'init','scratch':False},
     # {'model':'cross','architecture':'both','knowmix':'init,adm','scratch':False},
     # {'db':'dx,prx','model':'transe','architecture':'lm ','knowmix':'','scratch':False},
-    {'db':'dx,prx','model':'cross','architecture':'both','knowmix':'init,abs','scratch':False},
-    {'db':'px','model':'cross','architecture':'both','knowmix':'init,abs','scratch':False},
+    {'db':'dx,prx','model':'single','architecture':'kg','knowmix':'','scratch':False},
+    # {'db':'px','model':'cross','architecture':'both','knowmix':'init,abs','scratch':False},
 ]:
-    for _task in [0,1,2,3,4,5,7]:
+    for _task in [0]: # [5, 7]
         if (_task==3) and (preset['db']=='px'):
             continue
-        for _SEED in [1234,123,12,1,42]: # , 123, 12, 1, 42]: # , 1, 42]:
+        for _SEED in [1234]: # , 123, 12, 1, 42]: # , 1, 42]:
             if (_task==0) and (_SEED!=1234):
                 continue
             config = {
@@ -37,7 +37,7 @@ for preset in [
                 # architecture : both / kg / lm / rand
                 'architecture' : preset['architecture'],
                 # label domain : graph / text
-                'label_domain' : 'text',
+                'label_domain' : 'graph',
                 'P' : True,
                 'A' : not preset['scratch'],
                 'R' : False if preset['db']=='px' else True,
@@ -71,7 +71,7 @@ for preset in [
                 config['lr'] = 3e-5
                 config['num_epochs'] = 30
             
-
+            
             # Run script
             exp_config = Configuration(config)
             SRC_PATH, TRAINING_CONFIG_LIST = exp_config.get_configuration()

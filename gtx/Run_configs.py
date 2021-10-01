@@ -60,9 +60,9 @@ class Configuration():
             "use_tpu" : config['use_tpu'],
             "dataloader_pin_memory" : False if not config['use_tpu'] else True,
             "label_domain" : config['label_domain'],
-            "train_data_file":os.path.join(self.EXP_PATH,f"data/{'knowmix/' if config['KnowMix'] else ''}{self.DB}_{self.DB_size}/{self.MODEL_NAME}/train"),
-            "eval_data_file": os.path.join(self.EXP_PATH,f"data/{'knowmix/' if config['KnowMix'] else ''}{self.DB}_{self.DB_size}/{self.MODEL_NAME}/valid"),
-            "test_data_file": os.path.join(self.EXP_PATH,f"data/{'knowmix/' if config['KnowMix'] else ''}{self.DB}_{self.DB_size}/{self.MODEL_NAME}/test"),
+            "train_data_file":os.path.join('/home/sjpark/experiments/lightning_base/kg_txt_multimodal/gtx',f"fixed_data/{'knowmix/' if config['KnowMix'] else ''}{self.DB}_{self.DB_size}/{self.MODEL_NAME}/train"),
+            "eval_data_file": os.path.join('/home/sjpark/experiments/lightning_base/kg_txt_multimodal/gtx',f"fixed_data/{'knowmix/' if config['KnowMix'] else ''}{self.DB}_{self.DB_size}/{self.MODEL_NAME}/valid"),
+            "test_data_file": os.path.join('/home/sjpark/experiments/lightning_base/kg_txt_multimodal/gtx',f"fixed_data/{'knowmix/' if config['KnowMix'] else ''}{self.DB}_{self.DB_size}/{self.MODEL_NAME}/test"),
             "run_name":f"{self.TASK_NAME}_{self.RUN_NAME}"
         }
 
