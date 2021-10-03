@@ -35,7 +35,7 @@ class GTXModel(pl.LightningModule):
 
         self.load_bert_tokenizer()
 
-        # Load configuration
+       # Load configuration
         if model_args.config_name:
             config = AutoConfig.from_pretrained(model_args.config_name)
         elif model_args.model_name_or_path:
@@ -45,7 +45,7 @@ class GTXModel(pl.LightningModule):
             notifier.warning("You are instantiating a new config instance from scratch.")
         if training_args.task in ['AdmPred','ReAdm','NextDx', 'Death30', 'Death180', 'Death365']:
             config.use_ce_pooler = False
-        else:
+        else: 
             config.use_ce_pooler = True
         config.KnowMix = training_args.knowmix
 
@@ -94,7 +94,7 @@ class GTXModel(pl.LightningModule):
             self.model.class_weight = torch.load(os.path.join(os.getcwd(),f'fixed_data/{db}/adm_class_weight'))
             notifier.critical(f"Remove unused Weights in Pretrained model for AdmPred")
 
-        self.model.training_args = training_args
+        self.model.training_args = training_args 
         
         self.load_bert_tokenizer()
         
@@ -311,7 +311,7 @@ class GTXModel(pl.LightningModule):
             self.tokenizer = AutoTokenizer.from_pretrained('bert-base-uncased')
         else:
             self.tokenizer = AutoTokenizer.from_pretrained('bert-base-uncased')
-            
+             
     def save_decode_files(self, decode_outputs, output_dir):
         assert self.training_args.task == "Gen"  # only for generation task
         assert 'eval_output/' in output_dir  # only for evaluation mode

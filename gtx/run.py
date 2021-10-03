@@ -1,86 +1,107 @@
-import subprocess
-import json
+# Base pkgs
 import os
 import time
-import itertools
-from Run_configs import Configuration
+import subprocess
+from transformers import AutoTokenizer
+# import wandb
+# wandb_api = wandb.Api()
+# Usr Defined Pkgs
+from src.configs.runConfig import Configuration
+# Logging tool
+from src.utils.notifier import logging, log_formatter
+notifier = logging.getLogger(__name__)
+notifier.addHandler(log_formatter())
 
-# GPU setting
-os.environ["CUDA_VISIBLE_DEVICES"] = '5'
+# Mode, [Exp] Experiment, [Debug] Debugging, [ExpDeep] Experiment w/ Deepspeed
+mode = 'Exp'
+assert mode in ['Exp', 'ExpDeep', 'Debug']
+ 
+# Select Device
+device = "TPU"
+device_id = "2"
+if device == "GPU":
+    os.environ["CUDA_DEVICE_ORDER"]="PCI_BUS_ID"
+    os.environ["CUDA_VISIBLE_DEVICES"] = device_id
 
-# TPU setting
-TPU = False
+# Experiment Settings
+config = {
+    # Core settings
+    'difficulty' : ["hard,word"],
+    'task_number' : [3],
+    'data_type':['ctx'],
+    'UoM' : ['biomedical','general'], # general biomedical
+    'probe' : ['clz-frz-full','bin-frz-full'], 
+    'pe_type' : [0,1],
+    'model' : ['bert-base-uncased','albert-base-v2','bionlp/bluebert_pubmed_uncased_L-12_H-768_A-12','dmis-lab/biobert-v1.1',''],
+    'notation' : ['sci-char', 'char', 'sci', 'word'], # ['sci-char', 'char', 'sci', 'word'],
 
-for preset in [
-    # {'model':'cross','architecture':'both','knowmix':'init','scratch':False},
-    # {'model':'cross','architecture':'both','knowmix':'init,adm','scratch':False},
-    # {'db':'dx,prx','model':'transe','architecture':'lm ','knowmix':'','scratch':False},
-    {'db':'dx,prx','model':'cross','architecture':'both','knowmix':'init,abs','scratch':False},
-    {'db':'px','model':'cross','architecture':'both','knowmix':'init,abs','scratch':False},
-]:
-    for _task in [0,1,2,3,4,5,7]:
-        if (_task==3) and (preset['db']=='px'):
-            continue
-        for _SEED in [1234,123,12,1,42]: # , 123, 12, 1, 42]: # , 1, 42]:
-            if (_task==0) and (_SEED!=1234):
-                continue
-            config = {
-                # task_number : [0] pretrain / [1] retrieval / [2] generation / [3] adm_lvl_prediction / [4] replacement detection
-                #                [5] readmission prediction [6] next admission Dx prediction [7,8,9] Death 30,180,365
-                'task_number' : _task,
-                # db: dx,prx / px
-                'db' : preset['db'],
-                # seed : 1234, 123, 12, 1, 42
-                'seed' : _SEED, #1234,
-                # model : cross / single / lstm / transe
-                'model' : preset['model'],
-                # architecture : both / kg / lm / rand
-                'architecture' : preset['architecture'],
-                # label domain : graph / text
-                'label_domain' : 'text',
-                'P' : True,
-                'A' : not preset['scratch'],
-                'R' : False if preset['db']=='px' else True,
-                'KnowMix' : preset['knowmix'], # layer, init, adm
-                'scratch' : preset['scratch'],
-                'evaluation' : False,
-                'top_k' : 10,
-                'dropout' : 0.1,
-                'n_negatives' : 1,
-                'use_tpu' : TPU,
-            }
-            # Training configs
-            if _task == 0:
-                config['train_bsize'] = 8 if preset['db']=='px' else 16
-                config['eval_bsize'] = 2 if preset['db']=='px' else 4
-                config['lr'] = 1e-4
-                config['num_epochs'] = 40
-            elif _task == 2:
-                config['train_bsize'] = 8 if preset['db']=='px' else 16
-                config['eval_bsize'] = 2 if preset['db']=='px' else 4
-                config['lr'] = 3e-5
-                config['num_epochs'] = 30
-            elif _task in [1,3,4]:
-                config['train_bsize'] = 8 if preset['db']=='px' else 16
-                config['eval_bsize'] = 2 if preset['db']=='px' else 4
-                config['lr'] = 1e-5
-                config['num_epochs'] = 20
-            elif _task in [5,6,7]:
-                config['train_bsize'] = 16 if preset['db']=='px' else 32
-                config['eval_bsize'] = 4 if preset['db']=='px' else 8
-                config['lr'] = 3e-5
-                config['num_epochs'] = 30
-            
+    # Hyperparams
+    'lr' : 3e-5, #2e-5 if "clz" in base_config['probe'] else 5e-5,
+    'num_epochs' : 10,
+    'train_bsize' : '256',
+    'eval_bsize' : '128',
+    'eval_frequency' : 0.5,
 
-            # Run script
-            exp_config = Configuration(config)
-            SRC_PATH, TRAINING_CONFIG_LIST = exp_config.get_configuration()
+    # Exp envs
+    'fp16' : True,
+    'device' : device,
+    'mode' : mode,
 
-            # Sanity check
-            RUN_FLAG, error_log = exp_config.assertion()
-            if not RUN_FLAG: 
-                print(error_log)
-                continue
+    # RNG seeds (please do not change order)
+    'seed' : [42],
+}
 
-            # Bash run
-            subprocess.run(['python',SRC_PATH]+TRAINING_CONFIG_LIST)
+"""
+List of Vars & Values
+    task_number : 
+        [1] comparison [2] min/max [3] sort [4] unit conversion [5] word2num [6] val_range [7] uom_validity 
+    method : 
+        [A] bin [B] clz
+    notation : 
+        [A] word [B] char [C] sci [D] sci-char [E] sci-spec [F] sci-char-spec
+    model : 
+        [A] bert-base-uncased (BERT)
+        [B] bionlp/bluebert_pubmed_uncased_L-12_H-768_A-12 (BlueBERT)
+        [C] dmis-lab/biobert-v1.1 (BioBERT)
+        [D] albert-base-v2 (ALBERT)
+        [C] EleutherAI/gpt-neo-2.7B (GPT-3, neo)
+        [D] microsoft/unilm-base-cased (UniLM)
+        [E] (scratch)
+    UoM : 
+        [A] general [B] biomedical
+    seed : 
+        [42, 1234, 123, 12, 1]
+"""
+EXP_LIST = [dict()]
+for k,v in config.items():
+    temp = list()
+    for e in EXP_LIST:
+        if isinstance(v, list):
+            for _v in v:
+                e[k] = _v
+                temp.append(e.copy())
+                _ = e.pop(k)
+        else:
+            e[k] = v
+            temp.append(e.copy())
+    EXP_LIST = temp
+
+# Run Exps
+for exp_idx, exp_setting in enumerate(EXP_LIST):
+    notifier.critical(f"{exp_idx+1}/{len(EXP_LIST)} exp is running...")
+    try:
+        # Sanity check
+        exp_config = Configuration(exp_setting)
+        RUN_FLAG, error_log = exp_config.sanity_check()
+        if not RUN_FLAG: 
+            raise ValueError(error_log)
+        # Run script
+        SRC_PATH, TRAINING_CONFIG_LIST = exp_config.get_configuration()
+        print(subprocess.run(['accelerate','launch',SRC_PATH]+TRAINING_CONFIG_LIST))
+        time.sleep(5)
+    except KeyboardInterrupt:
+        import sys
+        sys.exit()
+    except:
+        print("")
+        continue
