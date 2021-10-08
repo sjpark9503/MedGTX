@@ -22,7 +22,7 @@
   "max_position_embeddings": {"lang": 512,"kg": 0},
   "vocab_size": {"lang": 30522, "kg": 699724},
   "type_vocab_size": {"lang": 2,"kg": 0},
-  "num_kg_labels":8049,
+  "num_kg_labels":7871,
   "num_relations": 7,
   "kg_special_token_ids":{"PAD":0,"MASK":1, "CLS":2},
   "pretrained_kg_embedding": "",

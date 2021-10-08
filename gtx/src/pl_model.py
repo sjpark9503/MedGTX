@@ -33,8 +33,6 @@ class GTXModel(pl.LightningModule):
         self.best_val_metric = -1e10
         self.best_test_metric = -1e10
 
-        self.load_bert_tokenizer()
-
         # Load configuration
         if model_args.config_name:
             config = AutoConfig.from_pretrained(model_args.config_name)
@@ -73,6 +71,7 @@ class GTXModel(pl.LightningModule):
                     if 'multi_pooler' in param:
                         modified_model_dict.pop(param)
                 torch.save(modified_model_dict, ckpt_path)
+                notifier.critical(f"Remove unused Weights in Pretrained model for {training_args.task}")
 
             self.model = MODEL_CLASSES[training_args.task].from_pretrained(
                 model_args.model_name_or_path,
@@ -81,22 +80,21 @@ class GTXModel(pl.LightningModule):
             notifier.critical(f"Load pretrained parameters from {model_args.model_name_or_path}")
                 
         else:
-            if "init" in config.KnowMix:
-                lit2word = torch.load(config.lit2word_path)
-                lit2word = self.tokenizer(lit2word, add_special_tokens=False, padding='max_length', max_length=64, return_token_type_ids=False)
-            else:
-                lit2word=None
-            self.model = MODEL_CLASSES[training_args.task](config, lit2word=lit2word)
+            # if "init" in config.KnowMix:
+            #     lit2word = torch.load(config.lit2word_path)
+            #     lit2word = self.tokenizer(lit2word, add_special_tokens=False, padding='max_length', max_length=64, return_token_type_ids=False)
+            # else:
+            #     lit2word=None
+            self.model = MODEL_CLASSES[training_args.task](config)#, lit2word=lit2word)
             notifier.critical("Training new model from scratch")
 
         if 'AdmPred' == training_args.task:
             db =  training_args.run_name.split('/')[4 if training_args.knowmix else 3].split('_')[-1]
             self.model.class_weight = torch.load(os.path.join(os.getcwd(),f'fixed_data/{db}/adm_class_weight'))
-            notifier.critical(f"Remove unused Weights in Pretrained model for AdmPred")
 
         self.model.training_args = training_args
         
-        self.load_bert_tokenizer()
+        self.load_tokenizer()
         
         notifier.warn("## Model Configuration ##")
         notifier.warn(self.model.config)
@@ -105,9 +103,9 @@ class GTXModel(pl.LightningModule):
         return self.model(x)
 
     def training_step(self, batch, batch_idx):
-        if (self.global_step==0) and (self.local_rank==1):
+        if self.global_step==1:
             notifier.critical("Here is the actual input of model")
-            notifier.warning(batch)
+            notifier.warning([x for x,y in batch.items() if y is not None])
 
         outputs = self.model(**batch)        
         self.log_dict(
@@ -306,11 +304,11 @@ class GTXModel(pl.LightningModule):
             notifier.warning(f"Save model to {output_dir}")
             self.model.save_pretrained(output_dir)
             
-    def load_bert_tokenizer(self):
+    def load_tokenizer(self):
         if self.training_args.task == "Gen":
-            self.tokenizer = AutoTokenizer.from_pretrained('bert-base-uncased')
+            self.tokenizer = AutoTokenizer.from_pretrained("prajjwal1/bert-{}".format('tiny' if self.model.config.hidden_size==128 else 'mini'))
         else:
-            self.tokenizer = AutoTokenizer.from_pretrained('bert-base-uncased')
+            self.tokenizer = AutoTokenizer.from_pretrained("prajjwal1/bert-{}".format('tiny' if self.model.config.hidden_size==128 else 'mini'))
             
     def save_decode_files(self, decode_outputs, output_dir):
         assert self.training_args.task == "Gen"  # only for generation task

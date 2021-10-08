@@ -29,16 +29,16 @@ class DataModule(pl.LightningDataModule):
 
         # Load Tokenizer
         os.environ['TOKENIZERS_PARALLELISM'] = 'false'
-        tokenizer = AutoTokenizer.from_pretrained('bert-base-uncased')
-        # if model_args.tokenizer_name:
-        #     tokenizer = AutoTokenizer.from_pretrained(self.model_args.tokenizer_name)
-        # elif model_args.model_name_or_path:
-        #     tokenizer = AutoTokenizer.from_pretrained(self.model_args.model_name_or_path)
-        # else:
-        #     raise ValueError(
-        #         "You are instantiating a new tokenizer from scratch. This is not supported, but you can do it from another script, save it,"
-        #         "and load it from here, using --tokenizer_name"
-        #     )
+        # tokenizer = AutoTokenizer.from_pretrained('bert-base-uncased')
+        if model_args.tokenizer_name:
+            tokenizer = AutoTokenizer.from_pretrained(self.model_args.tokenizer_name)
+        elif model_args.model_name_or_path:
+            tokenizer = AutoTokenizer.from_pretrained(self.model_args.model_name_or_path)
+        else:
+            raise ValueError(
+                "You are instantiating a new tokenizer from scratch. This is not supported, but you can do it from another script, save it,"
+                "and load it from here, using --tokenizer_name"
+            )
         self.tokenizer = tokenizer
 
         # Set block size for padding & truncating inputs
@@ -54,7 +54,7 @@ class DataModule(pl.LightningDataModule):
                 tokenizer=self.tokenizer,
                 token_type_vocab=self.config.token_type_vocab,
             )
-            notifier.warning(self.train_dataset[0])
+            # notifier.warning(self.train_dataset[0])
             self.eval_dataset = get_dataset(
                 self.data_args,
                 tokenizer=self.tokenizer,

@@ -65,7 +65,7 @@ class HeadOnlyDataset(Dataset):
     """
     This will be superseded by a framework-agnostic approach soon.
     """
-    def __init__(self, tokenizer: PreTrainedTokenizer, file_path: str, block_size: int, token_type_vocab: dict = None, knowmix: str = "", task: int=None,):
+    def __init__(self, tokenizer: PreTrainedTokenizer, file_path: str, block_size: int, token_type_vocab: dict = None, knowmix: str = "", gcn: bool = None, task: int=None,):
         assert os.path.isdir(file_path), f"Input file path {file_path} not found"
         self.token_type_vocab = token_type_vocab
         self.file_path = file_path
@@ -76,6 +76,21 @@ class HeadOnlyDataset(Dataset):
         notifier.warning("Creating features from dataset file at %s", file_path)
         # Loading preprocessed data
         self.batch_encoding = torch.load(os.path.join(file_path,'db'))
+        if not gcn:
+            self.batch_encoding.pop("mask")
+            notifier.critical("Turn off GAT")
+        else:
+            notifier.critical("Turn on GAT")
+        if not knowmix:
+            self.batch_encoding.pop("knowledge")
+            notifier.critical("Turn off fusion & initialization")
+        else:
+            if "init" in knowmix:
+                notifier.critical("Turn on word initialization of KG embedding")
+            if "summary" in knowmix:
+                notifier.critical("Turn on the admission level fusion")
+            if "abs" in knowmix:
+                notifier.critical("Turn on the abstract level fusion")
         # # Only for debug
         # self.batch_encoding  = {k:v[:10] for k,v in self.batch_encoding.items()}
         # # Only for debug
@@ -89,11 +104,6 @@ class HeadOnlyDataset(Dataset):
                 if k not in self.batch_encoding['lang']:
                     self.batch_encoding['lang'][k] = list()
                 self.batch_encoding['lang'][k].append(v)
-
-        if "adm" in self.knowmix:
-            notifier.critical("Turn on the admission level fusion")
-        elif "abs" in self.knowmix:
-            notifier.critical("Turn on the abstract level fusion")
 
         self.batch2feature()
 
@@ -134,10 +144,8 @@ class HeadOnlyDataset(Dataset):
             if 'rc_index' in self.batch_encoding:
                 inputs['rc_indeces'] = self.batch_encoding['rc_index'][idx]
             if 'knowledge' in self.batch_encoding:
-                if ("adm" in self.knowmix) or ("abs" in self.knowmix) or ("lit" in self.knowmix):
-                    if "adm" in self.knowmix:
-                        tokenized_knowledge = self.tokenizer((" ".join(self.batch_encoding['knowledge'][idx])).strip(), add_special_tokens=False, padding='max_length', max_length=ext_max_len, return_token_type_ids=False)
-                    elif "abs" in self.knowmix:
+                if ("abs" in self.knowmix) or ("init" in self.knowmix):
+                    if "abs" in self.knowmix:
                         abs_indices = [x for _idx, x in enumerate(self.batch_encoding['knowledge'][idx]) if (_idx>1) and not x]
                         processed_knowledge = list()
                         for node_idx in range(len(self.batch_encoding['knowledge'][idx])):
@@ -156,8 +164,6 @@ class HeadOnlyDataset(Dataset):
                     inputs['kg_ext_sum_input_ids'] = summarized_knowledge['input_ids']
                     inputs['kg_ext_sum_attention_mask'] = summarized_knowledge['attention_mask']
 
-
-
             feature = InputFeatures(**inputs)
             self.features.append(feature)
 
@@ -175,7 +181,7 @@ def get_dataset(
     token_type_vocab: dict = None
 ):
     def _dataset(file_path):
-        return HeadOnlyDataset(tokenizer=tokenizer, file_path=file_path, block_size=args.block_size, token_type_vocab=token_type_vocab, knowmix=args.knowmix, task = args.task)
+        return HeadOnlyDataset(tokenizer=tokenizer, file_path=file_path, block_size=args.block_size, token_type_vocab=token_type_vocab, knowmix=args.knowmix, gcn=args.gcn, task = args.task)
 
     if evaluate:
         return _dataset(args.eval_data_file)

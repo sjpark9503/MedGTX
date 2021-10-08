@@ -60,9 +60,9 @@ class Configuration():
             "use_tpu" : config['use_tpu'],
             "dataloader_pin_memory" : False if not config['use_tpu'] else True,
             "label_domain" : config['label_domain'],
-            "train_data_file":os.path.join(self.EXP_PATH,f"data/{'knowmix/' if config['KnowMix'] else ''}{self.DB}_{self.DB_size}/{self.MODEL_NAME}/train"),
-            "eval_data_file": os.path.join(self.EXP_PATH,f"data/{'knowmix/' if config['KnowMix'] else ''}{self.DB}_{self.DB_size}/{self.MODEL_NAME}/valid"),
-            "test_data_file": os.path.join(self.EXP_PATH,f"data/{'knowmix/' if config['KnowMix'] else ''}{self.DB}_{self.DB_size}/{self.MODEL_NAME}/test"),
+            "train_data_file":os.path.join(f"data/knowmix/{self.DB}_{self.DB_size}/{self.DB}_UnifiedUniKGenc/train"),
+            "eval_data_file": os.path.join(f"data/knowmix/{self.DB}_{self.DB_size}/{self.DB}_UnifiedUniKGenc/valid"),
+            "test_data_file": os.path.join(f"data/knowmix/{self.DB}_{self.DB_size}/{self.DB}_UnifiedUniKGenc/test"),
             "run_name":f"{self.TASK_NAME}_{self.RUN_NAME}"
         }
 
@@ -71,19 +71,19 @@ class Configuration():
         if (self.config['task_number']==0 or self.config['scratch']) and not self.config['evaluation']:
             if self.config['scratch']:
                 # SRC_PATH = os.path.join(self.EXP_PATH, 'src/finetune.py')
-                self.TRAINING_CONFIG['run_name'] = f"scratch/{self.TASK_NAME}/{'KnowMix,{}/'.format(self.config['KnowMix']) if self.config['KnowMix'] else ''}{self.config['model']}/{self.RUN_NAME}_RNG{self.config['seed']}"
+                self.TRAINING_CONFIG['run_name'] = f"scratch/{self.TASK_NAME}/{'KnowMix,{}/'.format(self.config['KnowMix']) if self.config['KnowMix'] else ''}{self.config['model']}/{self.RUN_NAME}"
                 self.TRAINING_CONFIG['output_dir'] = os.path.join(self.EXP_PATH,f"pretrained_models/scratch/{self.TASK_NAME}/{'KnowMix,{}/'.format(self.config['KnowMix']) if self.config['KnowMix'] else ''}{self.config['model']}/{self.RUN_NAME}_RNG{self.config['seed']}")
             else:
                 # SRC_PATH = os.path.join(self.EXP_PATH, 'src/pretrain.py')
                 self.TRAINING_CONFIG['run_name'] = f"{self.TASK_NAME}/{'KnowMix,{}/'.format(self.config['KnowMix']) if self.config['KnowMix'] else ''}{self.config['model']}/{self.RUN_NAME}"
                 self.TRAINING_CONFIG['output_dir'] = os.path.join(self.EXP_PATH,f"pretrained_models/{self.TASK_NAME}/{'KnowMix,{}/'.format(self.config['KnowMix']) if self.config['KnowMix'] else ''}{self.config['model']}/{self.RUN_NAME}")
-            self.TRAINING_CONFIG['tokenizer_name'] = "bert-base-uncased"
-            self.TRAINING_CONFIG['config_name'] = os.path.join(self.EXP_PATH, f"config/{'KnowMix,{}/'.format(self.config['KnowMix']) if self.config['KnowMix'] else ''}config_H{self.Dim_Hidden}_L{self.NUM_Layers['lang']},{self.NUM_Layers['kg']},{self.NUM_Layers['cross']}_{self.config['model']}_{self.MODEL_TYPE}_{self.Var_Unified}{self.DB}.json")
+            self.TRAINING_CONFIG['tokenizer_name'] = "prajjwal1/bert-{}".format('tiny' if self.Dim_Hidden==128 else 'mini')
+            self.TRAINING_CONFIG['config_name'] = os.path.join(self.EXP_PATH, f"config/{self.TASK_NAME}/{'KnowMix,{}/'.format(self.config['KnowMix']) if self.config['KnowMix'] else ''}config_H{self.Dim_Hidden}_L{self.NUM_Layers['lang']},{self.NUM_Layers['kg']},{self.NUM_Layers['cross']}_{self.config['model']}_{self.MODEL_TYPE}_{self.Var_Unified}{self.DB}.json")
             with open(os.path.join(self.EXP_PATH, f"config/config_{self.Var_Unified}{self.DB}.json")) as f:
                 Config = json.load(f)
             Config['gcn'] = (self.MODEL_TYPE in ['both', 'kg']) and (self.config['model']!='transe')
             if self.config['model']=='transe':
-                Config['pretrained_kg_embedding'] = os.path.join(self.EXP_PATH,f"data/{self.DB}/{self.Var_Unified}node.bin")
+                Config['pretrained_kg_embedding'] = os.path.join(f"data/{self.DB}/{self.Var_Unified}node.bin")
             Config['pretrained_lang_model']['use_weight'] = self.MODEL_TYPE in ['both', 'lm']
             Config['hidden_size'] = self.Dim_Hidden
             Config['intermediate_size'] = 4*self.Dim_Hidden
@@ -139,7 +139,7 @@ class Configuration():
                 json.dump(Config,g)
                 
         else:
-            _run_name = f"evaluation/{'scratch' if self.config['scratch'] else 'pretrained'}/{self.TASK_NAME}/{'KnowMix,{}/'.format(self.config['KnowMix']) if self.config['KnowMix'] else ''}{self.config['model']}/{self.RUN_NAME}_RNG{self.config['seed']}"
+            _run_name = f"evaluation/{'scratch' if self.config['scratch'] else 'pretrained'}/{self.TASK_NAME}/{'KnowMix,{}/'.format(self.config['KnowMix']) if self.config['KnowMix'] else ''}{self.config['model']}/{self.RUN_NAME}"
             self.TRAINING_CONFIG['run_name'] = _run_name
             # self.TRAINING_CONFIG['run_name'] = 'evaluation/' + self.TRAINING_CONFIG['run_name'] 
             self.TRAINING_CONFIG['model_name_or_path'] = os.path.join(self.EXP_PATH,f"pretrained_models/{'scratch' if self.config['scratch'] else 'pretrained'}/{self.TASK_NAME}/{'KnowMix,{}/'.format(self.config['KnowMix']) if self.config['KnowMix'] else ''}{self.config['model']}/{self.RUN_NAME}_RNG{self.config['seed']}")
@@ -162,7 +162,7 @@ class Configuration():
             else:
                 # SRC_PATH = os.path.join(self.EXP_PATH, 'src/finetune.py')
                 self.TRAINING_CONFIG['model_name_or_path'] = os.path.join(self.EXP_PATH,f"pretrained_models/Pre/{'KnowMix,{}/'.format(self.config['KnowMix']) if self.config['KnowMix'] else ''}{self.config['model']}/{self.RUN_NAME}")
-                self.TRAINING_CONFIG['run_name'] = f"pretrained/{self.TASK_NAME}/{'KnowMix,{}/'.format(self.config['KnowMix']) if self.config['KnowMix'] else ''}{self.config['model']}/{self.RUN_NAME}_RNG{self.config['seed']}"
+                self.TRAINING_CONFIG['run_name'] = f"pretrained/{self.TASK_NAME}/{'KnowMix,{}/'.format(self.config['KnowMix']) if self.config['KnowMix'] else ''}{self.config['model']}/{self.RUN_NAME}"
                 self.TRAINING_CONFIG['output_dir'] = os.path.join(self.EXP_PATH,f"pretrained_models/pretrained/{self.TASK_NAME}/{'KnowMix,{}/'.format(self.config['KnowMix']) if self.config['KnowMix'] else ''}{self.config['model']}/{self.RUN_NAME}_RNG{self.config['seed']}")
                 # load config
                 with open(f"{self.TRAINING_CONFIG['model_name_or_path']}/config.json") as f:
@@ -210,7 +210,7 @@ class Configuration():
                     os.makedirs(f"config/{self.TASK_NAME}/{'KnowMix,{}/'.format(self.config['KnowMix']) if self.config['KnowMix'] else ''}{self.config['model']}/{self.DB}")
                 with open(f"config/{self.TASK_NAME}/{'KnowMix,{}/'.format(self.config['KnowMix']) if self.config['KnowMix'] else ''}{self.config['model']}/{self.RUN_NAME}.json",'w') as g:
                     json.dump(Config,g)
-                self.TRAINING_CONFIG['config_name'] = f"config/{self.TASK_NAME}/{'KnowMix,{}/'.format(self.config['KnowMix']) if self.config['KnowMix'] else ''}{self.config['model']}/{self.RUN_NAME}.json"
+                self.TRAINING_CONFIG['config_name'] = os.path.join(self.EXP_PATH,f"config/{self.TASK_NAME}/{'KnowMix,{}/'.format(self.config['KnowMix']) if self.config['KnowMix'] else ''}{self.config['model']}/{self.RUN_NAME}.json")
             
         TRAINING_CONFIG_LIST = list()
         for (k,v) in list(self.TRAINING_CONFIG.items()):

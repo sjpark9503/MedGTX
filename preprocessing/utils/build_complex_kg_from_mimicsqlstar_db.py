@@ -1,213 +1,139 @@
 import sys
-import os
-import gc
 sys.path.append('..')
 sys.path.append('.')
-from rdflib import Graph, URIRef
-import sqlite3
+import os
 import pandas as pd
-from rdflib import Literal
-from tqdm import tqdm
-from build_mimicsparql_kg.kg_complex_schema import addmissions_dtype, patients_dtype, procedures_dtype, prescriptions_dtype,\
-    diagnoses_dtype, lab_dtype, d_icd_procedures_dtype, d_icd_diagnoses_dtype, d_labitem_dtype
+import sqlite3
+
+from build_mimicsqlstar_db.schema_mimic import *
+from mimicsql.evaluation.utils import query
 
 PJT_ROOT_PATH = './'
-print('PJT_ROOT_PATH: ', PJT_ROOT_PATH)
-
-domain = ''
-
-
-def isNoneNan(val):
-    if val is None:
-        return True
-
-    if (type(val) == str) and (val.lower() in ['none', 'nan']):
-        return True
-
-    if val != val:
-        return True
-
-    return False
-
-
-def clean_text(val):
-    if type(val) == str:
-        val = val.replace("\\", ' ')
-    return val
-
-
-def wrap2uri(obj, literal_type):
-    obj = obj.lower()
-    if literal_type == 'entity':
-        return URIRef(obj)
-
-    elif literal_type == 'relation':
-        return URIRef(obj)
-
-    else:
-        return Literal(clean_text(obj), datatype=literal_type)
-
-
-def table2triples(knowgraph,df, parent_col, subject_col, col_types):
-    #triples = []
-    for col_name, _ in tqdm(col_types.items()):
-
-        if col_name == parent_col:
-            # triples += [(wrap2uri(f'{domain}/{col_name}/{sub}', col_types[parent_col]),
-            #              wrap2uri(f'{domain}/{subject_col}', 'relation'),
-            #              wrap2uri(f'{domain}/{subject_col}/{obj}', col_types[subject_col]))
-            #             for (sub, obj) in zip(df[col_name], df[subject_col])]
-            for (sub, obj) in zip(df[col_name], df[subject_col]):
-                knowgraph.add((wrap2uri(f'{domain}/{col_name}/{sub}', col_types[parent_col]),
-                             wrap2uri(f'{domain}/{subject_col}', 'relation'),
-                             wrap2uri(f'{domain}/{subject_col}/{obj}', col_types[subject_col]))
-                            )
-            continue
-
-        if col_name == subject_col:
-            continue
-        for (sub, obj) in zip(df[subject_col], df[col_name]):
-            if not isNoneNan(obj):
-                knowgraph.add(
-                            (wrap2uri(f'{domain}/{subject_col}/{sub}', col_types[subject_col]),
-                             wrap2uri(f'{domain}/{col_name}', 'relation'),
-                             wrap2uri(f'{domain}/{col_name}/{obj}' if col_types[col_name] == 'entity' else f'{obj}',
-                                      col_types[col_name]))
-                             )
-
-    return knowgraph
-
+print('PJT_ROOT_PATH: ',PJT_ROOT_PATH)
 
 if __name__ == '__main__':
-    db_conn = sqlite3.connect(os.path.join(PJT_ROOT_PATH, 'build_mimicsqlstar_db/mimicsqlstar.db'))
+    db_conn = sqlite3.connect(os.path.join(PJT_ROOT_PATH, 'mimic_db/mimic.db'))
 
-    patients = pd.read_sql_query("SELECT * FROM PATIENTS", db_conn)
-    patients.info()
+    patient_cols = list(patient_demographic_dtype.keys())
+    addmission_cols = list(hadm_demographic_dtype.keys())
 
-    admissions = pd.read_sql_query("SELECT * FROM ADMISSIONS", db_conn)
-    admissions.info()
+    demographic = pd.read_sql_query("SELECT * FROM DEMOGRAPHIC", db_conn)
+    demographic.info()
+    demographic.head()
 
-    diagnoses = pd.read_sql_query("SELECT * FROM DIAGNOSES", db_conn)
-    diagnoses = diagnoses.rename({'ICD9_CODE': 'DIAGNOSES_ICD9_CODE'}, axis=1)
-    diagnoses.info()
+    patients_df = demographic.loc[:,patient_cols]
+    patients_df.info()
 
-    d_icd_diagnoses = pd.read_sql_query("SELECT * FROM D_ICD_DIAGNOSES", db_conn)
-    d_icd_diagnoses = d_icd_diagnoses.rename({'ICD9_CODE': 'DIAGNOSES_ICD9_CODE',
-                                              'SHORT_TITLE': 'DIAGNOSES_SHORT_TITLE',
-                                              'LONG_TITLE': 'DIAGNOSES_LONG_TITLE'}, axis=1)
-    d_icd_diagnoses.info()
+    addmissions_df = demographic.loc[:,addmission_cols] # primary key: HADM_ID
+    addmissions_df.info()
+
+    diagenoses = pd.read_sql_query("SELECT * FROM DIAGNOSES", db_conn)
+    diagenoses = diagenoses.reset_index().rename({'index': 'DIAGNOSES'}, axis=1)
+    diagenoses.info()
+
+    diagnoses_cols = list(diagnoses_dtype.keys())
+    d_icd_dagnoses_cols = list(d_icd_diagnoses_dtype.keys())
+    diagnoses_cols = ['ICD9_CODE' if c == 'DIAGNOSES_ICD9_CODE' else c for c in diagnoses_cols]
+    d_icd_dagnoses_cols = ['ICD9_CODE' if c == 'DIAGNOSES_ICD9_CODE' else c for c in d_icd_dagnoses_cols]
+    d_icd_dagnoses_cols = ['LONG_TITLE' if c == 'DIAGNOSES_LONG_TITLE' else c for c in d_icd_dagnoses_cols]
+    d_icd_dagnoses_cols = ['SHORT_TITLE' if c == 'DIAGNOSES_SHORT_TITLE' else c for c in d_icd_dagnoses_cols]
+
+    diagenoses_df = diagenoses.loc[:, diagnoses_cols]
+    diagenoses_df.info()
+
+    d_icd_diagenoses_df = diagenoses.loc[:, d_icd_dagnoses_cols]
+    d_icd_diagenoses_df.drop_duplicates(inplace=True)
+    d_icd_diagenoses_df.reset_index(inplace=True, drop=True)
+    d_icd_diagenoses_df.info()
 
     procedures = pd.read_sql_query("SELECT * FROM PROCEDURES", db_conn)
-    procedures = procedures.rename({'ICD9_CODE': 'PROCEDURES_ICD9_CODE'}, axis=1)
+    procedures = procedures.reset_index().rename({'index': 'PROCEDURES'}, axis=1)
     procedures.info()
 
-    d_icd_procedures = pd.read_sql_query("SELECT * FROM D_ICD_PROCEDURES", db_conn)
-    d_icd_procedures = d_icd_procedures.rename({'ICD9_CODE': 'PROCEDURES_ICD9_CODE',
-                                                'SHORT_TITLE': 'PROCEDURES_SHORT_TITLE',
-                                                'LONG_TITLE': 'PROCEDURES_LONG_TITLE'}, axis=1)
-    d_icd_procedures.info()
+    procedures_cols = list(procedures_dtype.keys())
+    d_icd_procedures_cols = list(d_icd_procedures_dtype.keys())
+    procedures_cols = ['ICD9_CODE' if c == 'PROCEDURES_ICD9_CODE' else c for c in procedures_cols]
+    d_icd_procedures_cols = ['ICD9_CODE' if c == 'PROCEDURES_ICD9_CODE' else c for c in d_icd_procedures_cols]
+    d_icd_procedures_cols = ['LONG_TITLE' if c == 'PROCEDURES_LONG_TITLE' else c for c in d_icd_procedures_cols]
+    d_icd_procedures_cols = ['SHORT_TITLE' if c == 'PROCEDURES_SHORT_TITLE' else c for c in d_icd_procedures_cols]
 
-    prescriptions = pd.read_sql_query("SELECT * FROM PRESCRIPTIONS", db_conn)
-    prescriptions['ICUSTAY_ID'] = prescriptions['ICUSTAY_ID'].apply(lambda x: str(x) if x == x else None)
-    prescriptions.info()
+    procedures_df = procedures.loc[:, procedures_cols]
+    procedures_df.info()
+
+    d_icd_procedures_df = procedures.loc[:, d_icd_procedures_cols]
+    d_icd_procedures_df.drop_duplicates(inplace=True)
+    d_icd_procedures_df.reset_index(inplace=True, drop=True)
+    d_icd_procedures_df.info()
+
+    lab_cols = list(lab_dtype.keys())
+    d_labitem_cols = list(d_labitem_dtype.keys())
 
     lab = pd.read_sql_query("SELECT * FROM LAB", db_conn)
+    lab = lab.reset_index().rename({'index': 'LAB'}, axis=1)
     lab.info()
 
-    d_labitem = pd.read_sql_query("SELECT * FROM D_LABITEM", db_conn)
-    d_labitem.info()
+    lab_df = lab.loc[:, lab_cols]
+    lab_df.info()
 
-    kg = Graph()
-    #triples = []
+    d_labitem_df = lab.loc[:, d_labitem_dtype]
+    d_labitem_df.drop_duplicates(inplace=True)
+    d_labitem_df.reset_index(inplace=True, drop=True)
+    d_labitem_df.info()
 
-    kg = table2triples(kg,patients, parent_col='', subject_col='SUBJECT_ID', col_types=patients_dtype)
-    print('# total triples : {}'.format(len(kg)))
-    # print(triples[:5])
-    #print(triples[-5:])
-    #print(len(triples))
+    prescriptions_cols = list(prescriptions_dtype.keys())
 
-    kg = table2triples(kg,admissions, parent_col='SUBJECT_ID', subject_col='HADM_ID',
-                             col_types=addmissions_dtype)
-    print('# total triples : {}'.format(len(kg)))
-    # print(triples[-5:])
+    prescriptions = pd.read_sql_query("SELECT * FROM PRESCRIPTIONS", db_conn)
+    prescriptions = prescriptions.reset_index().rename({'index': 'PRESCRIPTIONS'}, axis=1)
+    prescriptions_df = prescriptions.loc[:, prescriptions_cols]
+    prescriptions_df.info()
 
+    conn = sqlite3.connect(os.path.join(PJT_ROOT_PATH ,'build_mimicsqlstar_db/', 'mimicsqlstar.db')) 
 
-    kg = table2triples(kg,diagnoses, parent_col='HADM_ID', subject_col='DIAGNOSES', col_types=diagnoses_dtype)
-    # print(triples[:5])
-    print('# total triples : {}'.format(len(kg)))
-    # print(triples[-5:])
+    patients_df.to_sql('PATIENTS', conn, if_exists='replace', index=False)
+    addmissions_df.to_sql('ADMISSIONS', conn, if_exists='replace', index=False)
+    diagenoses_df.to_sql('DIAGNOSES', conn, if_exists='replace', index=False)
+    d_icd_diagenoses_df.to_sql('D_ICD_DIAGNOSES', conn, if_exists='replace', index=False)
+    procedures_df.to_sql('PROCEDURES', conn, if_exists='replace', index=False)
+    d_icd_procedures_df.to_sql('D_ICD_PROCEDURES', conn, if_exists='replace', index=False)
+    prescriptions_df.to_sql('PRESCRIPTIONS', conn, if_exists='replace', index=False)
+    lab_df.to_sql('LAB', conn, if_exists='replace', index=False)
+    d_labitem_df.to_sql('D_LABITEM', conn, if_exists='replace', index=False)
 
+    print(f'LOAD DB ...')
 
-    kg = table2triples(kg,d_icd_diagnoses, parent_col='', subject_col='DIAGNOSES_ICD9_CODE',
-                             col_types=d_icd_diagnoses_dtype)
-    # print(triples[:5])
-    print('# total triples : {}'.format(len(kg)))
-    # print(triples[-5:])
+    db_file = os.path.join(PJT_ROOT_PATH,'build_mimicsqlstar_db/mimicsqlstar.db')
+    new_model = query(db_file)
+    print('DONE')
 
+    test_sql = ["""select distinct patients."subject_id",  admissions."hadm_id"
+                from patients
+                inner join admissions on patients."subject_id" = admissions."subject_id"
+                inner join diagnoses on admissions."hadm_id" = diagnoses."hadm_id"
+                inner join prescriptions on admissions.hadm_id = prescriptions.hadm_id
+                inner join d_icd_diagnoses on d_icd_diagnoses.icd9_code = diagnoses.icd9_code
+                where d_icd_diagnoses."short_title" = "crnry athrscl natve vssl" 
+                and prescriptions."drug_type" = "main"
+                """,
+                """select count (distinct patients.subject_id ) from patients where patients.dob_year < 2060
+                """,
+                """select distinct patients."subject_id",  admissions."hadm_id"
+                   from patients
+                   inner join admissions on patients.subject_id = admissions.subject_id
+                """,
+                """select distinct patients."subject_id",  admissions."hadm_id"
+                   from patients
+                   inner join admissions on patients.subject_id = admissions.subject_id
+                """]
 
-    kg = table2triples(kg,procedures, parent_col='HADM_ID', subject_col='PROCEDURES', col_types=procedures_dtype)
-    # print(triples[:5])
-    print('# total triples : {}'.format(len(kg)))
-    # print(triples[-5:])
+    for sql in test_sql:
+        print(sql)
+        sql_res = new_model.execute_sql(sql).fetchall()
+        for res in sql_res:
+            val = '|'
+            temp = []
+            for t in res:
+                val += str(t) + '|\t\t|'
+                temp.append(str(t))
+            print(val[:-1])
+        print()
 
-
-    kg = table2triples(kg,d_icd_procedures, parent_col='', subject_col='PROCEDURES_ICD9_CODE',
-                             col_types=d_icd_procedures_dtype)
-    # print(triples[:5])
-    print('# total triples : {}'.format(len(kg)))
-    # print(triples[-5:])
-    #print(len(triples))
-
-    kg = table2triples(kg,prescriptions, parent_col='HADM_ID', subject_col='PRESCRIPTIONS',
-                             col_types=prescriptions_dtype)
-    # print(triples[:5])
-    print('# total triples : {}'.format(len(kg)))
-    # print(triples[-5:])
-    #print(len(triples))
-
-    kg = table2triples(kg,lab, parent_col='HADM_ID', subject_col='LAB', col_types=lab_dtype)
-    # print(triples[:5])
-    print('# total triples : {}'.format(len(kg)))
-    # print(triples[-5:])
-    #print(len(triples))
-
-    kg = table2triples(kg,d_labitem, parent_col='', subject_col='ITEMID', col_types=d_labitem_dtype)
-    # print(triples[:5])
-    print('# total triples : {}'.format(len(kg)))
-    # print(triples[-5:])
-    #print(len(triples))
-
-    q = """select * where { ?subject_id </gender> "f"^^<http://www.w3.org/2001/XMLSchema#string> }"""
-    print(f"TEST QEURY... {q})")
-    qres = kg.query(q)
-    print("-" * 50)
-    for res in qres:
-        val = '|'
-        for t in res:
-            val += str(t.toPython()) + '|\t\t|'
-        print(val[:-1])
-    print()
-
-    print('SAVE KG ...')
-    kg.serialize('./mimic_sparqlstar_kg.xml', format='xml')
-    print('SAVE DONE')
-    print('LOAD TEST ...')
-    kg = Graph()
-    kg.parse('./mimic_sparqlstar_kg.xml', format='xml', publicID='/')
-
-    print(len(kg))
-    for i, t in enumerate(kg):
-        print(i, t)
-        if i == 5:
-            break
-
-    q = """select * where { ?subject_id </gender> "f"^^<http://www.w3.org/2001/XMLSchema#string> }"""
-    qres = kg.query(q)
-    print("-" * 50)
-    for res in qres:
-        val = '|'
-        for t in res:
-            val += str(t.toPython()) + '|\t\t|'
-        print(val[:-1])
-    print()
-    print('LOAD DONE')

@@ -712,10 +712,10 @@ class GTXKnowMixLayer(nn.Module):
         output_attentions=False,
     ):  
         # Select fusion level
-        if ("lit" in self.config.KnowMix) or ("abs" in self.config.KnowMix):
+        if "abs" in self.config.KnowMix:
             actual_KnowMix_indices = KnowMix_indices.bool().any(-1)
         elif "adm" in self.config.KnowMix:
-            actual_KnowMix_indices = 1
+            actual_KnowMix_indices = 0
         else:
             actual_KnowMix_indices = None
 
@@ -884,7 +884,7 @@ class GTXEncoder(nn.Module):
             extended_kg_ext_sum_attention_mask = None
 
         for layer_module in self.r_layers:
-            if ("lit" in self.config.KnowMix) or ("abs" in self.config.KnowMix) or ("summary" in self.config.KnowMix) or ("adm" in self.config.KnowMix):
+            if ("abs" in self.config.KnowMix) or ("summary" in self.config.KnowMix) or ("adm" in self.config.KnowMix):
                 kg_outputs = layer_module(
                     kg_feats,
                     kg_attention_mask,
@@ -1111,9 +1111,14 @@ class GTXModel(GTXPreTrainedModel):
         super().__init__(config)
         self.lang_embeddings = GTXEmbeddings(config,input_type='lang')
         self.kg_embeddings = GTXEmbeddings(config,input_type='kg')
+        self.config = config
 
         self.encoder = GTXEncoder(config)
         self.pooler = GTXPooler(config)
+
+        if "init,enc" == config.KnowMix:
+            notifier.warning("Prepare sentence encoder for KG init.")
+            self.kg_init_enc = nn.GRU(config.hidden_size, config.hidden_size, num_layers=1, batch_first=True, bidirectional=False)
 
         self.init_weights()
 
@@ -1126,22 +1131,22 @@ class GTXModel(GTXPreTrainedModel):
     def get_kg_embeddings(self):
         return self.kg_embeddings.word_embeddings
 
-    def set_kg_embeddings(self, new_embedding, lit2word=None):
-        if lit2word is None:
+    def set_kg_embeddings(self, new_embedding):#, lit2word=None):
+        # if lit2word is None:
             # if len(self.config.kg_special_token_ids)>0:
-            shape = self.kg_embeddings.word_embeddings.weight.data[len(self.config.kg_special_token_ids):,:].shape
-            self.kg_embeddings.word_embeddings.weight.data[len(self.config.kg_special_token_ids):,:] = new_embedding.data[:shape[0]]
+        shape = self.kg_embeddings.word_embeddings.weight.data[len(self.config.kg_special_token_ids):,:].shape
+        self.kg_embeddings.word_embeddings.weight.data[len(self.config.kg_special_token_ids):,:] = new_embedding.data[:shape[0]]
             # else:
             #     self.kg_embeddings.word_embeddings.weight.data = new_embedding.data
-        else:
-            litwords = torch.tensor(lit2word['input_ids'])
-            litwords_notpad = torch.tensor(lit2word['attention_mask'])
-            literal_idx = litwords_notpad.any(1)
-            kg_emb = self.get_lang_embeddings()(litwords)
-            kg_emb[~litwords_notpad] = 0
-            literal_emb = kg_emb.sum(1)[literal_idx]/litwords_notpad.sum(1)[literal_idx].unsqueeze(-1)
-            self.kg_embeddings.word_embeddings.weight.data[literal_idx] = literal_emb
-            notifier.warning(f"Successfully initialize the KG embdding w/ subword embddings. {literal_idx.float().mean():.2f} indices initialized.")
+        # else:
+        #     litwords = torch.tensor(lit2word['input_ids'])
+        #     litwords_notpad = torch.tensor(lit2word['attention_mask'])
+        #     literal_idx = litwords_notpad.any(1)
+        #     kg_emb = self.get_lang_embeddings()(litwords)
+        #     kg_emb[~litwords_notpad] = 0
+        #     literal_emb = kg_emb.sum(1)[literal_idx]/litwords_notpad.sum(1)[literal_idx].unsqueeze(-1)
+        #     self.kg_embeddings.word_embeddings.weight.data[literal_idx] = literal_emb
+        #     notifier.warning(f"Successfully initialize the KG embdding w/ subword embddings. {literal_idx.float().mean():.2f} indices initialized.")
     def forward(
         self,
         lang_input_ids=None,
@@ -1230,6 +1235,20 @@ class GTXModel(GTXPreTrainedModel):
         # Positional Word Embeddings
         lang_embedding_output = self.lang_embeddings(lang_input_ids, token_type_ids, lang_inputs_embeds)
         kg_embedding_output = self.kg_embeddings(kg_input_ids, None, kg_inputs_embeds)
+        if "init" in self.config.KnowMix:
+            initializable_idx = kg_ext_attention_mask.any(-1)
+            kg_init_ids = kg_ext_input_ids[initializable_idx]
+            if "mean" in self.config.KnowMix:
+                # notifier.warning("Initialization ON!")
+                kg_init_mask = kg_ext_attention_mask[initializable_idx].unsqueeze(-1)
+                kg_init_embedding_output = self.lang_embeddings.word_embeddings(kg_init_ids)*kg_init_mask
+                kg_embedding_output[initializable_idx] = kg_init_embedding_output.sum(-2)/kg_init_mask.sum(-2)
+            elif "enc" in self.config.KnowMix:
+                kg_init_embedding_output = self.lang_embeddings.word_embeddings(kg_init_ids)
+                kg_embedding_output = self.kg_init_enc(kg_init_embedding_output)
+            else:
+                raise ValueError("Invalid initalization option!")
+
         if kg_ext_input_ids is not None:
             kg_ext_embedding_output = self.lang_embeddings.word_embeddings(kg_ext_input_ids)
         else:
@@ -1289,8 +1308,8 @@ class GTXModel(GTXPreTrainedModel):
         )
 
 class GTXForKGTokPredAndMaskedLM(GTXPreTrainedModel):
-    def __init__(self, config, lit2word=None):
-        super().__init__(config, lit2word)
+    def __init__(self, config):#, lit2word=None):
+        super().__init__(config)#, lit2word)
         # Configuration
         self.config = config
         self.num_labels = config.num_labels
@@ -1316,8 +1335,8 @@ class GTXForKGTokPredAndMaskedLM(GTXPreTrainedModel):
             new_embedding = torch.load(config.pretrained_kg_embedding)
             self.GTX.set_kg_embeddings(new_embedding)
             del new_embedding
-        elif lit2word:
-            self.GTX.set_kg_embeddings(None, lit2word)
+        # elif lit2word:
+        #     self.GTX.set_kg_embeddings(None, lit2word)
 
         # Use Pretrained-LM in Language Part
         self.GTX.encoder.re_init_to_pretrained_lang_model()
