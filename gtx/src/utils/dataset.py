@@ -121,7 +121,7 @@ class HeadOnlyDataset(Dataset):
                     idx = len(sections)-1
         return type_ids
 
-    def batch2feature(self):
+    def batch2feature(self): 
         # Set External Token Length
         if 'knowledge' in self.batch_encoding:
             if 'px_' in self.file_path:
@@ -131,6 +131,7 @@ class HeadOnlyDataset(Dataset):
             else:
                 raise ValueError ("Cannot find DB type in file path")
         for idx in tqdm(range(len(self.batch_encoding['input']))):
+        # for idx in tqdm(range(128)):
             inputs = dict([('lang_'+k,self.batch_encoding['lang'][k][idx]) if 'token_type' not in k else (k, self.batch_encoding['lang'][k][idx]) for k in self.batch_encoding['lang']])
             inputs['kg_input_ids'] = self.batch_encoding['input'][idx]
             if 'mask' in self.batch_encoding:

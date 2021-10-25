@@ -90,7 +90,7 @@ class GTXModel(pl.LightningModule):
 
         if 'AdmPred' == training_args.task:
             db =  training_args.run_name.split('/')[4 if training_args.knowmix else 3].split('_')[-1]
-            self.model.class_weight = torch.load(os.path.join(os.getcwd(),f'fixed_data/{db}/adm_class_weight'))
+            self.model.class_weight = torch.load(os.path.join(os.getcwd(),f'data/{db}/adm_class_weight'))
 
         self.model.training_args = training_args
         

@@ -65,12 +65,12 @@ def get_trainer_config(args):
     else:
         tpu_core_id = None
 
-    config = {
+    config = { 
         "max_epochs":args.num_train_epochs,
         "precision":16 if args.fp16 else 32,
         "gpus":None if args.use_tpu else -1,
         "tpu_cores":tpu_core_id,
-        "accelerator": "ddp",
+        "accelerator": None,
         "log_every_n_steps":None if args.use_tpu else 50,
         "callbacks":callbacks,
         # "check_val_every_n_epoch":50,

@@ -6,21 +6,36 @@ import itertools
 from Run_configs import Configuration
 
 # GPU setting
-os.environ["CUDA_VISIBLE_DEVICES"] = '3'
+os.environ["CUDA_VISIBLE_DEVICES"] = '0' 
 
 # TPU setting
 TPU = False
 
 for preset in [
-    # {'model':'cross','architecture':'both','knowmix':'init','scratch':False},
-    # {'model':'cross','architecture':'both','knowmix':'init,adm','scratch':False},
-    # {'db':'dx,prx','model':'transe','architecture':'lm ','knowmix':'','scratch':False}, 
-    {'db':'dx,prx','model':'transe','architecture':'lm','knowmix':'','scratch':False},
-    {'db':'px','model':'transe','architecture':'lm','knowmix':'','scratch':False},
-    {'db':'dx,prx','model':'transe','architecture':'lm','knowmix':'init,mean','scratch':False},
-    {'db':'px','model':'transe','architecture':'lm','knowmix':'init,mean','scratch':False},
-    {'db':'dx,prx','model':'transe','architecture':'lm','knowmix':'init,enc','scratch':False},
-    {'db':'px','model':'transe','architecture':'lm','knowmix':'init,enc','scratch':False},
+    #     {'db':'dx,prx','model':'single','architecture':'both','knowmix':'summary','scratch':False},
+    # {'db':'px','model':'single','architecture':'both','knowmix':'summary','scratch':False},
+    # {'db':'dx,prx','model':'single','architecture':'both','knowmix':'init,mean','scratch':False},
+    # {'db':'px','model':'single','architecture':'both','knowmix':'init,mean','scratch':False},
+    # {'db':'dx,prx','model':'single','architecture':'both','knowmix':'init,enc','scratch':False},
+    # {'db':'px','model':'single','architecture':'both','knowmix':'init,enc','scratch':False},
+        {'db':'dx,prx','model':'cross','architecture':'both','knowmix':'summary','scratch':False},
+    {'db':'px','model':'cross','architecture':'both','knowmix':'summary','scratch':False},
+    # {'db':'dx,prx','model':'cross','architecture':'both','knowmix':'init,mean','scratch':False},
+    # {'db':'px','model':'cross','architecture':'both','knowmix':'init,mean','scratch':False},
+    # {'db':'dx,prx','model':'cross','architecture':'both','knowmix':'init,enc','scratch':False},
+    # {'db':'px','model':'cross','architecture':'both','knowmix':'init,enc','scratch':False},
+    #     {'db':'dx,prx','model':'lstm','architecture':'kg','knowmix':'summary','scratch':False},
+    # {'db':'px','model':'lstm','architecture':'kg','knowmix':'summary','scratch':False},
+    # {'db':'dx,prx','model':'lstm','architecture':'kg','knowmix':'init,mean','scratch':False},
+    # {'db':'px','model':'lstm','architecture':'kg','knowmix':'init,mean','scratch':False},
+    # {'db':'dx,prx','model':'lstm','architecture':'kg','knowmix':'init,enc','scratch':False},
+    # {'db':'px','model':'lstm','architecture':'kg','knowmix':'init,enc','scratch':False},
+    #     {'db':'dx,prx','model':'transe','architecture':'lm','knowmix':'summary','scratch':False},
+    # {'db':'px','model':'transe','architecture':'lm','knowmix':'summary','scratch':False},
+    # {'db':'dx,prx','model':'transe','architecture':'lm','knowmix':'init,mean','scratch':False},
+    # {'db':'px','model':'transe','architecture':'lm','knowmix':'init,mean','scratch':False},
+    # {'db':'dx,prx','model':'transe','architecture':'lm','knowmix':'init,enc','scratch':False},
+    # {'db':'px','model':'transe','architecture':'lm','knowmix':'init,enc','scratch':False},
 ]:
     for _task in [0,1,2,3,4,5,7]:
         if (_task==3) and (preset['db']=='px'):
@@ -75,7 +90,6 @@ for preset in [
                 config['lr'] = 3e-5
                 config['num_epochs'] = 30
             
-
             # Run script
             exp_config = Configuration(config)
             SRC_PATH, TRAINING_CONFIG_LIST = exp_config.get_configuration()

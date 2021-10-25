@@ -24,6 +24,7 @@ import torch
 from torch import nn
 from torch.nn import CrossEntropyLoss, MSELoss, SmoothL1Loss
 import torch.nn.functional as F
+from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 
 from configuration import GTXConfig
 from transformers.activations import ACT2FN, gelu
@@ -1232,9 +1233,9 @@ class GTXModel(GTXPreTrainedModel):
             extended_kg_padding_mask = (1.0 - extended_kg_padding_mask) * -10000.0
             extended_kg_attention_mask = extended_kg_padding_mask.clone().detach()
 
-        # Positional Word Embeddings
+        # Positional Word Embeddings 
         lang_embedding_output = self.lang_embeddings(lang_input_ids, token_type_ids, lang_inputs_embeds)
-        kg_embedding_output = self.kg_embeddings(kg_input_ids, None, kg_inputs_embeds)
+        kg_inputs_embeds = self.kg_embeddings.word_embeddings(kg_input_ids)
         if "init" in self.config.KnowMix:
             initializable_idx = kg_ext_attention_mask.any(-1)
             kg_init_ids = kg_ext_input_ids[initializable_idx]
@@ -1242,13 +1243,18 @@ class GTXModel(GTXPreTrainedModel):
                 # notifier.warning("Initialization ON!")
                 kg_init_mask = kg_ext_attention_mask[initializable_idx].unsqueeze(-1)
                 kg_init_embedding_output = self.lang_embeddings.word_embeddings(kg_init_ids)*kg_init_mask
-                kg_embedding_output[initializable_idx] = kg_init_embedding_output.sum(-2)/kg_init_mask.sum(-2)
+                kg_inputs_embeds[initializable_idx] = kg_init_embedding_output.sum(-2)/kg_init_mask.sum(-2)
             elif "enc" in self.config.KnowMix:
                 kg_init_embedding_output = self.lang_embeddings.word_embeddings(kg_init_ids)
-                kg_embedding_output = self.kg_init_enc(kg_init_embedding_output)
+                kg_init_input_lengths = (kg_init_ids!=0).sum(-1)
+                packed_init_embeds = pack_padded_sequence(kg_init_embedding_output, kg_init_input_lengths.cpu(), batch_first=True, enforce_sorted=False)
+                packed_init_output, _ = self.kg_init_enc(packed_init_embeds)
+                kg_init_output = pad_packed_sequence(packed_init_output,batch_first=True,total_length=kg_init_ids.size(-1))[0][torch.arange(kg_init_ids.size(0)),kg_init_input_lengths-1]
+                kg_inputs_embeds[initializable_idx] = kg_init_output.float()
             else:
                 raise ValueError("Invalid initalization option!")
-
+        kg_embedding_output = self.kg_embeddings(kg_input_ids, None, kg_inputs_embeds)
+ 
         if kg_ext_input_ids is not None:
             kg_ext_embedding_output = self.lang_embeddings.word_embeddings(kg_ext_input_ids)
         else:
