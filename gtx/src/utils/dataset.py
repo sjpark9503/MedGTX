@@ -47,10 +47,12 @@ class InputFeatures:
     kg_input_ids: List[int]
     kg_ext_input_ids: Optional[List[List[int]]] = None
     kg_ext_sum_input_ids: Optional[List[List[int]]] = None
+    kg_langinit_input_ids: Optional[List[List[int]]] = None
     lang_attention_mask: Optional[List[int]] = None
     kg_attention_mask: Optional[List[int]] = None
     kg_ext_attention_mask: Optional[List[List[int]]] = None
     kg_ext_sum_attention_mask: Optional[List[List[int]]] = None
+    kg_langinit_attention_mask: Optional[List[List[int]]] = None
     kg_label_mask: Optional[List[int]] = None
     kg_label: Optional[List[int]] = None
     label: Optional[List[int]] = None
@@ -145,21 +147,24 @@ class HeadOnlyDataset(Dataset):
             if 'rc_index' in self.batch_encoding:
                 inputs['rc_indeces'] = self.batch_encoding['rc_index'][idx]
             if 'knowledge' in self.batch_encoding:
-                if ("abs" in self.knowmix) or ("init" in self.knowmix):
-                    if "abs" in self.knowmix:
-                        abs_indices = [x for _idx, x in enumerate(self.batch_encoding['knowledge'][idx]) if (_idx>1) and not x]
-                        processed_knowledge = list()
-                        for node_idx in range(len(self.batch_encoding['knowledge'][idx])):
-                            if node_idx in abs_indices:
-                                processed_knowledge.append(" ".join([_s for _idx, _mask, _s in enumerate(zip(inputs['kg_attention_mask'][node_idx],self.batch_encoding['knowledge'][idx])) if (_idx>1) and (_mask!=0)]).strip())
-                            else:
-                                processed_knowledge.append("")
-                        tokenized_knowledge = self.tokenizer(processed_knowledge, add_special_tokens=False, padding='max_length', max_length=64, return_token_type_ids=False)
-                    else:
-                        tokenized_knowledge = self.tokenizer(self.batch_encoding['knowledge'][idx], add_special_tokens=False, padding='max_length', max_length=64, return_token_type_ids=False)
+                if "abs" in self.knowmix:
+                    abs_indices = [x for _idx, x in enumerate(self.batch_encoding['knowledge'][idx]) if (_idx>1) and not x]
+                    processed_knowledge = list()
+                    for node_idx in range(len(self.batch_encoding['knowledge'][idx])):
+                        if node_idx in abs_indices:
+                            processed_knowledge.append(" ".join([_s for _idx, _mask, _s in enumerate(zip(inputs['kg_attention_mask'][node_idx],self.batch_encoding['knowledge'][idx])) if (_idx>1) and (_mask!=0)]).strip())
+                        else:
+                            processed_knowledge.append("")
+                    tokenized_knowledge = self.tokenizer(processed_knowledge, add_special_tokens=False, padding='max_length', max_length=64, return_token_type_ids=False)
                     inputs['kg_ext_input_ids'] = tokenized_knowledge['input_ids']
                     inputs['kg_ext_attention_mask'] = tokenized_knowledge['attention_mask']
-
+                if "init" in self.knowmix:
+                    if "linearize" in self.knowmix:
+                        tokenized_init = self.tokenizer((" ".join(self.batch_encoding['knowledge'][idx])).strip(), add_special_tokens=False, padding='max_length', max_length=ext_max_len, return_token_type_ids=False)
+                    else:
+                        tokenized_init = self.tokenizer(self.batch_encoding['knowledge'][idx], add_special_tokens=False, padding='max_length', max_length=64, return_token_type_ids=False)
+                    inputs['kg_langinit_input_ids'] = tokenized_init['input_ids']
+                    inputs['kg_langinit_attention_mask'] = tokenized_init['attention_mask']
                 if "summary" in self.knowmix:
                     summarized_knowledge = self.tokenizer((" ".join(self.batch_encoding['knowledge'][idx])).strip(), add_special_tokens=False, padding='max_length', max_length=ext_max_len, return_token_type_ids=False)
                     inputs['kg_ext_sum_input_ids'] = summarized_knowledge['input_ids']
