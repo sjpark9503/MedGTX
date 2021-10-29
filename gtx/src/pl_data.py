@@ -105,6 +105,7 @@ class DataModule(pl.LightningDataModule):
             "num_labels": self.config.num_labels,
             "label_domain": self.args.label_domain,
             "id2desc": id2desc if self.args.knowmix else None,
+            "linearize": "linearize" in self.args.knowmix
         }
         self.data_collator = COLLATORS[self.args.task](**{k:v for k,v in collator_args.items() if k in COLLATORS[self.args.task].__annotations__}, prediction=self.args.do_predict)
 

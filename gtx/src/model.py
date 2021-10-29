@@ -274,7 +274,9 @@ class GTXEmbeddings(nn.Module):
     def __init__(self, config, input_type=None):
         super().__init__()
         self.word_embeddings = nn.Embedding(config.vocab_size[input_type], config.hidden_size)
-        if config.max_position_embeddings[input_type]>0:
+        if "linearize" in config.KnowMix:
+            self.position_embeddings = nn.Embedding(2048, config.hidden_size)
+        elif config.max_position_embeddings[input_type]>0:
             self.position_embeddings = nn.Embedding(config.max_position_embeddings[input_type], config.hidden_size)
         else:
             self.position_embeddings = None
@@ -1206,11 +1208,17 @@ class GTXModel(GTXPreTrainedModel):
         extended_lang_attention_mask = (1.0 - extended_lang_attention_mask) * -10000.0
 
         # Process the KG attention mask
-        if kg_langinit_attention_mask is not None:
-            kg_attention_mask = kg_langinit_attention_mask.unsqueeze(1).unsqueeze(2)
-            kg_padding_mask = kg_langinit_attention_mask
         if kg_attention_mask is not None:
-            if len(kg_attention_mask.shape)==3:
+            if len(kg_attention_mask.shape)==2:
+                # Process KG-side self attention mask
+                extended_kg_attention_mask = kg_attention_mask.unsqueeze(1).unsqueeze(2)
+                extended_kg_attention_mask = extended_kg_attention_mask.to(dtype=self.dtype)
+                extended_kg_attention_mask = (1.0 - extended_kg_attention_mask) * -10000.0
+                # Process KG padding mask for cross attention
+                extended_kg_padding_mask = kg_padding_mask.unsqueeze(1).unsqueeze(2)
+                extended_kg_padding_mask = extended_kg_padding_mask.to(dtype=self.dtype)
+                extended_kg_padding_mask = (1.0 - extended_kg_padding_mask) * -10000.0
+            elif len(kg_attention_mask.shape)==3:
                 # Process KG-side self attention mask
                 extended_kg_attention_mask = kg_attention_mask.unsqueeze(1)
                 extended_kg_attention_mask = extended_kg_attention_mask.to(dtype=self.dtype)
@@ -1219,7 +1227,6 @@ class GTXModel(GTXPreTrainedModel):
                 extended_kg_padding_mask = kg_padding_mask.unsqueeze(1).unsqueeze(2)
                 extended_kg_padding_mask = extended_kg_padding_mask.to(dtype=self.dtype)
                 extended_kg_padding_mask = (1.0 - extended_kg_padding_mask) * -10000.0
-
             elif len(kg_attention_mask.shape)==4:
                 # Process KG-side self attention mask
                 extended_kg_attention_mask = kg_attention_mask
@@ -1240,8 +1247,11 @@ class GTXModel(GTXPreTrainedModel):
 
         # Positional Word Embeddings 
         lang_embedding_output = self.lang_embeddings(lang_input_ids, token_type_ids, lang_inputs_embeds)
-        kg_inputs_embeds = self.kg_embeddings.word_embeddings(kg_input_ids)
-        if "init" in self.config.KnowMix:
+        if "linearize" in self.config.KnowMix:
+            kg_inputs_embeds = self.lang_embeddings.word_embeddings(kg_input_ids)
+        else:
+            kg_inputs_embeds = self.kg_embeddings.word_embeddings(kg_input_ids)
+        if kg_langinit_input_ids is not None:
             initializable_idx = kg_langinit_attention_mask.any(-1)
             kg_init_ids = kg_langinit_input_ids[initializable_idx]
             if "mean" in self.config.KnowMix:
@@ -1256,11 +1266,9 @@ class GTXModel(GTXPreTrainedModel):
                 packed_init_output, _ = self.kg_init_enc(packed_init_embeds)
                 kg_init_output = pad_packed_sequence(packed_init_output,batch_first=True,total_length=kg_init_ids.size(-1))[0][torch.arange(kg_init_ids.size(0)),kg_init_input_lengths-1]
                 kg_inputs_embeds[initializable_idx] = kg_init_output.float()
-            elif "linearize" in self.config.KnowMix:
-                kg_inputs_embeds = self.lang_embeddings.word_embeddings(kg_langinit_input_ids)
             else:
                 raise ValueError("Invalid initalization option!")
-        kg_embedding_output = self.kg_embeddings(kg_input_ids, None, kg_inputs_embeds)
+        kg_embedding_output = self.kg_embeddings(None, None, kg_inputs_embeds)
  
         if kg_ext_input_ids is not None:
             kg_ext_embedding_output = self.lang_embeddings.word_embeddings(kg_ext_input_ids)
@@ -1435,8 +1443,10 @@ class GTXForKGTokPredAndMaskedLM(GTXPreTrainedModel):
             GTX_output.pooled_output,
         )
         lang_prediction_scores = self.lm_head(lang_output)
-        kg_prediction_scores = self.classifier(self.dropout(kg_output))
-
+        if kg_label_mask is not None:
+            kg_prediction_scores = self.classifier(self.dropout(kg_output))
+        else:
+            kg_prediction_scores = self.lm_head(kg_output)
         # Loss calculation
         total_loss = (
             None
@@ -1463,14 +1473,21 @@ class GTXForKGTokPredAndMaskedLM(GTXPreTrainedModel):
                 positive_batch_size = active_labels.size(0)
                 kg_loss = self.loss_fcts['ce'](active_logits[:positive_batch_size], active_labels)
             else:
-                kg_loss = self.loss_fcts['ce'](kg_prediction_scores.view(-1, self.num_kg_labels), kg_label.view(-1))
+                _kg_label = kg_label.view(-1)
+                positive_batch_size = _kg_label.size(0)
+                kg_loss = self.loss_fcts["ce"](
+                    kg_prediction_scores.view(-1, self.config.vocab_size['lang'])[:positive_batch_size],
+                    _kg_label,
+                )
             total_loss += kg_loss
             loss_dict['kg_loss']=kg_loss.mean().detach()
+
         if cross_label is not None:
             cross_loss = self.loss_fcts["ce"](cross_relationship_score, cross_label)
             total_loss += cross_loss
             loss_dict['align_loss']=cross_loss.mean().detach()
         
+        notifier.warning(rc_indeces)
         if rc_indeces is not None:
             rc_labels = list()
             rc_inputs = list()
@@ -1479,7 +1496,7 @@ class GTXForKGTokPredAndMaskedLM(GTXPreTrainedModel):
                     rc_inputs.append(torch.cat([kg_output[idx, rc_idx[0]],kg_output[idx, rc_idx[1]]],dim=-1))
                     rc_labels.append(rc_idx[2])
             rc_outputs = self.edge_classifier(torch.stack(rc_inputs,dim=0))
-            rc_loss = self.loss_fcts['ce'](rc_outputs,torch.tensor(rc_labels,dtype=torch.long, device=device))
+            rc_loss = self.loss_fcts['ce'](rc_outputs,torch.tensor(rc_labels, dtype=torch.long, device=device))
             total_loss += rc_loss
             loss_dict['rc_loss']=rc_loss.mean().detach()
             

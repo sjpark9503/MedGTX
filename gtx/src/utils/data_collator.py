@@ -44,6 +44,7 @@ class NodeClassification_DataCollator:
     mlm: bool = True
     mlm_probability: float = 0.15
     contrastive: bool = False
+    linearize: bool = False
     prediction: bool = False
 
     def __call__(self,features: List[InputDataClass]) -> Dict[str, torch.Tensor]:
@@ -55,13 +56,17 @@ class NodeClassification_DataCollator:
             # Construct batch for Masked LM
             masked_texts, lm_label = self.mask_tokens(batch['lang_input_ids'])
             # Construct batch for Masekd LP
-            if not self.contrastive:
+            if self.linearize:
+                masked_table_contents, content_label = self.mask_tokens(batch['kg_input_ids'])
+                batch['kg_input_ids'] = masked_table_contents
+                batch['kg_label'] = content_label
+                batch['kg_padding_mask'] = batch['kg_attention_mask']
+            else:
                 masked_subs, kg_label_mask, kg_padding_mask = self.mask_kg(batch['kg_input_ids'], batch['kg_label_mask'])
                 batch['kg_input_ids'] = masked_subs
                 batch['kg_label_mask'] = kg_label_mask
                 batch['kg_padding_mask'] = kg_padding_mask
-            else:
-                batch['kg_label_mask'] = None
+
             batch['lang_input_ids'] = masked_texts
             batch['lm_label'] = lm_label
             # Construct batch for Alignment loss

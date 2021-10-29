@@ -18,8 +18,8 @@ for preset in [
     # {'db':'px','model':'single','architecture':'both','knowmix':'init,mean','scratch':False},
     # {'db':'dx,prx','model':'single','architecture':'both','knowmix':'init,enc','scratch':False},
     # {'db':'px','model':'single','architecture':'both','knowmix':'init,enc','scratch':False},
-        {'db':'dx,prx','model':'cross','architecture':'both','knowmix':'summary','scratch':False},
-    {'db':'px','model':'cross','architecture':'both','knowmix':'summary','scratch':False},
+        {'db':'dx,prx','model':'cross','architecture':'both','knowmix':'init,linearize','scratch':False},
+    {'db':'px','model':'cross','architecture':'both','knowmix':'init,linearize','scratch':False},
     # {'db':'dx,prx','model':'cross','architecture':'both','knowmix':'init,mean','scratch':False},
     # {'db':'px','model':'cross','architecture':'both','knowmix':'init,mean','scratch':False},
     # {'db':'dx,prx','model':'cross','architecture':'both','knowmix':'init,enc','scratch':False},
@@ -70,23 +70,23 @@ for preset in [
             }
             # Training configs
             if _task == 0:
-                config['train_bsize'] = 16 if preset['db']=='px' else 32
-                config['eval_bsize'] = 4 if preset['db']=='px' else 8
+                config['train_bsize'] = 8 if preset['db']=='px' else 16
+                config['eval_bsize'] = 2 if preset['db']=='px' else 4
                 config['lr'] = 1e-4
                 config['num_epochs'] = 40
             elif _task == 2:
-                config['train_bsize'] = 16 if preset['db']=='px' else 32
-                config['eval_bsize'] = 4 if preset['db']=='px' else 8
+                config['train_bsize'] = 8 if preset['db']=='px' else 16
+                config['eval_bsize'] = 2 if preset['db']=='px' else 4
                 config['lr'] = 3e-5
                 config['num_epochs'] = 30
             elif _task in [1,3,4]:
-                config['train_bsize'] = 16 if preset['db']=='px' else 32
-                config['eval_bsize'] = 4 if preset['db']=='px' else 8
+                config['train_bsize'] = 8 if preset['db']=='px' else 16
+                config['eval_bsize'] = 2 if preset['db']=='px' else 4
                 config['lr'] = 1e-5
                 config['num_epochs'] = 30
             elif _task in [5,6,7]:
-                config['train_bsize'] = 16 if preset['db']=='px' else 32
-                config['eval_bsize'] = 4 if preset['db']=='px' else 8
+                config['train_bsize'] = 8 if preset['db']=='px' else 16
+                config['eval_bsize'] = 2 if preset['db']=='px' else 4
                 config['lr'] = 3e-5
                 config['num_epochs'] = 30
             
