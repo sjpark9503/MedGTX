@@ -60,9 +60,9 @@ class Configuration():
             "use_tpu" : config['use_tpu'],
             "dataloader_pin_memory" : False if not config['use_tpu'] else True,
             "label_domain" : config['label_domain'],
-            "train_data_file":os.path.join(f"data/knowmix/{self.DB}_{self.DB_size}/{self.DB}_UnifiedUniKGenc/train"),
-            "eval_data_file": os.path.join(f"data/knowmix/{self.DB}_{self.DB_size}/{self.DB}_UnifiedUniKGenc/valid"),
-            "test_data_file": os.path.join(f"data/knowmix/{self.DB}_{self.DB_size}/{self.DB}_UnifiedUniKGenc/test"),
+            "train_data_file": f"data/knowmix/{self.DB}_{self.DB_size}/{self.DB}_UnifiedUniKGenc/train",
+            "eval_data_file": f"data/knowmix/{self.DB}_{self.DB_size}/{self.DB}_UnifiedUniKGenc/valid",
+            "test_data_file": f"data/knowmix/{self.DB}_{self.DB_size}/{self.DB}_UnifiedUniKGenc/test",
             "run_name":f"{self.TASK_NAME}_{self.RUN_NAME}"
         }
 

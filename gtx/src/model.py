@@ -1487,7 +1487,6 @@ class GTXForKGTokPredAndMaskedLM(GTXPreTrainedModel):
             total_loss += cross_loss
             loss_dict['align_loss']=cross_loss.mean().detach()
         
-        notifier.warning(rc_indeces)
         if rc_indeces is not None:
             rc_labels = list()
             rc_inputs = list()

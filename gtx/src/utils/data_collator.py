@@ -89,7 +89,7 @@ class NodeClassification_DataCollator:
         batch = {}
 
         for k, v in first.items():
-            if 'rc' in k:
+            if ('rc' in k) and (v is not None):
                 if self.edge_cls:
                     batch[k] = [f[k] for f in features]
                 continue
