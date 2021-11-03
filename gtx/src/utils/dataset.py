@@ -160,12 +160,15 @@ class HeadOnlyDataset(Dataset):
                     inputs['kg_ext_attention_mask'] = tokenized_knowledge['attention_mask']
                 if "init" in self.knowmix:
                     if "linearize" in self.knowmix:
-                        tokenized_init = self.tokenizer((" ".join(self.batch_encoding['knowledge'][idx])).strip(), add_special_tokens=False, padding='max_length', max_length=ext_max_len, return_token_type_ids=False)
+                        tokenized_init = self.tokenizer((" ".join(self.batch_encoding['knowledge'][idx])).strip(), add_special_tokens=True, padding='max_length', max_length=ext_max_len, return_token_type_ids=False)
                         inputs['kg_input_ids'] = tokenized_init['input_ids']
                         inputs['kg_attention_mask'] = tokenized_init['attention_mask']
-                        inputs.pop('rc_indeces')
-                        inputs.pop('kg_label')
-                        inputs.pop('kg_label_mask')
+                        if 'rc_indeces' in inputs:
+                            inputs.pop('rc_indeces')
+                        if 'kg_label' in inputs:
+                            inputs.pop('kg_label')
+                        if 'kg_label_mask' in inputs:
+                            inputs.pop('kg_label_mask')
                     else:
                         tokenized_init = self.tokenizer(self.batch_encoding['knowledge'][idx], add_special_tokens=False, padding='max_length', max_length=64, return_token_type_ids=False)
                         inputs['kg_langinit_input_ids'] = tokenized_init['input_ids']
