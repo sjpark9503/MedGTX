@@ -10,7 +10,7 @@ from torch.optim.lr_scheduler import LambdaLR, ReduceLROnPlateau
 from transformers import get_linear_schedule_with_warmup, get_polynomial_decay_schedule_with_warmup
 from transformers.models.auto.tokenization_auto import AutoTokenizer
 # Usr defined pkgs
-from model import GTXForKGTokPredAndMaskedLM, GTXForRanking, GTXForAdmLvlPrediction, GTXForErrorDetection, GTXForGeneration, GTXForTemporalPred
+from model import GTXForKGTokPredAndMaskedLM, GTXForRanking, GTXForAdmLvlPrediction, GTXForErrorDetection, GTXForGeneration, GTXForTemporalPred, GTXForUnimodalPrediction, GAT
 from utils.metrics import metrics_for_tasks
 # Transformers
 from transformers import (
@@ -32,61 +32,73 @@ class GTXModel(pl.LightningModule):
 
         self.best_val_metric = -1e10
         self.best_test_metric = -1e10
-
-        # Load configuration
-        if model_args.config_name:
-            config = AutoConfig.from_pretrained(model_args.config_name)
-        elif model_args.model_name_or_path:
-            config = AutoConfig.from_pretrained(model_args.model_name_or_path)
+  
+        if training_args.unimodal:
+            if training_args.unimodal == "graph":
+                config = AutoConfig.from_pretrained("bert-base-uncased")
+                encoder = GAT(config)
+            elif training_args.unimodal == "text":
+                encoder = AutoModel.from_pretrained("emilyalsentzer/Bio_ClinicalBERT")
+            else:
+                raise ValueError("Invalid uniomodal value")
+            config = encoder.config
+            config.unimodal = training_args.unimodal
+            config.task = training_args.task
+            config.num_labels = 95 if training_args.task == "AdmPred" else 1
+            config.kg_special_token_ids = {"PAD":0,"MASK":1, "CLS":2}
+            config.vocab_size = {"kg":9169}
+            self.model = GTXForUnimodalPrediction(config)
+            self.model.encoder = encoder
         else:
-            config = CONFIG_MAPPING[model_args.model_type]()
-            notifier.warning("You are instantiating a new config instance from scratch.")
-        if training_args.task in ['AdmPred','ReAdm','NextDx', 'Death30', 'Death180', 'Death365']:
-            config.use_ce_pooler = False
-        else:
-            config.use_ce_pooler = True
-        config.KnowMix = training_args.knowmix
-
-        # Load model
-        MODEL_CLASSES = {
-            "Pre":GTXForKGTokPredAndMaskedLM,
-            "Re":GTXForRanking,
-            "Gen":GTXForGeneration,
-            "AdmPred":GTXForAdmLvlPrediction,
-            "ErrDetect":GTXForErrorDetection,
-            "ReAdm":GTXForTemporalPred,
-            "NextDx":GTXForTemporalPred,
-            "Death30":GTXForTemporalPred,
-            "Death180":GTXForTemporalPred,
-            "Death365":GTXForTemporalPred,
-        }
-
-        # Truncate some weights for Admpred
-        if model_args.model_name_or_path:
+            # Load configuration
+            if model_args.config_name:
+                config = AutoConfig.from_pretrained(model_args.config_name)
+            elif model_args.model_name_or_path:
+                config = AutoConfig.from_pretrained(model_args.model_name_or_path)
+            else:
+                config = CONFIG_MAPPING[model_args.model_type]()
+                notifier.warning("You are instantiating a new config instance from scratch.")
             if training_args.task in ['AdmPred','ReAdm','NextDx', 'Death30', 'Death180', 'Death365']:
-                ckpt_path = os.path.join(model_args.model_name_or_path, 'pytorch_model.bin')
-                load_model_dict = torch.load(ckpt_path)
-                modified_model_dict = load_model_dict.copy()
-                for param in load_model_dict:
-                    if 'multi_pooler' in param:
-                        modified_model_dict.pop(param)
-                torch.save(modified_model_dict, ckpt_path)
-                notifier.critical(f"Remove unused Weights in Pretrained model for {training_args.task}")
+                config.use_ce_pooler = False
+            else:
+                config.use_ce_pooler = True
+            config.KnowMix = training_args.knowmix
 
-            self.model = MODEL_CLASSES[training_args.task].from_pretrained(
-                model_args.model_name_or_path,
-                config=config,
-            )
-            notifier.critical(f"Load pretrained parameters from {model_args.model_name_or_path}")
-                
-        else:
-            # if "init" in config.KnowMix:
-            #     lit2word = torch.load(config.lit2word_path)
-            #     lit2word = self.tokenizer(lit2word, add_special_tokens=False, padding='max_length', max_length=64, return_token_type_ids=False)
-            # else:
-            #     lit2word=None
-            self.model = MODEL_CLASSES[training_args.task](config)#, lit2word=lit2word)
-            notifier.critical("Training new model from scratch")
+            # Load model
+            MODEL_CLASSES = {
+                "Pre":GTXForKGTokPredAndMaskedLM,
+                "Re":GTXForRanking,
+                "Gen":GTXForGeneration,
+                "AdmPred":GTXForAdmLvlPrediction,
+                "ErrDetect":GTXForErrorDetection,
+                "ReAdm":GTXForTemporalPred,
+                "NextDx":GTXForTemporalPred,
+                "Death30":GTXForTemporalPred,
+                "Death180":GTXForTemporalPred,
+                "Death365":GTXForTemporalPred,
+            }
+
+            # Truncate some weights for Admpred
+            if model_args.model_name_or_path:
+                if training_args.task in ['AdmPred','ReAdm','NextDx', 'Death30', 'Death180', 'Death365']:
+                    ckpt_path = os.path.join(model_args.model_name_or_path, 'pytorch_model.bin')
+                    load_model_dict = torch.load(ckpt_path)
+                    modified_model_dict = load_model_dict.copy()
+                    for param in load_model_dict:
+                        if 'multi_pooler' in param:
+                            modified_model_dict.pop(param)
+                    torch.save(modified_model_dict, ckpt_path)
+                    notifier.critical(f"Remove unused Weights in Pretrained model for {training_args.task}")
+
+                self.model = MODEL_CLASSES[training_args.task].from_pretrained(
+                    model_args.model_name_or_path,
+                    config=config,
+                )
+                notifier.critical(f"Load pretrained parameters from {model_args.model_name_or_path}")
+                    
+            else:
+                self.model = MODEL_CLASSES[training_args.task](config)#, lit2word=lit2word)
+                notifier.critical("Training new model from scratch")
 
         if 'AdmPred' == training_args.task:
             db =  training_args.run_name.split('/')[4 if training_args.knowmix else 3].split('_')[-1]
@@ -305,10 +317,18 @@ class GTXModel(pl.LightningModule):
             self.model.save_pretrained(output_dir)
             
     def load_tokenizer(self):
-        if self.training_args.task == "Gen":
-            self.tokenizer = AutoTokenizer.from_pretrained("prajjwal1/bert-{}".format('tiny' if self.model.config.hidden_size==128 else 'mini'))
+        if self.training_args.unimodal:
+            if self.training_args.unimodal == "graph":
+                self.tokenizer = AutoTokenizer.from_pretrained("bert-base-uncased")
+            elif self.training_args.unimodal == "text":
+                self.tokenizer = AutoTokenizer.from_pretrained("emilyalsentzer/Bio_ClinicalBERT")
+            else:
+                raise ValueError("Invalid uniomodal value")
         else:
-            self.tokenizer = AutoTokenizer.from_pretrained("prajjwal1/bert-{}".format('tiny' if self.model.config.hidden_size==128 else 'mini'))
+            if self.training_args.task == "Gen":
+                self.tokenizer = AutoTokenizer.from_pretrained("prajjwal1/bert-{}".format('tiny' if self.model.config.hidden_size==128 else 'mini'))
+            else:
+                self.tokenizer = AutoTokenizer.from_pretrained("prajjwal1/bert-{}".format('tiny' if self.model.config.hidden_size==128 else 'mini'))
             
     def save_decode_files(self, decode_outputs, output_dir):
         assert self.training_args.task == "Gen"  # only for generation task

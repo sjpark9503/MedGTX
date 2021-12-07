@@ -102,9 +102,12 @@ def main():
 
     # Call Model
     gtx = GTXModel(model_args, training_args)
-    data_args.gcn = gtx.model.config.gcn
+    if training_args.unimodal:
+        data_args.gcn = True
+    else:
+        data_args.gcn = gtx.model.config.gcn
 
-    # Call data module
+    # Call data module  
     data_module = DataModule(data_args, model_args, training_args, config=gtx.model.config)
     
     # Call Trainer

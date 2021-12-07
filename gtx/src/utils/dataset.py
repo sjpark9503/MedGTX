@@ -142,7 +142,7 @@ class HeadOnlyDataset(Dataset):
                 if 'label_mask' in self.batch_encoding:
                     inputs['kg_label'] = self.batch_encoding['label'][idx]
                     inputs['kg_label_mask'] = self.batch_encoding['label_mask'][idx]
-                else:
+                else:  
                     inputs['label'] = self.batch_encoding['label'][idx]
             if 'rc_index' in self.batch_encoding:
                 inputs['rc_indeces'] = self.batch_encoding['rc_index'][idx]

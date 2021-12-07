@@ -45,7 +45,7 @@ class Configuration():
             "n_negatives": config['n_negatives'],
             "top_k": config['top_k'],
             "prediction_loss_only":False,
-            "overwrite_output_dir":False,
+            "overwrite_output_dir":True,
             "mlm_probability": 0.15,
             "block_size": 512,
             "train_batch_size": config['train_bsize'],
@@ -56,8 +56,10 @@ class Configuration():
             "save_per_run": (config['num_epochs']//10) if config['task_number']==0 else int(1e2),
             "num_eval_per_epoch": 2,
             "task" : self.TASK_NAME,
+            "unimodal": config['unimodal'],
             "knowmix" : config['KnowMix'],
             "use_tpu" : config['use_tpu'],
+            "note": config["note"],
             "dataloader_pin_memory" : False if not config['use_tpu'] else True,
             "label_domain" : config['label_domain'],
             "train_data_file": f"data/knowmix/{self.DB}_{self.DB_size}/{self.DB}_UnifiedUniKGenc/train",
@@ -96,7 +98,7 @@ class Configuration():
             Config['cross_att_type'] = 'single' if self.config['model']=='single' else 'cross'
             Config['encoder_type'] = self.Encoder_Type
             Config['lit2word_path'] = self.TRAINING_CONFIG['train_data_file'].replace("train","lit2word")
-            
+              
             if self.config['scratch'] and self.config['task_number']==2:
                 Config['cross_att_type'] = 'unilm'
                 Config['max_position_embeddings']['lang'] = 0 if self.Encoder_Type['lang'].lower() in ['bilstm', 'lstm'] else 512
@@ -156,60 +158,77 @@ class Configuration():
                         if 'file' in k:
                             self.TRAINING_CONFIG[k] = self.TRAINING_CONFIG[k].replace('data','data/adm')
                     # SRC_PATH = os.path.join(self.EXP_PATH, f'src/adm_lvl_prediction.py')
-                self.TRAINING_CONFIG['output_dir'] = os.path.join(self.EXP_PATH,f"eval_output/{'scratch' if self.config['scratch'] else 'pretrained'}/{self.TASK_NAME}/{'KnowMix,{}/'.format(self.config['KnowMix']) if self.config['KnowMix'] else ''}{self.config['model']}/{self.RUN_NAME}_RNG{self.config['seed']}")
-
-
+                self.TRAINING_CONFIG['output_dir'] = os.path.join(self.EXP_PATH,f"eval_output/{'scratch' if self.config['scratch'] else 'pretrained'}/{self.TASK_NAME}/{'KnowMix,{}/'.format(self.config['KnowMix']) if self.config['KnowMix'] else ''}{self.config['model']}/{self.RUN_NAME}_RNG{self.config['seed']}") 
             else:
                 # SRC_PATH = os.path.join(self.EXP_PATH, 'src/finetune.py')
                 self.TRAINING_CONFIG['model_name_or_path'] = os.path.join(self.EXP_PATH,f"pretrained_models/Pre/{'KnowMix,{}/'.format(self.config['KnowMix']) if self.config['KnowMix'] else ''}{self.config['model']}/{self.RUN_NAME}")
                 self.TRAINING_CONFIG['run_name'] = f"pretrained/{self.TASK_NAME}/{'KnowMix,{}/'.format(self.config['KnowMix']) if self.config['KnowMix'] else ''}{self.config['model']}/{self.RUN_NAME}"
                 self.TRAINING_CONFIG['output_dir'] = os.path.join(self.EXP_PATH,f"pretrained_models/pretrained/{self.TASK_NAME}/{'KnowMix,{}/'.format(self.config['KnowMix']) if self.config['KnowMix'] else ''}{self.config['model']}/{self.RUN_NAME}_RNG{self.config['seed']}")
-                # load config
-                with open(f"{self.TRAINING_CONFIG['model_name_or_path']}/config.json") as f:
-                    Config = json.load(f)
-                # add features
-                Config['encoder_type'] = self.Encoder_Type
-                Config['attention_probs_dropout_prob'] = self.config['dropout']
-                Config['hidden_dropout_prob'] = self.config['dropout']
-                Config['cross_att_type'] = 'single' if self.config['model']=='single' else 'cross'
-                if self.config['model']=='transe':
-                    Config['pretrained_kg_embedding'] = ""
-                if self.config['task_number']==2:
-                    Config['cross_att_type'] = 'unilm'
-                    Config['max_position_embeddings']['lang'] = 0 if self.Encoder_Type['lang'].lower() in ['bilstm', 'lstm'] else 512
-                elif self.config['task_number']==3:
-                    for k in self.TRAINING_CONFIG:
-                        if 'file' in k:
-                            self.TRAINING_CONFIG[k] = self.TRAINING_CONFIG[k].replace('data','data/adm')
-                    Config['num_labels'] = 45 if self.DB=='px' else 95
-                elif self.config['task_number']==4:
-                    for k in self.TRAINING_CONFIG:
-                        if 'file' in k:
-                            self.TRAINING_CONFIG[k] = self.TRAINING_CONFIG[k].replace('data','data/ed')
-                    self.TRAINING_CONFIG['id2desc'] = os.path.join(self.EXP_PATH,f"data/ed/knowmix/{self.DB}_{self.DB_size}/{self.MODEL_NAME}/id2desc")
-                elif self.config['task_number']==5:
-                    for k in self.TRAINING_CONFIG:
-                        if 'file' in k:
-                            self.TRAINING_CONFIG[k] = self.TRAINING_CONFIG[k].replace('data','data/readm')
-                    Config['num_labels'] = 1
+                try:
+                    # load config
+                    with open(f"{self.TRAINING_CONFIG['model_name_or_path']}/config.json") as f:
+                        Config = json.load(f)
+                    # add features
+                    Config['encoder_type'] = self.Encoder_Type
+                    Config['attention_probs_dropout_prob'] = self.config['dropout']
+                    Config['hidden_dropout_prob'] = self.config['dropout']
+                    Config['cross_att_type'] = 'single' if self.config['model']=='single' else 'cross'
+                    if self.config['model']=='transe':
+                        Config['pretrained_kg_embedding'] = ""
+                    if self.config['task_number']==2:
+                        Config['cross_att_type'] = 'unilm'
+                        Config['max_position_embeddings']['lang'] = 0 if self.Encoder_Type['lang'].lower() in ['bilstm', 'lstm'] else 512
+                    elif self.config['task_number']==3:
+                        for k in self.TRAINING_CONFIG:
+                            if 'file' in k:
+                                self.TRAINING_CONFIG[k] = self.TRAINING_CONFIG[k].replace('data','data/adm')
+                        Config['num_labels'] = 45 if self.DB=='px' else 95
+                    elif self.config['task_number']==4:
+                        for k in self.TRAINING_CONFIG:
+                            if 'file' in k:
+                                self.TRAINING_CONFIG[k] = self.TRAINING_CONFIG[k].replace('data','data/ed')
+                        self.TRAINING_CONFIG['id2desc'] = os.path.join(self.EXP_PATH,f"data/ed/knowmix/{self.DB}_{self.DB_size}/{self.MODEL_NAME}/id2desc")
+                    elif self.config['task_number']==5:
+                        for k in self.TRAINING_CONFIG:
+                            if 'file' in k:
+                                self.TRAINING_CONFIG[k] = self.TRAINING_CONFIG[k].replace('data','data/readm')
+                        Config['num_labels'] = 1
 
-                elif self.config['task_number']==6:
-                    for k in self.TRAINING_CONFIG:
-                        if 'file' in k:
-                            self.TRAINING_CONFIG[k] = self.TRAINING_CONFIG[k].replace('data','data/nextdx')
-                    Config['num_labels'] = 845
+                    elif self.config['task_number']==6:
+                        for k in self.TRAINING_CONFIG:
+                            if 'file' in k:
+                                self.TRAINING_CONFIG[k] = self.TRAINING_CONFIG[k].replace('data','data/nextdx')
+                        Config['num_labels'] = 845
 
-                elif self.config['task_number'] in [7,8,9]:
-                    for k in self.TRAINING_CONFIG:
-                        if 'file' in k:
-                            self.TRAINING_CONFIG[k] = self.TRAINING_CONFIG[k].replace('data',f'data/{self.TASK_NAME}')
-                    Config['num_labels'] = 1
+                    elif self.config['task_number'] in [7,8,9]:
+                        for k in self.TRAINING_CONFIG:
+                            if 'file' in k:
+                                self.TRAINING_CONFIG[k] = self.TRAINING_CONFIG[k].replace('data',f'data/{self.TASK_NAME}')
+                        Config['num_labels'] = 1
 
-                # overwrite config
-                if not os.path.isdir(f"config/{self.TASK_NAME}/{'KnowMix,{}/'.format(self.config['KnowMix']) if self.config['KnowMix'] else ''}{self.config['model']}/{self.DB}"):
-                    os.makedirs(f"config/{self.TASK_NAME}/{'KnowMix,{}/'.format(self.config['KnowMix']) if self.config['KnowMix'] else ''}{self.config['model']}/{self.DB}")
-                with open(f"config/{self.TASK_NAME}/{'KnowMix,{}/'.format(self.config['KnowMix']) if self.config['KnowMix'] else ''}{self.config['model']}/{self.RUN_NAME}.json",'w') as g:
-                    json.dump(Config,g)
+                    # overwrite config
+                    if not os.path.isdir(f"config/{self.TASK_NAME}/{'KnowMix,{}/'.format(self.config['KnowMix']) if self.config['KnowMix'] else ''}{self.config['model']}/{self.DB}"):
+                        os.makedirs(f"config/{self.TASK_NAME}/{'KnowMix,{}/'.format(self.config['KnowMix']) if self.config['KnowMix'] else ''}{self.config['model']}/{self.DB}")
+                    with open(f"config/{self.TASK_NAME}/{'KnowMix,{}/'.format(self.config['KnowMix']) if self.config['KnowMix'] else ''}{self.config['model']}/{self.RUN_NAME}.json",'w') as g:
+                        json.dump(Config,g)
+                except:
+                    if self.config['task_number']==3:
+                        for k in self.TRAINING_CONFIG:
+                            if 'file' in k:
+                                self.TRAINING_CONFIG[k] = self.TRAINING_CONFIG[k].replace('data','data/adm')
+                    elif self.config['task_number']==4:
+                        for k in self.TRAINING_CONFIG:
+                            if 'file' in k:
+                                self.TRAINING_CONFIG[k] = self.TRAINING_CONFIG[k].replace('data','data/ed')
+                    elif self.config['task_number']==5:
+                        for k in self.TRAINING_CONFIG:
+                            if 'file' in k:
+                                self.TRAINING_CONFIG[k] = self.TRAINING_CONFIG[k].replace('data','data/readm')
+                    elif self.config['task_number'] in [7,8,9]:
+                        for k in self.TRAINING_CONFIG:
+                            if 'file' in k:
+                                self.TRAINING_CONFIG[k] = self.TRAINING_CONFIG[k].replace('data',f'data/{self.TASK_NAME}')
+                    print("Skip configuration")
                 self.TRAINING_CONFIG['config_name'] = os.path.join(self.EXP_PATH,f"config/{self.TASK_NAME}/{'KnowMix,{}/'.format(self.config['KnowMix']) if self.config['KnowMix'] else ''}{self.config['model']}/{self.RUN_NAME}.json")
             
         TRAINING_CONFIG_LIST = list()
@@ -224,7 +243,7 @@ class Configuration():
     def assertion(self):
         # if self.config['seed'] not in [1234, 1, 12, 123, 42]:
         #     return False, "Seed out of range"
-        if os.path.isdir(self.TRAINING_CONFIG['output_dir']):
+        if os.path.isdir(self.TRAINING_CONFIG['output_dir']) and not self.TRAINING_CONFIG['overwrite_output_dir']:
             return False, "Output dir"
         elif "adm" in self.config['KnowMix'] and "literal" in self.config['KnowMix']:
             return False, "Choose one of knowledge mixup strategy --> adm or literal"

@@ -27,18 +27,24 @@ class DataModule(pl.LightningDataModule):
         self.args = training_args
         self.config = config
 
-        # Load Tokenizer
-        os.environ['TOKENIZERS_PARALLELISM'] = 'false'
-        # tokenizer = AutoTokenizer.from_pretrained('bert-base-uncased')
-        if model_args.tokenizer_name:
-            tokenizer = AutoTokenizer.from_pretrained(self.model_args.tokenizer_name)
-        elif model_args.model_name_or_path:
-            tokenizer = AutoTokenizer.from_pretrained(self.model_args.model_name_or_path)
+        if self.args.unimodal:
+            if self.args.unimodal == "graph":
+                tokenizer = AutoTokenizer.from_pretrained("bert-base-uncased")
+            elif self.args.unimodal == "text":
+                tokenizer = AutoTokenizer.from_pretrained("emilyalsentzer/Bio_ClinicalBERT")
+            self.config.token_type_vocab = None
         else:
-            raise ValueError(
-                "You are instantiating a new tokenizer from scratch. This is not supported, but you can do it from another script, save it,"
-                "and load it from here, using --tokenizer_name"
-            )
+            # Load Tokenizer
+            os.environ['TOKENIZERS_PARALLELISM'] = 'false'
+            if model_args.tokenizer_name:
+                tokenizer = AutoTokenizer.from_pretrained(self.model_args.tokenizer_name)
+            elif model_args.model_name_or_path:
+                tokenizer = AutoTokenizer.from_pretrained(self.model_args.model_name_or_path)
+            else:
+                raise ValueError(
+                    "You are instantiating a new tokenizer from scratch. This is not supported, but you can do it from another script, save it,"
+                    "and load it from here, using --tokenizer_name"
+                )
         self.tokenizer = tokenizer
 
         # Set block size for padding & truncating inputs
@@ -72,7 +78,7 @@ class DataModule(pl.LightningDataModule):
                 token_type_vocab = self.config.token_type_vocab,
                 test=True
             )
-        else:
+        else:  
             self.test_dataset = None
 
     def setup(self, stage): 

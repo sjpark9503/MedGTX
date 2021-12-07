@@ -339,7 +339,7 @@ class UniLM_DataCollator:
                 elif not isinstance(v, str):
                     if isinstance(v, torch.Tensor):
                         batch[k] = torch.stack([f[k] for f in features])
-                    else:
+                    else:  
                         batch[k] = torch.tensor([f[k] for f in features])
 
         return batch
@@ -481,7 +481,6 @@ class AdmLvlPred_DataCollator:
                         batch[k] = torch.stack([f[k] for f in features])
                     else:
                         batch[k] = torch.tensor([f[k] for f in features])
-
                     if (k == "kg_input_ids"):
                         batch['kg_padding_mask'] = ~batch[k].detach().clone().eq(self.kg_special_token_ids['PAD'])
 

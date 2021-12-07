@@ -172,6 +172,9 @@ class TrainingArguments:
     output_dir: Optional[str] = field(
         metadata={"help": "The output directory where the model predictions and checkpoints will be written."}
     )
+    note: Optional[str] = field(
+        metadata={"help": "note  "}
+    )
     task: str = field(
         metadata={"help": "Task"}
     )
@@ -189,6 +192,7 @@ class TrainingArguments:
         },
     )
     label_domain: str = field(default=None, metadata={"help": "The domain of target. value must be one of graph or text"})
+    unimodal: str = field(default="", metadata={"help": "Turn on Unimodal Experiments"})
     use_tpu: bool = field(default=False, metadata={"help": "Use TPU."})
     do_train: bool = field(default=False, metadata={"help": "Whether to run training."})
     do_eval: bool = field(default=None, metadata={"help": "Whether to run eval on the dev set."})
@@ -301,7 +305,7 @@ class TrainingArguments:
 
     dataloader_drop_last: bool = field(
         default=False, metadata={"help": "Drop the last incomplete batch if it is not divisible by the batch size."}
-    )
+    )  
     num_eval_per_epoch: int = field(default=None, metadata={"help": "Run an evaluation every X steps."})
     dataloader_num_workers: int = field(
         default=8,

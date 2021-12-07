@@ -317,7 +317,6 @@ class GTXEmbeddings(nn.Module):
         embeddings = self.dropout(embeddings)
         return embeddings
 
-
 class GTXAttention(nn.Module):
     def __init__(self, config, ctx_dim=None):
         super().__init__()
@@ -731,7 +730,7 @@ class GTXKnowMixLayer(nn.Module):
                 KnowMix_indices=(actual_KnowMix_indices, 0 if summaries is not None else None),
                 output_x_attentions=output_attentions,
             )
-        attention_probs = {'kg->txt':att_output[-1]}
+        attention_probs = att_output[-1]
         
         att_output = self.self_att(
             att_output[0],
@@ -1247,7 +1246,7 @@ class GTXModel(GTXPreTrainedModel):
 
         # Positional Word Embeddings 
         lang_embedding_output = self.lang_embeddings(lang_input_ids, token_type_ids, lang_inputs_embeds)
-        if "linearize" in self.config.KnowMix:
+        if "linearize" in self.config.KnowMix: 
             kg_inputs_embeds = self.lang_embeddings.word_embeddings(kg_input_ids)
         else:
             kg_inputs_embeds = self.kg_embeddings.word_embeddings(kg_input_ids)
@@ -1404,7 +1403,7 @@ class GTXForKGTokPredAndMaskedLM(GTXPreTrainedModel):
             each key is named after each one of the visual losses and each element of the tuple is of the shape
             ``(batch_size, num_features)`` and ``(batch_size, num_features, visual_feature_dim)`` for each the label id
             and the label score respectively
-        matched_label (``torch.LongTensor`` of shape ``(batch_size,)``, `optional`):
+        matched_label (``torch.printLongTensor`` of shape ``(batch_size,)``, `optional`):
             Labels for computing the whether or not the text input matches the image (classification) loss. Input
             should be a sequence pair (see :obj:`input_ids` docstring) Indices should be in ``[0, 1]``:
 
@@ -2735,3 +2734,207 @@ class GTXForGeneration(GTXPreTrainedModel):
                 first_sep_idx = torch.nonzero(curr_ids[idx].eq(self.sep_token_id))[0]
                 curr_token_type_ids[idx][first_sep_idx+1:] = 1        
         return curr_token_type_ids
+
+class UnimodalEmbeddings(nn.Module):
+    """Construct the embeddings from word, position and token_type embeddings."""
+
+    def __init__(self, config):
+        super().__init__()
+        self.word_embeddings = nn.Embedding(config.vocab_size["kg"], config.hidden_size)
+        self.position_embeddings = nn.Embedding(1024, config.hidden_size)
+        self.token_type_embeddings = None
+
+        # self.LayerNorm is not snake-cased to stick with TensorFlow model variable name and be able to load
+        # any TensorFlow checkpoint file
+        self.LayerNorm = nn.LayerNorm(config.hidden_size, eps=1e-12)
+        self.dropout = nn.Dropout(config.hidden_dropout_prob)
+
+    def forward(self, input_ids, token_type_ids=None, inputs_embeds=None):
+        if input_ids is not None:
+            input_shape = input_ids.size()
+            device = input_ids.device
+        else:
+            input_shape = inputs_embeds.size()[:-1]
+            device = inputs_embeds.device
+        seq_length = input_shape[1]
+
+        position_ids = torch.arange(seq_length, dtype=torch.long, device=device)
+        position_ids = position_ids.unsqueeze(0).expand(input_shape)
+
+        if token_type_ids is None and self.token_type_embeddings is not None:
+            token_type_ids = torch.zeros(input_shape, dtype=torch.long, device=position_ids.device)
+        if inputs_embeds is None:
+            inputs_embeds = self.word_embeddings(input_ids)
+        embeddings = inputs_embeds
+        if self.position_embeddings:
+            position_embeddings = self.position_embeddings(position_ids)
+            embeddings += position_embeddings
+        if self.token_type_embeddings:
+            token_type_embeddings = self.token_type_embeddings(token_type_ids)
+            embeddings += token_type_embeddings
+
+        embeddings = self.LayerNorm(embeddings)
+        embeddings = self.dropout(embeddings)
+        return embeddings
+
+class GAT(GTXPreTrainedModel):
+    def __init__(self, config):
+        super().__init__(config)
+        self.config = config
+        
+        # Layers
+        self.layer = nn.ModuleList([GTXLayer(config) for _ in range(6)])
+
+        # Weight initialization
+        self.init_weights()
+
+    def forward(
+        self,
+        input_ids = None,
+        inputs_embeds = None,
+        attention_mask = None,
+    ):
+
+        if len(attention_mask.shape)==2:
+            # Process KG-side self attention mask
+            attention_mask = attention_mask.unsqueeze(1).unsqueeze(2)
+            attention_mask = attention_mask.to(dtype=self.dtype)
+            attention_mask = (1.0 - attention_mask) * -10000.0
+
+        elif len(attention_mask.shape)==3:
+            # Process KG-side self attention mask
+            attention_mask = attention_mask.unsqueeze(1)
+            attention_mask = attention_mask.to(dtype=self.dtype)
+            attention_mask = (1.0 - attention_mask) * -10000.0
+
+        elif len(attention_mask.shape)==4:
+            # Process KG-side self attention mask
+            attention_mask = attention_mask
+            attention_mask = attention_mask.to(dtype=self.dtype)
+            attention_mask = (1.0 - attention_mask) * -10000.0
+
+        for layer_module in self.layer:
+                outputs = layer_module(inputs_embeds, attention_mask, output_attentions=False)
+                feats = outputs[0]
+
+        return (
+            feats,
+            None,
+            None,
+        )
+
+class GTXForUnimodalPrediction(GTXPreTrainedModel):
+    def __init__(self, config):
+        super().__init__(config)
+        # Configuration
+        self.config = config
+        self.task = config.task
+
+        # Embeddings
+        self.kg_embeddings = UnimodalEmbeddings(config)
+
+        # Classifiers
+        if self.task == "AdmPred":
+            self.cls = nn.Sequential(nn.Linear(config.hidden_size, config.hidden_size),
+                                    nn.Tanh(),
+                                    nn.Linear(config.hidden_size, config.num_labels))
+        elif self.task in ['ReAdm','Death30']:
+            self.cls = nn.Sequential(nn.Linear(config.hidden_size, config.hidden_size),
+                                    nn.Tanh(),
+                                    nn.Linear(config.hidden_size, 1))
+        else: 
+            self.cls = nn.Linear(config.hidden_size, 1)
+
+        # Loss functions
+        self.loss_fcts = {
+            "bce": nn.BCEWithLogitsLoss(reduction='none'),
+            "ce": nn.CrossEntropyLoss(),
+        }
+        self.class_weight = None
+
+        # Weight initialization
+        self.init_weights()
+
+    def forward(
+        self,
+        lang_input_ids=None,
+        kg_input_ids=None,
+        lang_inputs_embeds=None,
+        kg_inputs_embeds=None,
+        lang_attention_mask=None,
+        kg_attention_mask=None,
+        kg_padding_mask=None,
+        label=None,
+        kg_label=None,
+        token_type_ids=None,
+        output_attentions=None,
+        output_hidden_states=None,
+        return_dict=True,
+    ):
+        r"""
+        masked_lm_labels (``torch.LongTensor`` of shape ``(batch_size, sequence_length)``, `optional`):
+            Labels for computing the masked language modeling loss. Indices should be in ``[-100, 0, ...,
+            config.vocab_size]`` (see ``input_ids`` docstring) Tokens with indices set to ``-100`` are ignored
+            (masked), the loss is only computed for the tokens with labels in ``[0, ..., config.vocab_size]``
+        obj_labels: (``Dict[Str: Tuple[Torch.FloatTensor, Torch.FloatTensor]]``, `optional`):
+            each key is named after each one of the visual losses and each element of the tuple is of the shape
+            ``(batch_size, num_features)`` and ``(batch_size, num_features, visual_feature_dim)`` for each the label id
+            and the label score respectively
+        matched_label (``torch.LongTensor`` of shape ``(batch_size,)``, `optional`):
+            Labels for computing the whether or not the text input matches the image (classification) loss. Input
+            should be a sequence pair (see :obj:`input_ids` docstring) Indices should be in ``[0, 1]``:
+
+            - 0 indicates that the sentence does not match the image,
+            - 1 indicates that the sentence does match the image.
+        ans: (``Torch.Tensor`` of shape ``(batch_size)``, `optional`):
+            a one hot representation hof the correct answer `optional`
+
+        Returns:
+        """
+        loss_dict = dict()
+
+        if self.config.unimodal == "graph":
+            attention_mask = kg_attention_mask
+        elif self.config.unimodal == "text":
+            attention_mask = lang_attention_mask
+
+        kg_inputs_embeds = self.kg_embeddings(kg_input_ids)
+        encoder_outputs = self.encoder(
+            input_ids = None if self.config.unimodal=="graph" else lang_input_ids,
+            inputs_embeds = kg_inputs_embeds if self.config.unimodal=="graph" else None,
+            attention_mask = attention_mask,
+        )
+
+        if self.task == 'AdmPred':
+            classifier_input = encoder_outputs[0][:,0]
+            score = self.cls(classifier_input)
+            total_loss = self.loss_fcts["bce"](score, label)
+            if self.class_weight is not None:
+                total_loss = total_loss*torch.tensor(self.class_weight, requires_grad=False, device=label.device)
+            total_loss = total_loss.mean()
+            loss_dict['loss']=total_loss.detach()
+        elif self.task == 'ErrDetect':
+            classifier_input = encoder_outputs[0]
+            _size = classifier_input.shape[:-1]
+            score = self.cls(classifier_input.view(-1, self.config.hidden_size)).view(_size)
+            total_loss = self.loss_fcts["bce"](score, kg_label).mean()
+            loss_dict['loss']=total_loss.detach()
+        elif self.task in ['ReAdm', 'Death30']:
+            classifier_input = encoder_outputs[0][:,0]
+            score = self.cls(classifier_input)
+            total_loss = self.loss_fcts["bce"](score.squeeze(dim=1), label.float())
+            total_loss = total_loss.mean()
+            loss_dict['loss']=total_loss.detach()
+        else:
+            raise ValueError("Task not supports")
+
+        return GTXForDownstreamOutput(
+            loss=total_loss,
+            loss_dict=loss_dict,
+            pooled_logits=score.detach(),
+            # language_hidden_states=GTX_output.language_hidden_states,
+            # kg_hidden_states=GTX_output.kg_hidden_states,
+            # language_attentions=GTX_output.language_attentions,
+            # kg_attentions=GTX_output.kg_attentions,
+            # cross_encoder_attentions=GTX_output.cross_encoder_attentions,
+        )

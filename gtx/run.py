@@ -4,43 +4,23 @@ import os
 import time
 import itertools
 from Run_configs import Configuration
-
+ 
 # GPU setting
 os.environ["CUDA_VISIBLE_DEVICES"] = '0' 
-
+os.environ["TOKENIZERS_PARALLELISM"] = 'true' 
+ 
 # TPU setting
 TPU = False
 
 for preset in [
-    #     {'db':'dx,prx','model':'single','architecture':'both','knowmix':'summary','scratch':False},
-    # {'db':'px','model':'single','architecture':'both','knowmix':'summary','scratch':False},
-    # {'db':'dx,prx','model':'single','architecture':'both','knowmix':'init,mean','scratch':False},
-    # {'db':'px','model':'single','architecture':'both','knowmix':'init,mean','scratch':False},
-    # {'db':'dx,prx','model':'single','architecture':'both','knowmix':'init,enc','scratch':False},
-    # {'db':'px','model':'single','architecture':'both','knowmix':'init,enc','scratch':False},
-        {'db':'dx,prx','model':'cross','architecture':'both','knowmix':'init,linearize','scratch':False},
-    {'db':'px','model':'cross','architecture':'both','knowmix':'init,linearize','scratch':False},
-    # {'db':'dx,prx','model':'cross','architecture':'both','knowmix':'init,mean','scratch':False},
-    # {'db':'px','model':'cross','architecture':'both','knowmix':'init,mean','scratch':False},
-    # {'db':'dx,prx','model':'cross','architecture':'both','knowmix':'init,enc','scratch':False},
-    # {'db':'px','model':'cross','architecture':'both','knowmix':'init,enc','scratch':False},
-    #     {'db':'dx,prx','model':'lstm','architecture':'kg','knowmix':'summary','scratch':False},
-    # {'db':'px','model':'lstm','architecture':'kg','knowmix':'summary','scratch':False},
-    # {'db':'dx,prx','model':'lstm','architecture':'kg','knowmix':'init,mean','scratch':False},
-    # {'db':'px','model':'lstm','architecture':'kg','knowmix':'init,mean','scratch':False},
-    # {'db':'dx,prx','model':'lstm','architecture':'kg','knowmix':'init,enc','scratch':False},
-    # {'db':'px','model':'lstm','architecture':'kg','knowmix':'init,enc','scratch':False},
-    #     {'db':'dx,prx','model':'transe','architecture':'lm','knowmix':'summary','scratch':False},
-    # {'db':'px','model':'transe','architecture':'lm','knowmix':'summary','scratch':False},
-    # {'db':'dx,prx','model':'transe','architecture':'lm','knowmix':'init,mean','scratch':False},
-    # {'db':'px','model':'transe','architecture':'lm','knowmix':'init,mean','scratch':False},
-    # {'db':'dx,prx','model':'transe','architecture':'lm','knowmix':'init,enc','scratch':False},
-    # {'db':'px','model':'transe','architecture':'lm','knowmix':'init,enc','scratch':False},
+    # {'db':'dx,prx','model':'single','architecture':'kg','knowmix':'','scratch':False, 'unimodal':'graph'},
+    {'db':'dx,prx','model':'cross','architecture':'kg','knowmix':'summary','scratch':False, 'unimodal':'', 'note':'obj_ablation'},
+    # {'db':'dx,prx','model':'cross','architecture':'lm','knowmix':'summary','scratch':False, 'unimodal':'', 'note':'obj_ablation'},
 ]:
-    for _task in [0,1,2,3,4,5,7]:
+    for _task in [4]:
         if (_task==3) and (preset['db']=='px'):
             continue
-        for _SEED in [1234,123,12,1,42]: # , 123, 12, 1, 42]: # , 1, 42]:
+        for _SEED in [0]: # , 123, 12, 1, 42]: # , 1, 42]:
             if (_task==0) and (_SEED!=1234):
                 continue
             config = {
@@ -53,6 +33,8 @@ for preset in [
                 'seed' : _SEED, #1234,
                 # model : cross / single / lstm / transe
                 'model' : preset['model'],
+                # unimodal : graph / text / ""(multimodal)
+                'unimodal' : preset['unimodal'],
                 # architecture : both / kg / lm / rand
                 'architecture' : preset['architecture'],
                 # label domain : graph / text
@@ -64,6 +46,7 @@ for preset in [
                 'scratch' : preset['scratch'],
                 'evaluation' : False,
                 'top_k' : 10,
+                'note' : preset['note'],
                 'dropout' : 0.1,
                 'n_negatives' : 1,
                 'use_tpu' : TPU,
@@ -87,8 +70,8 @@ for preset in [
             elif _task in [5,6,7]:
                 config['train_bsize'] = 8 if preset['db']=='px' else 16
                 config['eval_bsize'] = 2 if preset['db']=='px' else 4
-                config['lr'] = 3e-5
-                config['num_epochs'] = 30
+                config['lr'] = 2e-5
+                config['num_epochs'] = 20
             
             # Run script
             exp_config = Configuration(config)
