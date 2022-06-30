@@ -98,7 +98,7 @@ def main():
     wandb_config = dict()
     wandb_config.update(vars(training_args))
     wandb_config.update(vars(model_args))
-    logger = pl.loggers.WandbLogger(config=wandb_config, entity='kgtxt', project='MedGTX', group=training_args.run_name, name=f"{training_args.run_name},RNG{training_args.seed}", log_model=False, save_dir='logs')
+    logger = pl.loggers.WandbLogger(config=wandb_config, project='MedGTX', group=training_args.run_name, name=f"{training_args.run_name},RNG{training_args.seed}", log_model=False, save_dir='logs')
 
     # Call Model
     gtx = GTXModel(model_args, training_args)

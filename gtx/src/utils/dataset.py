@@ -177,7 +177,7 @@ class HeadOnlyDataset(Dataset):
                     summarized_knowledge = self.tokenizer((" ".join(self.batch_encoding['knowledge'][idx])).strip(), add_special_tokens=False, padding='max_length', max_length=ext_max_len, return_token_type_ids=False)
                     inputs['kg_ext_sum_input_ids'] = summarized_knowledge['input_ids']
                     inputs['kg_ext_sum_attention_mask'] = summarized_knowledge['attention_mask']
-
+                    
             feature = InputFeatures(**inputs)
             self.features.append(feature)
 

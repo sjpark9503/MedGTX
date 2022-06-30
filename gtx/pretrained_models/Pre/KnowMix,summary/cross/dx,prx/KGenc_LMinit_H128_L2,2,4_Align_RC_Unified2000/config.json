@@ -1,0 +1,75 @@
+{
+  "KnowMix": "adm",
+  "architectures": [
+    "GTXForKGTokPredAndMaskedLM"
+  ],
+  "attention_probs_dropout_prob": 0.1,
+  "contrastive_learning": false,
+  "cross_att_type": "cross",
+  "encoder_type": {
+    "lang": "cross"
+  },
+  "gcn": true,
+  "hidden_act": "gelu",
+  "hidden_dropout_prob": 0.1,
+  "hidden_size": 128,
+  "initializer_range": 0.02,
+  "intermediate_size": 512,
+  "kg_special_token_ids": {
+    "CLS": 2,
+    "MASK": 1,
+    "PAD": 0
+  },
+  "l_layers": 2,
+  "layer_norm_eps": 1e-12,
+  "max_position_embeddings": {
+    "kg": 1024,
+    "lang": 512
+  },
+  "model_type": "lxmert",
+  "negative_samples": 0,
+  "num_attention_heads": 4,
+  "num_attr_labels": 400,
+  "num_hidden_layers": {
+    "cross_encoder": 4,
+    "language": 2,
+    "vision": 2
+  },
+  "num_kg_labels": 8057,
+  "num_object_labels": 1600,
+  "num_qa_labels": 9500,
+  "num_relations": 7,
+  "pretrained_kg_embedding": "",
+  "pretrained_lang_model": {
+    "model_name": "prajjwal1/bert-tiny",
+    "use_weight": true
+  },
+  "r_layers": 2,
+  "structured_cross": false,
+  "task_mask_kg": true,
+  "task_mask_lm": true,
+  "task_matched": true,
+  "task_obj_predict": true,
+  "task_qa": true,
+  "token_type_vocab": {
+    "dx": 0,
+    "prx": 1
+  },
+  "transformers_version": "4.6.1",
+  "type_vocab_size": {
+    "kg": 0,
+    "lang": 2
+  },
+  "use_ce_pooler": true,
+  "visual_attr_loss": true,
+  "visual_feat_dim": 2048,
+  "visual_feat_loss": true,
+  "visual_loss_normalizer": 6.67,
+  "visual_obj_loss": true,
+  "visual_pos_dim": 4,
+  "vocab_size": {
+    "kg": 8057,
+    "lang": 30522
+  },
+  "x_layers": 4
+}
